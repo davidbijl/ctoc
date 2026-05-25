@@ -146,6 +146,17 @@ function buildDashboardTable(projectPath) {
     out += '\n';
   } else if (agent.stale) {
     out += `  ⚠ Stale lock: ${agent.stalePlan || 'unknown'} (process died)\n`;
+  } else if (agent.overloadRetry) {
+    const retryLabel = agent.retryAt
+      ? (() => {
+          const diffMs = new Date(agent.retryAt).getTime() - Date.now();
+          const diffMin = Math.ceil(diffMs / 60000);
+          return diffMin > 0 ? `retry in ${diffMin}m` : 'ready to retry';
+        })()
+      : 'retry pending';
+    out += `  ⏳ ${retryLabel} — ${agent.plan}\n`;
+  } else if (agent.overloadPartial) {
+    out += `  ⚠ partial write — review: ${agent.plan}\n`;
   } else {
     out += `  ○ Idle\n`;
   }
