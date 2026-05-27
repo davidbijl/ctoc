@@ -19,6 +19,7 @@ const path = require('path');
 const { getPlanCounts, readPlans, getPlansDir, getAgentStatus, getVisionCounts, getVisionStubs } = require('./state');
 const { SECTIONS, getSectionLabel, getStagesInSection, loadDashboardPrefs } = require('./sections');
 const { getInboxCounts } = require('./inbox');
+const { getNotesCount } = require('./notes');
 const { validateTransition } = require('./plan-validator');
 const { findProjectRoot } = require('./project-root');
 
@@ -124,7 +125,7 @@ function buildDashboardTable(projectPath) {
     out += '\n';
   }
 
-  // Inbox (A3 — async-overnight surface)
+  // Inbox (A3 — async-overnight surface, agent → user)
   const inbox = getInboxCounts(root);
   const inboxTotal = inbox.questions + inbox.decisions + inbox.gatesWaiting;
   out += `INBOX\n`;
@@ -134,6 +135,17 @@ function buildDashboardTable(projectPath) {
     out += `  ⊙ ${inbox.questions} morning question${inbox.questions === 1 ? '' : 's'}\n`;
     out += `  ⊙ ${inbox.decisions} decision${inbox.decisions === 1 ? '' : 's'} awaiting review\n`;
     out += `  ⊙ ${inbox.gatesWaiting} plan${inbox.gatesWaiting === 1 ? '' : 's'} at gates\n`;
+  }
+  out += '\n';
+
+  // Notes (user → Claude, via NOTES.md at project root). Distinct from
+  // INBOX above which is the agent → user direction.
+  const notesCount = getNotesCount(root);
+  out += `NOTES\n`;
+  if (notesCount === 0) {
+    out += `  ○ No notes pending in NOTES.md\n`;
+  } else {
+    out += `  ⊙ ${notesCount} note${notesCount === 1 ? '' : 's'} pending in NOTES.md\n`;
   }
   out += '\n';
 
