@@ -811,7 +811,7 @@ ctoc/
 ├── src/
 │   ├── commands/    3 slash commands — menu, push, update (.md spec + .js impl where needed)
 │   ├── hooks/       13 Claude Code hooks (session, pre/post tool use, andon-halt)
-│   ├── lib/         112 JS modules (planning, quality, refinement, dispatcher, regulatory-regime, audit-chain, retention, legal-hold, traceability, lineage, eval-harness, comparator, stale-detector, stale-cleanup, claude-md-lessons, safe-fs, regex-utils, task-registry, task-view)
+│   ├── lib/         113 JS modules (planning, quality, refinement, dispatcher, regulatory-regime, audit-chain, retention, legal-hold, traceability, lineage, eval-harness, comparator, stale-detector, stale-cleanup, claude-md-lessons, safe-fs, regex-utils, task-registry, task-view, notes)
 │   ├── areas/       5 dashboard areas (pipeline, inbox, agent, library, system)
 │   ├── tabs/        8 legacy tab modules (superseded by areas/, kept for drill-in flows)
 │   ├── scripts/     13 build/release utilities

@@ -147,7 +147,32 @@ function getAgentStatus(projectPath) {
     };
   }
 
-  // No lock file — agent is idle
+  // No lock file — check in-progress plans for overload statuses
+  const plansDir = getPlansDir(root);
+  const inProgressDir = path.join(plansDir, 'in-progress');
+  if (safeFs.existsSync(inProgressDir)) {
+    const mdFiles = safeFs.readdirSync(inProgressDir).filter(f => f.endsWith('.md'));
+    for (const f of mdFiles) {
+      const planPath = path.join(inProgressDir, f);
+      const status = readStatus(planPath);
+      if (status.status === 'overload-retry') {
+        return {
+          active: false,
+          overloadRetry: true,
+          plan: f.replace('.md', ''),
+          retryAt: status.retry_at || null
+        };
+      }
+      if (status.status === 'overload-partial') {
+        return {
+          active: false,
+          overloadPartial: true,
+          plan: f.replace('.md', '')
+        };
+      }
+    }
+  }
+
   return { active: false };
 }
 

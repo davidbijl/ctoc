@@ -26,7 +26,8 @@ const SETTINGS_TABS = [
   { id: 'workflow', name: 'Workflow' },
   { id: 'learning', name: 'Learning' },
   { id: 'git', name: 'Git' },
-  { id: 'privacy', name: 'Privacy' }
+  { id: 'privacy', name: 'Privacy' },
+  { id: 'retry', name: 'Retry' }
 ];
 
 const SETTINGS_SCHEMA = {
@@ -101,6 +102,12 @@ const SETTINGS_SCHEMA = {
       { key: 'engine_preference', label: 'Embedding engine preference', type: 'select', options: ['auto', 'ollama', 'in-process'], default: 'auto' },
       { key: 'ollama_base_url', label: 'Ollama base URL', type: 'string', default: 'http://localhost:11434' },
       { key: 'duplicate_threshold', label: 'Duplicate-guard threshold', type: 'number', default: 0.85 }
+    ]
+  },
+  retry: {
+    label: 'Retry Settings',
+    settings: [
+      { key: 'overloadIntervalSeconds', label: 'API overload retry interval (seconds)', type: 'number', default: 600 }
     ]
   }
   // NOTE: no `deployment` category here. Deployment is configured via the
