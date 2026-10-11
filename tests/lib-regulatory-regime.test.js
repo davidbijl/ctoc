@@ -511,7 +511,7 @@ describe('profiles shipped with the plugin (a project with no profile folder)', 
 
   // An empty overrides map (`  overrides: {}`) is read as no overrides, under five conditions:
   // the line is exactly the empty map, it is the block's only mention of overrides, nothing sits
-  // under it, the block holds no bare carriage return and no U+2028/U+2029, and no line outside
+  // under it, the block holds no bare carriage return and no U+0085/U+2028/U+2029, and no line outside
   // whole-line comments holds a character with which YAML can hide a key. Every readable text is
   // compared with the real YAML parser (js-yaml, installed as a development dependency).
   const COMPARISON_HEAD = 'regulatory_regime:\n  active_profiles: []\n';
@@ -626,6 +626,14 @@ describe('profiles shipped with the plugin (a project with no profile folder)', 
   // The before-and-after table of the plan: [row, spelling, settings text, whole file?, answer].
   // A text marked whole is written exactly as given; the others go through bareProject.
   const R = COMPARISON_HEAD;
+  // Row 15: a flow collection opened before the header, the real block written later under a
+  // quoted header. The empty map is one entry of that collection, so the line after it starts
+  // with a comma or the closer.
+  const row15 = [
+    ['a flow list opened before the header, a comma after it', 'note: [\nregulatory_regime:\n  ,\n  declined: true\n  ,\n  overrides: {}\n  ,\nx: y]\n"regulatory_regime":\n  overrides:\n    four_eyes_gate3: true\n'],
+    ['a flow list opened before the header, its closer after it', 'note: [\nregulatory_regime:\n  ,\n  declined: true\n  ,\n  overrides: {}\n  ]\nx: y\n"regulatory_regime":\n  overrides:\n    four_eyes_gate3: true\n'],
+    ['a flow mapping opened before the header, its closer after it', 'note: {\nregulatory_regime:\n  ,\n  declined: true\n  ,\n  overrides: {}\n  }\nx: y\n"regulatory_regime":\n  overrides:\n    four_eyes_gate3: true\n'],
+  ];
   const emptyMapTable = [
     [1, 'the empty map', `${R}  overrides: {}\n`, false, null],
     [1, 'a space inside the braces', `${R}  overrides: { }\n`, false, null],
@@ -636,6 +644,7 @@ describe('profiles shipped with the plugin (a project with no profile folder)', 
     [1, 'a sibling key under it', `${R}  overrides: {}\n  declined: true\n`, false, null],
     [1, 'a deeper comment line under it', `${R}  overrides: {}\n    # four_eyes_gate3: true\n`, false, null],
     [1, 'before a block list of profiles', 'regulatory_regime:\n  overrides: {}\n  active_profiles:\n    - gdpr\n', false, null],
+    [1, 'after a closed inline list of profiles that is not empty', 'regulatory_regime:\n  active_profiles: [gdpr]\n  overrides: {}\n', false, null],
     [2, "CTOC's own block", 'regulatory_regime:\n  declined: true\n  active_profiles: []\n  overrides: {}\n', false, null],
     [3, 'a block that holds only the empty map', 'regulatory_regime:\n  overrides: {}\n', false, 'block'],
     [4, 'the bare key with nothing under it', `${R}  overrides:\n`, false, null],
@@ -658,10 +667,12 @@ describe('profiles shipped with the plugin (a project with no profile folder)', 
     [10, 'a star in another line', `${R}  note: a*b\n  overrides: {}\n`, false, 'overrides'],
     [10, 'a question-mark key in another line', `${R}  ? note\n  overrides: {}\n`, false, 'overrides'],
     [11, 'a flow collection opened on another line', `${R}  note: [\n  overrides: {}\n  ,\nx: y]\n  overrides:\n    four_eyes_gate3: true\ntimezone: "UTC"\n`, true, 'overrides'],
+    [11, 'a brace after a closed inline list of profiles', 'regulatory_regime:\n  active_profiles: [gdpr] {\n  overrides: {}\n', false, 'overrides'],
     [12, 'a bracket on a line led by a non-breaking space and a #', `${R}  \u00a0#n: [\n  overrides: {}\n  ,\nx: y]\n  overrides:\n    four_eyes_gate3: true\ntimezone: "UTC"\n`, true, 'overrides'],
     [12, 'a double quote on a line led by a non-breaking space and a #', `${R}  \u00a0#n: "\n  overrides: {}\nx: y\n\u00a0#"\n  overrides:\n    four_eyes_gate3: true\ntimezone: "UTC"\n`, true, 'overrides'],
     [13, 'inside a list item, a later item after it', 'regulatory_regime:\n  active_profiles:\n    - gdpr :\n      overrides: {}\n    - hipaa\n', false, 'overrides'],
     [14, 'a next-line character (U+0085) in its comment', `${R}  overrides: {} #\u0085  overrides: {four_eyes_gate3: true}\n`, false, 'overrides'],
+    ...row15.map(([spelling, text]) => [15, spelling, text, true, 'overrides']),
   ];
   for (const [row, spelling, text, whole, answer] of emptyMapTable) {
     it(`the empty overrides map, row ${row}, ${spelling}: misreadRegime is ${JSON.stringify(answer)}`, () => {
@@ -675,6 +686,17 @@ describe('profiles shipped with the plugin (a project with no profile folder)', 
       assert.equal(regime.misreadRegime(root), answer, JSON.stringify(text));
     });
   }
+
+  it('the empty overrides map, row 15: js-yaml reads the override in all three spellings, and only the comma spelling needs the empty-map line', () => {
+    for (const [spelling, text] of row15) {
+      assert.deepEqual(yaml.load(text).regulatory_regime.overrides, { four_eyes_gate3: true }, spelling);
+    }
+    const twins = row15.map((entry) => entry[1].replace('  overrides: {}\n', ''));
+    assert.throws(() => yaml.load(twins[0]), /expected the node content, but found ','/);
+    for (const twin of twins.slice(1)) {
+      assert.deepEqual(yaml.load(twin).regulatory_regime.overrides, { four_eyes_gate3: true });
+    }
+  });
 
   it('a second regulatory_regime block is a misread', () => {
     const root = bareProject('regulatory_regime:\n  active_profiles: []\nregulatory_regime:\n  active_profiles: [gdpr]\n');
