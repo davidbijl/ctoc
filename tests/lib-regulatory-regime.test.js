@@ -37,6 +37,8 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const util = require('util');
+const yaml = require('js-yaml');
 
 const regime = require('../src/lib/regulatory-regime.js');
 const {
@@ -506,6 +508,152 @@ describe('profiles shipped with the plugin (a project with no profile folder)', 
       assert.equal(regime.misreadRegime(root), null, value);
     }
   });
+
+  // An empty overrides map (`  overrides: {}`) is read as no overrides, under five conditions:
+  // the line is exactly the empty map, it is the block's only mention of overrides, nothing sits
+  // under it, the block holds no bare carriage return and no U+2028/U+2029, and no line outside
+  // whole-line comments holds a character with which YAML can hide a key. Every readable text is
+  // compared with the real YAML parser (js-yaml, installed as a development dependency).
+  const COMPARISON_HEAD = 'regulatory_regime:\n  active_profiles: []\n';
+  const COMPARISON_AFTER = [
+    [],
+    ['    four_eyes_gate3: true'],
+    ['    # four_eyes_gate3: true'],
+    ['', '    four_eyes_gate3: true'],
+    ['  # note', '    four_eyes_gate3: true'],
+    ['\tfour_eyes_gate3: true'],
+    ['  declined: true'],
+    ['  overrides:', '    four_eyes_gate3: True'],
+    ['  "overrides":', '    four_eyes_gate3: true'],
+  ];
+  // The 15,552 texts: indentation × after the colon × value × after the value × lines after × line
+  // ending. The line ending ends the overrides line and every line after it, timezone included.
+  function comparisonTexts() {
+    const texts = [];
+    for (const [ii, indent] of ['  ', '\t'].entries()) {
+      for (const [ci, colon] of ['', ' ', '  ', '\t'].entries()) {
+        for (const [vi, value] of ['{}', '{ }', '{\t}', '{}x', '{}{}', '{a: b}', '{four_eyes_gate3: true}', '[]', '~', 'null', '{', '"{}"'].entries()) {
+          for (const [ei, ending] of ['', ' ', '\t', ' # none', '\t# none', '# none'].entries()) {
+            for (const [ai, after] of COMPARISON_AFTER.entries()) {
+              for (const [li, eol] of ['\n', '\r\n', '\r'].entries()) {
+                const lines = [`${indent}overrides:${colon}${value}${ending}`, ...after, 'timezone: "UTC"'];
+                const body = lines.map((l) => l + eol).join('');
+                const expected = ii === 0 && ci > 0 && vi < 3 && ei < 5 && [0, 2, 6].includes(ai) && li < 2;
+                texts.push({ parts: { indent, colon, value, ending, after, eol }, body, expected });
+              }
+            }
+          }
+        }
+      }
+    }
+    return texts;
+  }
+  // Writes each text exactly as given (never through writeSettings, which appends a second
+  // timezone line) and compares the reader with the parser. Returns every mismatch.
+  function compareWithParser(root, entries) {
+    const mismatches = [];
+    for (const { parts, text, expected } of entries) {
+      fs.writeFileSync(path.join(root, '.ctoc', 'settings.yaml'), text);
+      const readable = regime.misreadRegime(root) === null;
+      const failed = [];
+      if (readable) {
+        try {
+          const parsed = yaml.load(text);
+          if (!util.isDeepStrictEqual(parsed.regulatory_regime.overrides, {})) failed.push(`(a) the parser reads overrides ${JSON.stringify(parsed.regulatory_regime.overrides)}`);
+        } catch (err) {
+          failed.push(`(a) the parser refuses the text: ${err.message.split('\n')[0]}`);
+        }
+      }
+      if (readable !== expected) failed.push(`(b) readable is ${readable}, expected ${expected}`);
+      if (failed.length > 0) mismatches.push({ parts, expected, failed });
+    }
+    return mismatches;
+  }
+  function mismatchMessage(mismatches) {
+    const readable = mismatches.filter((m) => m.expected).length;
+    const which = readable === mismatches.length ? 'all of them' : `${readable} of them`;
+    return `${mismatches.length} mismatches, ${which} expected readable\n${mismatches.map((m) => JSON.stringify(m)).join('\n')}`;
+  }
+
+  it('the empty overrides map: over 15,552 texts the reader answers readable exactly where expected, and the parser agrees', () => {
+    const root = bareProject(null);
+    const texts = comparisonTexts();
+    assert.equal(texts.length, 15552);
+    assert.equal(texts.filter((t) => t.expected).length, 270);
+    const mismatches = compareWithParser(root, texts.map((t) => ({ ...t, text: COMPARISON_HEAD + t.body })));
+    assert.equal(mismatches.length, 0, mismatchMessage(mismatches));
+  });
+
+  it('guard: the 3,510 twins with a character that can hide a key are never readable', () => {
+    const root = bareProject(null);
+    const extras = [...'"\'\\&*<>|!%@`'].map((c) => `  note: a${c}b`).concat('  ? note');
+    assert.equal(extras.length, 13);
+    const twins = [];
+    for (const t of comparisonTexts().filter((x) => x.expected)) {
+      for (const extra of extras) {
+        twins.push({ parts: { ...t.parts, extra }, text: `${COMPARISON_HEAD}${extra}\n${t.body}`, expected: false });
+      }
+    }
+    assert.equal(twins.length, 3510);
+    const mismatches = compareWithParser(root, twins);
+    assert.equal(mismatches.length, 0, mismatchMessage(mismatches));
+  });
+
+  it("CTOC's own settings file reads as no misread and no overrides", () => {
+    const text = fs.readFileSync(path.join(__dirname, '..', '.ctoc', 'settings.yaml'), 'utf8');
+    assert.match(text, /^ {2}overrides: \{\}\r?$/m);
+    const root = bareProject(null);
+    fs.writeFileSync(path.join(root, '.ctoc', 'settings.yaml'), text);
+    assert.equal(regime.misreadRegime(root), null);
+    assert.deepEqual(loadActiveProfiles(root).overrides, {});
+  });
+
+  // The before-and-after table of the plan: [row, spelling, settings text, whole file?, answer].
+  // A text marked whole is written exactly as given; the others go through bareProject.
+  const R = COMPARISON_HEAD;
+  const emptyMapTable = [
+    [1, 'the empty map', `${R}  overrides: {}\n`, false, null],
+    [1, 'a space inside the braces', `${R}  overrides: { }\n`, false, null],
+    [1, 'a tab after the colon', `${R}  overrides:\t{}\n`, false, null],
+    [1, 'a tab inside the braces', `${R}  overrides: {\t}\n`, false, null],
+    [1, 'spaces after it', `${R}  overrides: {}   \n`, false, null],
+    [1, 'a comment after it', `${R}  overrides: {} # none\n`, false, null],
+    [1, 'a sibling key under it', `${R}  overrides: {}\n  declined: true\n`, false, null],
+    [1, 'a deeper comment line under it', `${R}  overrides: {}\n    # four_eyes_gate3: true\n`, false, null],
+    [2, "CTOC's own block", 'regulatory_regime:\n  declined: true\n  active_profiles: []\n  overrides: {}\n', false, null],
+    [3, 'a block that holds only the empty map', 'regulatory_regime:\n  overrides: {}\n', false, 'block'],
+    [4, 'the bare key with nothing under it', `${R}  overrides:\n`, false, null],
+    [4, 'the bare key with an entry under it', `${R}  overrides:\n    four_eyes_gate3: true\n`, false, null],
+    [5, 'the bare key with True under it', `${R}  overrides:\n    four_eyes_gate3: True\n`, false, 'overrides'],
+    [6, 'no space after the colon', `${R}  overrides:{}\n`, false, 'overrides'],
+    ...['{}x', '{}# none', '{a: b}', '{four_eyes_gate3: true}', '[]', '~', 'null', '"{}"'].map((v) => [6, `the value ${v}`, `${R}  overrides: ${v}\n`, false, 'overrides']),
+    [6, 'a tab before the key', `${R}\toverrides: {}\n`, false, 'overrides'],
+    [7, 'an entry under it', `${R}  overrides: {}\n    four_eyes_gate3: true\n`, false, 'overrides'],
+    [7, 'an entry under it after a blank line', `${R}  overrides: {}\n\n    four_eyes_gate3: true\n`, false, 'overrides'],
+    [7, 'an entry under it after a comment line', `${R}  overrides: {}\n  # note\n    four_eyes_gate3: true\n`, false, 'overrides'],
+    [7, 'an entry under it indented with one tab', `${R}  overrides: {}\n\tfour_eyes_gate3: true\n`, false, 'overrides'],
+    [8, 'a second bare overrides key', `${R}  overrides: {}\n  overrides:\n    four_eyes_gate3: True\n`, false, 'overrides'],
+    [8, 'a second quoted overrides key', `${R}  overrides: {}\n  "overrides":\n    four_eyes_gate3: True\n`, false, 'overrides'],
+    [9, 'a bare carriage return before a sibling key', `${R}  overrides: {} #\r  declined: true\n`, false, 'overrides'],
+    [9, 'a bare carriage return before a second key', `${R}  overrides: {} #\r  overrides:\r    four_eyes_gate3: True\n`, false, 'overrides'],
+    [9, 'a bare carriage return inside a later line', `${R}  overrides: {}\n  declined: true\r  note: x\ntimezone: "UTC"\n`, true, 'overrides'],
+    [9, 'a line separator in a comment', `${R}  overrides: {} #\u2028x:\n  overrides:\n    four_eyes_gate3: True\ntimezone: "UTC"\n`, true, 'overrides'],
+    [10, 'an escaped second key', `${R}  overrides: {}\n  "over\\x72ides":\n    four_eyes_gate3: true\n`, false, 'overrides'],
+    [10, 'a star in another line', `${R}  note: a*b\n  overrides: {}\n`, false, 'overrides'],
+    [10, 'a question-mark key in another line', `${R}  ? note\n  overrides: {}\n`, false, 'overrides'],
+  ];
+  for (const [row, spelling, text, whole, answer] of emptyMapTable) {
+    it(`the empty overrides map, row ${row}, ${spelling}: misreadRegime is ${JSON.stringify(answer)}`, () => {
+      let root;
+      if (whole) {
+        root = bareProject(null);
+        fs.writeFileSync(path.join(root, '.ctoc', 'settings.yaml'), text);
+      } else {
+        root = bareProject(text);
+      }
+      assert.equal(regime.misreadRegime(root), answer, JSON.stringify(text));
+    });
+  }
 
   it('a second regulatory_regime block is a misread', () => {
     const root = bareProject('regulatory_regime:\n  active_profiles: []\nregulatory_regime:\n  active_profiles: [gdpr]\n');
