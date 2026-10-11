@@ -599,9 +599,24 @@ describe('profiles shipped with the plugin (a project with no profile folder)', 
     assert.equal(mismatches.length, 0, mismatchMessage(mismatches));
   });
 
+  it('the 810 twins with a flow bracket or a comment line led by a non-breaking space are never readable', () => {
+    const root = bareProject(null);
+    const extras = ['  note: a[b', '  note: a{b', '  \u00a0#n: a"b'];
+    const twins = [];
+    for (const t of comparisonTexts().filter((x) => x.expected)) {
+      for (const extra of extras) {
+        twins.push({ parts: { ...t.parts, extra }, text: `${COMPARISON_HEAD}${extra}\n${t.body}`, expected: false });
+      }
+    }
+    assert.equal(twins.length, 810);
+    const mismatches = compareWithParser(root, twins);
+    assert.equal(mismatches.length, 0, mismatchMessage(mismatches));
+  });
+
   it("CTOC's own settings file reads as no misread and no overrides", () => {
     const text = fs.readFileSync(path.join(__dirname, '..', '.ctoc', 'settings.yaml'), 'utf8');
     assert.match(text, /^ {2}overrides: \{\}\r?$/m);
+    assert.deepEqual(yaml.load(text).regulatory_regime.overrides, {});
     const root = bareProject(null);
     fs.writeFileSync(path.join(root, '.ctoc', 'settings.yaml'), text);
     assert.equal(regime.misreadRegime(root), null);
@@ -620,6 +635,7 @@ describe('profiles shipped with the plugin (a project with no profile folder)', 
     [1, 'a comment after it', `${R}  overrides: {} # none\n`, false, null],
     [1, 'a sibling key under it', `${R}  overrides: {}\n  declined: true\n`, false, null],
     [1, 'a deeper comment line under it', `${R}  overrides: {}\n    # four_eyes_gate3: true\n`, false, null],
+    [1, 'before a block list of profiles', 'regulatory_regime:\n  overrides: {}\n  active_profiles:\n    - gdpr\n', false, null],
     [2, "CTOC's own block", 'regulatory_regime:\n  declined: true\n  active_profiles: []\n  overrides: {}\n', false, null],
     [3, 'a block that holds only the empty map', 'regulatory_regime:\n  overrides: {}\n', false, 'block'],
     [4, 'the bare key with nothing under it', `${R}  overrides:\n`, false, null],
@@ -641,6 +657,11 @@ describe('profiles shipped with the plugin (a project with no profile folder)', 
     [10, 'an escaped second key', `${R}  overrides: {}\n  "over\\x72ides":\n    four_eyes_gate3: true\n`, false, 'overrides'],
     [10, 'a star in another line', `${R}  note: a*b\n  overrides: {}\n`, false, 'overrides'],
     [10, 'a question-mark key in another line', `${R}  ? note\n  overrides: {}\n`, false, 'overrides'],
+    [11, 'a flow collection opened on another line', `${R}  note: [\n  overrides: {}\n  ,\nx: y]\n  overrides:\n    four_eyes_gate3: true\ntimezone: "UTC"\n`, true, 'overrides'],
+    [12, 'a bracket on a line led by a non-breaking space and a #', `${R}  \u00a0#n: [\n  overrides: {}\n  ,\nx: y]\n  overrides:\n    four_eyes_gate3: true\ntimezone: "UTC"\n`, true, 'overrides'],
+    [12, 'a double quote on a line led by a non-breaking space and a #', `${R}  \u00a0#n: "\n  overrides: {}\nx: y\n\u00a0#"\n  overrides:\n    four_eyes_gate3: true\ntimezone: "UTC"\n`, true, 'overrides'],
+    [13, 'inside a list item, a later item after it', 'regulatory_regime:\n  active_profiles:\n    - gdpr :\n      overrides: {}\n    - hipaa\n', false, 'overrides'],
+    [14, 'a next-line character (U+0085) in its comment', `${R}  overrides: {} #\u0085  overrides: {four_eyes_gate3: true}\n`, false, 'overrides'],
   ];
   for (const [row, spelling, text, whole, answer] of emptyMapTable) {
     it(`the empty overrides map, row ${row}, ${spelling}: misreadRegime is ${JSON.stringify(answer)}`, () => {
