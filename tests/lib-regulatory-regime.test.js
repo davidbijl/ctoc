@@ -509,11 +509,10 @@ describe('profiles shipped with the plugin (a project with no profile folder)', 
     }
   });
 
-  // An empty overrides map (`  overrides: {}`) is read as no overrides, under five conditions:
-  // the line is exactly the empty map, it is the block's only mention of overrides, nothing sits
-  // under it, the block holds no bare carriage return and no U+0085/U+2028/U+2029, and no line outside
-  // whole-line comments holds a character with which YAML can hide a key. Every readable text is
-  // compared with the real YAML parser (js-yaml, installed as a development dependency).
+  // An empty overrides map (`  overrides: {}`) is read as no overrides under conditions; the
+  // conditions are those of `overridesMisread`'s doc comment in src/lib/regulatory-regime.js.
+  // Every readable text is compared with the real YAML parser (js-yaml, installed as a
+  // development dependency).
   const COMPARISON_HEAD = 'regulatory_regime:\n  active_profiles: []\n';
   const COMPARISON_AFTER = [
     [],

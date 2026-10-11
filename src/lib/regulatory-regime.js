@@ -392,10 +392,10 @@ const INLINE_PROFILES_RE = /^ +active_profiles:[ \t]*\[[^[\]{}#]*\]/;
  * (space indentation, the key, spaces or tabs, `{}` with optional spaces or tabs inside, then
  * nothing or a `#` comment); (2) no other line outside whole-line comments holds the word
  * `overrides`; (3) the next line that is neither blank nor a comment, if any, is indented with
- * spaces only, no deeper, is not a `-` list item (else the profile list of
- * {@link parseRegimeBlock} ends at the empty map and drops the items after it), and does not
- * start with `,`, `]` or `}` (never valid in a block: such a line makes the empty map an entry
- * of a flow collection, opened before the header where this reader does not look); (4) the block
+ * spaces only, no deeper, and does not start with `-`, `,`, `]` or `}` after its indentation (a
+ * `-` item would end the profile list of {@link parseRegimeBlock} at the empty map and drop the
+ * items after it; `,`, `]` and `}`, never valid in a block, make the empty map an entry of a
+ * flow collection opened before the header, where this reader does not look); (4) the block
  * holds no bare carriage return and no U+0085, U+2028 or U+2029; (5) no line outside whole-line
  * comments holds a character with which YAML can hide a key ({@link HIDDEN_KEY_RE}), nor a `[` or
  * `{` other than the empty map's own and an `active_profiles` list closed on its line
@@ -447,7 +447,7 @@ function overridesMisread(blockBody) {
  *   empty map `overrides: {}` is read as no overrides when the five conditions of
  *   {@link overridesMisread} hold (exactly the empty map, the block's only mention of
  *   overrides outside whole-line comments, which have only spaces or tabs before the `#`;
- *   nothing under it, and no `-` list item, comma, `]` or `}` starting the line after it; no
+ *   nothing under it, and the line after it not starting with `-`, `,`, `]` or `}`; no
  *   bare carriage return or U+0085/U+2028/U+2029 in the block; no character that can hide a key and no `[` or `{`
  *   besides the empty map's and a closed inline `active_profiles` list), and as 'overrides'
  *   otherwise.
