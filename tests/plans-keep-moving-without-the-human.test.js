@@ -1747,6 +1747,7 @@ describe('a real project has no profile folder: the shipped profiles are read (c
     'a fresh project (an empty list with its comment)': `regulatory_regime:\n${INIT_LINE}`,
     'a declined regime': `regulatory_regime:\n  declined: true\n${INIT_LINE}`,
     'no regulatory_regime block at all': 'timezone: "UTC"\n',
+    "CTOC's own block (declined, an empty list, an empty overrides map)": 'regulatory_regime:\n  declined: true\n  active_profiles: []\n  overrides: {}\n',
   };
   for (const [label, text] of Object.entries(noRegime)) {
     it(`case 56 — guard, ${label}: both plans cross as today`, () => {

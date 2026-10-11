@@ -368,11 +368,39 @@ function unloadableProfiles(projectRoot) {
   return bad;
 }
 
+/** `overrides: {}`: space indentation, the key, the empty map, then nothing or a comment. */
+const EMPTY_OVERRIDES_RE = /^ +overrides:[ \t]+\{[ \t]*\}(?:[ \t]*$|[ \t]+#)/;
+/** A character with which YAML can write a key this reader cannot see (quoted, escaped, folded, merged, aliased). */
+const HIDDEN_KEY_RE = /["'\\&*<>|!%@`]|^\s*\?/;
+/** A whole-line comment: only spaces or tabs before the `#`, the only white space YAML has. */
+const COMMENT_LINE_RE = /^[ \t]*#/;
+/** The start of a flow collection, which YAML continues past a key at column 0 where this reader's block ends. */
+const FLOW_OPEN_RE = /[[{]/;
+/** An inline `active_profiles` list closed on its own line: the one flow collection, besides the empty map, a readable block may hold. */
+const INLINE_PROFILES_RE = /^ +active_profiles:[ \t]*\[[^[\]{}#]*\]/;
+
 /**
  * Does the `overrides:` map of a regime block hold anything {@link parseRegimeBlock} would
  * drop silently? Every non-blank, non-comment line indented under the header must be exactly
  * `<control>: true` or `<control>: false`, and the header itself must carry nothing after the
  * colon.
+ *
+ * One exception: the empty map, `overrides: {}`, is read as no overrides (not a misread) when
+ * all five conditions hold. A whole-line comment here has only spaces or tabs before its `#`
+ * ({@link COMMENT_LINE_RE}); a line led by any other white space, a non-breaking space for
+ * example, is not a comment to YAML and is read as a line. (1) The line is exactly the empty map
+ * (space indentation, the key, spaces or tabs, `{}` with optional spaces or tabs inside, then
+ * nothing or a `#` comment); (2) no other line outside whole-line comments holds the word
+ * `overrides`; (3) the next line that is neither blank nor a comment, if any, is indented with
+ * spaces only, no deeper, and does not start with `-`, `,`, `]` or `}` after its indentation (a
+ * `-` item would end the profile list of {@link parseRegimeBlock} at the empty map and drop the
+ * items after it; `,`, `]` and `}`, never valid in a block, make the empty map an entry of a
+ * flow collection opened before the header, where this reader does not look); (4) the block
+ * holds no bare carriage return and no U+0085, U+2028 or U+2029; (5) no line outside whole-line
+ * comments holds a character with which YAML can hide a key ({@link HIDDEN_KEY_RE}), nor a `[` or
+ * `{` other than the empty map's own and an `active_profiles` list closed on its line
+ * ({@link INLINE_PROFILES_RE}), since a flow collection continues past a key at column 0 where
+ * this reader's block ends. Every other form of the line keeps the rule above.
  * @param {string} blockBody
  * @returns {boolean}
  */
@@ -380,6 +408,15 @@ function overridesMisread(blockBody) {
   const lines = blockBody.split(/\r?\n/);
   const at = lines.findIndex((l) => /^\s+overrides:/.test(l));
   if (at === -1) return false;
+  if (EMPTY_OVERRIDES_RE.test(lines[at]) && !/\r(?!\n)|[\u0085\u2028\u2029]/.test(blockBody)
+      && !lines.some((l) => !COMMENT_LINE_RE.test(l) && HIDDEN_KEY_RE.test(l))
+      && !lines.some((l, i) => i !== at && !COMMENT_LINE_RE.test(l) && FLOW_OPEN_RE.test(l.replace(INLINE_PROFILES_RE, '')))) {
+    const other = lines.some((l, i) => i !== at && !COMMENT_LINE_RE.test(l) && l.includes('overrides'));
+    const rest = lines.slice(at + 1).filter((l) => l.trim() !== '' && !COMMENT_LINE_RE.test(l));
+    const lead = rest.length > 0 ? rest[0].match(/^\s*/)[0] : '';
+    return other || /[^ ]/.test(lead) || lead.length > lines[at].match(/^ */)[0].length
+      || (rest.length > 0 && /^\s*[-,\]}]/.test(rest[0]));
+  }
   if (!/^\s+overrides:[ \t]*$/.test(lines[at])) return true;
   const headerIndent = lines[at].match(/^\s*/)[0].length;
   for (let j = at + 1; j < lines.length; j++) {
@@ -406,7 +443,14 @@ function overridesMisread(blockBody) {
  *   a scalar) → 'required-controls';
  * - a second `regulatory_regime` block (the reader would take the first silently) → 'block';
  * - an `overrides` entry whose value is not exactly `true` or `false` (`True`, `yes`, a quoted
- *   or commented value, no value), or text after the `overrides:` header → 'overrides'.
+ *   or commented value, no value), or text after the `overrides:` header → 'overrides'; the
+ *   empty map `overrides: {}` is read as no overrides when the five conditions of
+ *   {@link overridesMisread} hold (exactly the empty map, the block's only mention of
+ *   overrides outside whole-line comments, which have only spaces or tabs before the `#`;
+ *   nothing under it, and the line after it not starting with `-`, `,`, `]` or `}`; no
+ *   bare carriage return or U+0085/U+2028/U+2029 in the block; no character that can hide a key and no `[` or `{`
+ *   besides the empty map's and a closed inline `active_profiles` list), and as 'overrides'
+ *   otherwise.
  *
  * No settings file, and a settings file with no `regulatory_regime` block, read as no regime.
  * A leading byte-order mark is ignored. Throws when the settings file exists but cannot be

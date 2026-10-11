@@ -758,6 +758,8 @@ describe('X5 — an unrecognised provenance is NOT the human', () => {
   //     and must carry `approved_by: 'human'`, as `backfillEntry` always writes it;
   //   - `approved_by: 'human'` with NO `backfilled` key must classify 'human';
   //   - `advanced_by: 'pipeline'` must classify 'pipeline' (the old sum admitted it);
+  //   - `advanced_by: 'sufficiency'` must classify 'sufficiency' (X6: the menu writes it when a
+  //     plan moves on its recorded evidence; owner-approved scope growth, 2026-10-11);
   //   - anything else is a mismatch (the old sum admitted no other kind either).
   function classificationMismatch(entry) {
     const kind = ledger.entryKind(entry);
@@ -771,6 +773,9 @@ describe('X5 — an unrecognised provenance is NOT the human', () => {
     }
     if (entry.advanced_by === 'pipeline') {
       return kind === 'pipeline' ? null : `advanced_by: pipeline but classifies as ${kind}`;
+    }
+    if (entry.advanced_by === 'sufficiency') {
+      return kind === 'sufficiency' ? null : `advanced_by: sufficiency but classifies as ${kind}`;
     }
     return `no recognised marker set (classifies as ${kind})`;
   }
@@ -799,7 +804,7 @@ describe('X5 — an unrecognised provenance is NOT the human', () => {
     // A floor that cannot pass on an empty set: both kinds must really be present.
     assert.ok(tally.backfilled >= 1, `no backfilled entry left: ${JSON.stringify(tally)}`);
     assert.ok(tally.human >= 1, `no human entry left: ${JSON.stringify(tally)}`);
-    assert.equal((tally.backfilled || 0) + (tally.human || 0) + (tally.pipeline || 0), files.length,
+    assert.equal((tally.backfilled || 0) + (tally.human || 0) + (tally.pipeline || 0) + (tally.sufficiency || 0), files.length,
       'every real entry must classify into a recognised kind');
   });
 
