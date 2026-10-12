@@ -26,8 +26,32 @@
  * instead of a 14-minute hang (and to keep any future regression from hanging the
  * whole suite) is to run the scan in a child process with a hard kill timeout: a
  * child that does not exit within the ceiling is KILLED and the test FAILS. Post-fix
- * the child exits in well under a second, so the ceiling is never approached and the
+ * the scan costs about 0.35 s of CPU time at 1 MiB and about 0.72 s at 2 MiB (medians
+ * of 10 runs, 2026-10-12, loadavg 15 to 19 on 18 cores), and the whole 2-MiB child
+ * exits in about 0.75 s of wall-clock time, so the ceiling is never approached and the
  * green suite pays nothing.
+ *
+ * WHY CPU TIME AND A RATIO (2026-10-12). Two wall-clock bounds in this file failed
+ * because of machine load, not because of the property they guard: the fixed 3-s bound
+ * on the 2-MiB scan took 11 to 12 s at a load well above 70 on 18 cores, and the
+ * old wall-clock ratio (`b < 3a + 400`) took about 2.2 s against about 0.8 s alone at a
+ * load average of 20, because the load changes between the two runs it compares. A scan
+ * waiting for a core is not a scan that costs more. So each child measures its own CPU
+ * time (user + system) around `analyzeExports` alone, and the test bounds (a) the ratio
+ * of the smallest 2-MiB scan to the smallest 1-MiB scan, and (b) each 2-MiB scan's CPU
+ * time against the old 3000 ms. Linear gives a ratio near 2 and quadratic near 4; the
+ * bound 2 * sqrt(2) is the geometric midpoint, the same factor away from both. The
+ * smallest of three samples is used because load only ever adds CPU time, so the minimum
+ * is the least load-biased estimate, and a real quadratic raises every sample, not one.
+ * The real scan measured 1.97 to 2.10 over 10 runs. A quadratic cost injected into a copy,
+ * equal to the whole linear scan at 1 MiB, measured 3.05 and failed this bound; a larger
+ * one fails the 3000 ms bound first, which is why both are asserted. CPU time is not
+ * fully load-free: in the full suite on 2026-10-12 it rose 1.3 to 1.5 times (enforcer
+ * 252 ms, 2-MiB scan 0.94 to 0.96 s), so check a failure under heavy load against the
+ * load first. The one bound that stays wall-clock is the 25-s kill: a busy synchronous
+ * regex can only be stopped from outside, so a load heavier than the one that took a
+ * 2-MiB scan 11 to 12 s could still kill a linear scan; the failure message then names
+ * the load average.
  */
 
 const { describe, it } = require('node:test');
@@ -42,14 +66,25 @@ const ROOT = path.resolve(__dirname, '..');
 const EXPORT_BASELINE = path.join(ROOT, '.ctoc', 'export-reachability-baseline.json');
 const FILE_BASELINE = path.join(ROOT, '.ctoc', 'reachability-baseline.json');
 
-// A linear scan of a 2-MiB single-char surface must finish in a fraction of a
-// second; the unbounded regex needed thousands of seconds for the same input.
-const BOUND_MS = 3000;
-// Hard ceiling on the child. Post-fix the child exits in <1 s so this is never
-// reached; pre-fix the child is KILLED here, turning a 14-min hang into a bounded
-// ~25-s RED.
+// Each 2-MiB scan's own CPU time (user + system, measured by the child around analyzeExports alone) must stay under
+// 3000 ms: the number the wall-clock bound used, now in CPU time so machine load does not count against it. It catches
+// a scan that stays linear while its cost per byte grows (a surface regex that backtracks a bounded but long way at
+// every position), which the ratio cannot see.
+const MAX_2MIB_CPU_MS = 3000;
+// Hard wall-clock ceiling on each child: the hang guard. A busy synchronous regex in a child can be stopped only from
+// outside, by a kill on a timer, so this one bound has to be wall-clock. Without load the 2-MiB child takes about
+// 0.75 s (median of 5 runs on 2026-10-12, at a load average of 14 to 15 on 18 cores: below the core count, not an idle
+// machine); at a load well above 70 on 18 cores it took 11 to 12 s (2026-10-12). Pre-fix the child is killed here,
+// turning a 14-minute hang into a bounded ~25-s failure.
 const HARD_TIMEOUT_MS = 25000;
 const MiB = 1 << 20;
+// Each scan's CPU time (user + system) is measured by the child itself around analyzeExports alone. CPU time, not
+// wall-clock: under machine load a scan waits for a core, so waiting for a core does not count against it.
+const RUNS_PER_SIZE = 3;
+// Linear: doubling the input doubles the CPU time (ratio about 2). Quadratic: it quadruples it (about 4). The bound is
+// the geometric midpoint 2 * sqrt(2), about 2.83, the same factor (sqrt(2)) away from both, because timing noise
+// multiplies rather than adds.
+const MAX_RATIO = 2 * Math.SQRT2;
 
 /** Build a temp corpus whose only instruction surface is one single-char skills file. */
 function makeSingleCharCorpus(sizeBytes) {
@@ -61,71 +96,81 @@ function makeSingleCharCorpus(sizeBytes) {
 
 /**
  * Run `analyzeExports(root)` in a child process, bounded by a hard kill timeout.
- * @returns {{ completed: boolean, elapsedMs: number|null, signal: string|null }}
- *   `completed` is true only when the child exited 0 within the ceiling; `elapsedMs`
- *   is the child's own measured scan time (excludes node startup).
+ * @returns {{ cpuMs: number|null, signal: string|null, status: number|null, error: string|null }}
+ *   `cpuMs` is the child's own CPU time (user + system) for the scan alone: it excludes Node's start-up and the
+ *   `require`. It is `null` when the child did not exit 0 without a signal or printed no figure. `error` is the
+ *   spawn error code (`ETIMEDOUT` when the ceiling killed the child), or `null`.
  */
 function runScanBounded(root) {
   const runner =
-    'const t = Date.now();' +
     'const { analyzeExports } = require(' + JSON.stringify(REACH) + ');' +
+    'const c0 = process.cpuUsage();' +
     'const r = analyzeExports(process.argv[1]);' +
-    'process.stdout.write("ELAPSED=" + (Date.now() - t) + " SC=" + r.surfaceCalled.length);';
+    'const c = process.cpuUsage(c0);' +
+    'process.stdout.write("CPU_US=" + (c.user + c.system) + " SC=" + r.surfaceCalled.length);';
   const res = spawnSync(process.execPath, ['-e', runner, root], {
     timeout: HARD_TIMEOUT_MS,
     killSignal: 'SIGKILL',
     encoding: 'utf8',
     maxBuffer: 64 * MiB
   });
-  const completed = res.status === 0 && res.signal === null;
-  let elapsedMs = null;
-  if (completed && typeof res.stdout === 'string') {
-    const m = res.stdout.match(/ELAPSED=(\d+)/);
-    if (m) elapsedMs = Number(m[1]);
+  let cpuMs = null;
+  if (res.status === 0 && res.signal === null && typeof res.stdout === 'string') {
+    // The whole output must be this one line. SC= (the number of call names the scan found) is printed so the
+    // scan's result is used, not just timed.
+    const m = res.stdout.match(/^CPU_US=(\d+) SC=\d+$/);
+    if (m) cpuMs = Number(m[1]) / 1000;
   }
-  return { completed, elapsedMs, signal: res.signal };
+  return { cpuMs, signal: res.signal, status: res.status, error: res.error ? res.error.code : null };
+}
+
+/** The machine's load, for a failure message: a scan killed at the wall-clock ceiling may be load, not backtracking. */
+function machineLoad() {
+  return process.platform === 'win32'
+    ? `Node reports no load average on Windows; ${os.cpus().length} cores`
+    : `load average ${os.loadavg()[0].toFixed(1)} on ${os.cpus().length} cores`;
 }
 
 describe('the dead-export fence scans a surface in LINEAR time (ReDoS guard)', () => {
-  it('a 2-MiB single-char surface is scanned within a strict bound (not minutes)', () => {
-    const root = makeSingleCharCorpus(2 * MiB);
+  it('doubling the input does not super-linearly increase the scan time', (t) => {
+    const roots = { '1 MiB': makeSingleCharCorpus(1 * MiB), '2 MiB': makeSingleCharCorpus(2 * MiB) };
+    const cpuMs = { '1 MiB': [], '2 MiB': [] };
     try {
-      const { completed, elapsedMs, signal } = runScanBounded(root);
-      assert.ok(
-        completed,
-        'analyzeExports did NOT complete on a 2-MiB single-char surface within ' +
-          `${HARD_TIMEOUT_MS} ms — it was killed (signal ${signal}). That is the O(n²) ` +
-          'ReDoS in SURFACE_CALL_RE: bound the identifier quantifier so the scan is linear.'
-      );
-      assert.ok(
-        elapsedMs !== null && elapsedMs < BOUND_MS,
-        `the scan took ${elapsedMs} ms, over the ${BOUND_MS} ms linear bound — the surface ` +
-          'regex is backtracking super-linearly on a long token run.'
-      );
+      for (let run = 0; run < RUNS_PER_SIZE; run++) {
+        for (const size of ['1 MiB', '2 MiB']) { // interleaved, so a change in load reaches both sizes alike
+          const r = runScanBounded(roots[size]);
+          assert.ok(r.error !== 'ETIMEDOUT',
+            `the ${size} scan was killed at the ${HARD_TIMEOUT_MS} ms wall-clock ceiling (signal ${r.signal}). ` +
+            'Either a surface regex backtracks super-linearly (the O(n^2) ReDoS in SURFACE_CALL_RE: bound the identifier ' +
+            `quantifier) or the machine is too loaded for even a linear scan to finish (${machineLoad()}).`);
+          assert.ok(r.signal === null,
+            `the ${size} scan was ended by signal ${r.signal} before the ${HARD_TIMEOUT_MS} ms ceiling (spawn error ` +
+            `${r.error}). Something outside the test stopped it; run it again.`);
+          assert.ok(r.status === 0,
+            `the ${size} scan crashed: the child exited with status ${r.status}${r.status === null ? ` (spawn error ${r.error})` : ''}. ` +
+            'analyzeExports threw, or the runner could not load reachability.js; run the runner by hand on the same corpus ' +
+            'to see the error.');
+          assert.ok(r.cpuMs !== null,
+            `the ${size} scan exited 0 but printed no CPU_US figure, so its CPU time is unknown and nothing can be bounded.`);
+          cpuMs[size].push(r.cpuMs);
+          if (size === '2 MiB') {
+            assert.ok(r.cpuMs < MAX_2MIB_CPU_MS,
+              `the 2-MiB scan used ${r.cpuMs.toFixed(1)} ms of CPU time, not under ${MAX_2MIB_CPU_MS} ms. The scan may ` +
+              'still be linear, but its cost per byte grew: a surface regex is backtracking a bounded but long way at ' +
+              'every position.');
+          }
+        }
+      }
+      // The smallest of each size's samples: load only ever adds CPU time, so the minimum is the least load-biased
+      // estimate, and a real quadratic raises every sample. Every 2-MiB scan is still bounded above, one by one.
+      const ratio = Math.min(...cpuMs['2 MiB']) / Math.min(...cpuMs['1 MiB']);
+      t.diagnostic(`scan CPU ms, 1 MiB: ${cpuMs['1 MiB'].join(', ')}; 2 MiB: ${cpuMs['2 MiB'].join(', ')}; ` +
+        `minimum ratio ${ratio.toFixed(2)} (bound ${MAX_RATIO.toFixed(2)})`);
+      assert.ok(ratio < MAX_RATIO,
+        `smallest CPU time of the 2-MiB scan over the smallest of the 1-MiB scan is ${ratio.toFixed(2)}, not under ${MAX_RATIO.toFixed(2)}: ` +
+        'the scan grows super-linearly (linear is about 2, quadratic about 4). A surface regex is backtracking on a long run.');
     } finally {
-      fs.rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  it('doubling the input does not super-linearly increase the scan time', () => {
-    const rootS = makeSingleCharCorpus(1 * MiB);
-    const root2S = makeSingleCharCorpus(2 * MiB);
-    try {
-      const a = runScanBounded(rootS);
-      const b = runScanBounded(root2S);
-      assert.ok(a.completed && b.completed,
-        'both scans must complete within the ceiling; a killed scan is the quadratic regression itself.');
-      // Linear ⇒ t(2S) ≈ 2·t(S). Quadratic ⇒ ≈ 4·t(S) (and in practice it blows the
-      // ceiling entirely, failing the assertion above). A generous constant + a fixed
-      // slack absorbs per-run timing noise while still catching a real super-linear.
-      assert.ok(
-        b.elapsedMs < 3 * a.elapsedMs + 400,
-        `t(2 MiB)=${b.elapsedMs} ms vs t(1 MiB)=${a.elapsedMs} ms — that ratio is super-linear; ` +
-          'a surface regex is backtracking quadratically on a long run.'
-      );
-    } finally {
-      fs.rmSync(rootS, { recursive: true, force: true });
-      fs.rmSync(root2S, { recursive: true, force: true });
+      for (const root of Object.values(roots)) fs.rmSync(root, { recursive: true, force: true });
     }
   });
 });

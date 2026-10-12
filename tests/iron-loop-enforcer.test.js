@@ -390,11 +390,45 @@ describe('iron-loop-enforcer — fast vs thorough modes', () => {
 });
 
 describe('iron-loop-enforcer — performance', () => {
-  it('fast mode completes in under 500ms on the live repo', () => {
-    const start = Date.now();
-    checkAllInvariants({ root: projectRoot, mode: 'fast' });
-    const elapsed = Date.now() - start;
-    assert.ok(elapsed < 500, `Fast mode took ${elapsed}ms, target < 500ms`);
+  // CPU time (user + system) is measured, not wall-clock, because wall-clock grows with machine load: on 2026-10-12 this
+  // call took about 2 s at a load well above 70 on 18 cores, and it used about 170 ms of CPU time (10 runs at a
+  // load average of 15 to 16). The budget is still 500 ms. CPU time is not fully load-free: in the full suite on
+  // 2026-10-12 it rose 1.3 to 1.5 times (enforcer 252 ms, 2-MiB scan 0.94 to 0.96 s), so check a failure under heavy
+  // load against the load first.
+  // CPU time cannot see waiting, so the same call also asserts that fast mode starts no child process and never sleeps:
+  // the seven child_process spawners and Atomics.wait are wrapped for that one call, as pass-throughs restored in
+  // `finally`. Limit: a wrapper sees a call only when it is made through the `child_process` module object at call time;
+  // a module that destructures `execFileSync` when it is loaded, before this case runs, would escape it. Today the one use
+  // in fast mode's files is src/lib/stale-detector.js (verifyStaleCandidate, outside fast mode's call path), which calls
+  // through the module object, and no module in fast mode's closure uses Atomics.
+  it('fast mode uses under 500ms of CPU time on the live repo and waits on no child process or sleep', (t) => {
+    const cp = require('node:child_process');
+    const SPAWNERS = ['exec', 'execFile', 'execFileSync', 'execSync', 'fork', 'spawn', 'spawnSync'];
+    const originals = new Map(SPAWNERS.map((name) => [name, cp[name]]));
+    const originalWait = Atomics.wait;
+    const waits = [];
+    let cpuMs;
+    let wallMs;
+    try {
+      // Installed inside the try, so `finally` restores from the originals captured above even if an install throws.
+      for (const [name, fn] of originals) {
+        cp[name] = function (...args) { waits.push(`child_process.${name}`); return fn.apply(this, args); };
+      }
+      Atomics.wait = function (...args) { waits.push('Atomics.wait'); return originalWait.apply(Atomics, args); };
+      const wall0 = Date.now();
+      const cpu0 = process.cpuUsage();
+      checkAllInvariants({ root: projectRoot, mode: 'fast' });
+      const used = process.cpuUsage(cpu0);
+      wallMs = Date.now() - wall0;
+      cpuMs = (used.user + used.system) / 1000;
+    } finally {
+      for (const [name, fn] of originals) cp[name] = fn;
+      Atomics.wait = originalWait;
+    }
+    t.diagnostic(`fast mode CPU time ${cpuMs.toFixed(1)} ms, wall-clock ${wallMs} ms (CPU budget 500 ms; wall-clock not asserted)`);
+    assert.deepEqual(waits, [],
+      `fast mode waited on ${waits.join(', ')}. CPU time cannot see a wait, so fast mode must start no child process and never sleep.`);
+    assert.ok(cpuMs < 500, `Fast mode used ${cpuMs.toFixed(1)} ms of CPU time, target < 500 ms`);
   });
 });
 
