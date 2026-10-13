@@ -1288,6 +1288,7 @@ finding):
     every run recorded and none repeated. Met when, in both pairs, the largest new file's
     processor time is at most 25% of the old file's. The earlier wall-clock pairs stay in the
     record unchanged beside the new ones.
+38. Built before its gates were crossed; the crossings were recorded afterwards on the owner's answer of 2026-10-13, 'Cross now, with a note'.
 
 ## What was not verified
 

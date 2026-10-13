@@ -1306,6 +1306,8 @@ code, ran its test green, and showed fixes 1 to 6, 8 and 9 red against a scratch
 fix reverted (fixes 7 and 10 to 13 are a test's reach, an ordering, a recorded field or a moved line
 that no test distinguishes, so no red run exists for them). This run finished no fix itself.
 
+47. Built before its gates were crossed; the crossings were recorded afterwards on the owner's answer of 2026-10-13, 'Cross now, with a note'.
+
 ## Verdict changes a user will see (added with decision 29)
 
 - A push whose project has a dependency with a critical (or high) advisory behind a lower FIRST

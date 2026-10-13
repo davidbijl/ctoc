@@ -685,6 +685,7 @@ facts, and read no web page.
     was regenerated from the plan by the same program as before (no constant retyped) and run
     against the files as they stood, red for each changed constant; then the files were changed
     by a script from the same printed text, and the test run green. A third round is not run.
+42. Built before its gates were crossed; the crossings were recorded afterwards on the owner's answer of 2026-10-13, 'Cross now, with a note'.
 
 ## What was not verified
 

@@ -312,6 +312,7 @@ Each criterion is a test or a recorded measurement that someone can run again.
 19. **Criterion 6 proves the end-of-file cleanup with a scratch copy that reports its own folder paths.** Reason: other worktrees run the same suite on this machine, so comparing the system temporary folder before and after a run would race with their folders; a path the run itself reported is unambiguous.
 20. **Criterion 26 checks the absence of the literal phrase "once at completion" in the executor file.** Reason: a literal absence check is binary and cannot misread; it keeps Step 8 from reintroducing the contradiction with Step 14.
 21. **The new local eslint check is numbered 14a.** Reason: the CTO Chief and the critic refer to criteria 15 to 36 by number; renumbering would break those references.
+22. Built before its gates were crossed; the crossings were recorded afterwards on the owner's answer of 2026-10-13, 'Cross now, with a note'.
 
 ## Findings outside this plan's goal (for the owner to schedule)
 
