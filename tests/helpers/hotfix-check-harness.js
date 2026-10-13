@@ -27,6 +27,9 @@ const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 
 const { route } = require('../../src/lib/menu-screens');
+// npm's own update check asks the npm registry; it is switched off for the npm this file starts
+// (plan the-test-suite-runs-faster-and-never-weaker-s2, criterion 21: tests never reach the registry).
+process.env.npm_config_update_notifier = 'false';
 
 const NODE = process.execPath;
 const STATUS_LINE = 'Checking the hotfix against the existing tests.';

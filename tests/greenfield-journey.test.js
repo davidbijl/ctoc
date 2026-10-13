@@ -84,6 +84,9 @@ const ledger = require('../src/lib/approval-ledger');
 const { validateReviewToDone } = require('../src/lib/plan-validator');
 const { readVerifyEvidence } = require('../src/lib/step-13-verify');
 const taskRegistry = require('../src/lib/task-registry');
+// npm's own update check asks the npm registry; it is switched off for the npm this file starts
+// (plan the-test-suite-runs-faster-and-never-weaker-s2, criterion 21: tests never reach the registry).
+process.env.npm_config_update_notifier = 'false';
 
 // ────────────────────────────────────────────────────────────────────────────────
 // THE HARNESS (local helpers) — real fs, real git, real subprocess. No mocks of core

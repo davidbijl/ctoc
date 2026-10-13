@@ -30,6 +30,9 @@ const {
   persistVerifyResult,
   readVerifyEvidence
 } = require('../src/lib/step-13-verify');
+// npm's own update check asks the npm registry; it is switched off for the npm this file starts
+// (plan the-test-suite-runs-faster-and-never-weaker-s2, criterion 21: tests never reach the registry).
+process.env.npm_config_update_notifier = 'false';
 
 describe('W05-s1 VERIFY evidence: persist and read', () => {
   let tempRoot;

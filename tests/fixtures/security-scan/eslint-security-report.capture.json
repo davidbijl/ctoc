@@ -1,0 +1,12 @@
+{
+  "command": "node <repository>/node_modules/eslint/bin/eslint.js --plugin security --format json .",
+  "workingFolder": "a new temporary folder outside the repository (the section 6 project of the plan), with node_modules/eslint-plugin-security a directory link to the repository's plugin",
+  "eslint": "9.39.4",
+  "eslint-plugin-security": "3.0.1",
+  "node": "v24.14.1",
+  "captured": "2026-10-12",
+  "exitCode": 1,
+  "configuration": "const security = require('eslint-plugin-security');\nmodule.exports = [{ files: ['**/*.js'], plugins: { security }, rules: { 'security/detect-eval-with-expression': 'error' } }];\n",
+  "index.js": "'use strict';\nfunction run(userInput) {\n  return eval(userInput);\n}\nmodule.exports = run;\n",
+  "note": "The capture folder's real path was replaced by the literal <PROJECT_ROOT> in every filePath, with the path separator that followed it kept as written, so no local path, user name or temporary-folder name is stored. Nothing else was edited."
+}

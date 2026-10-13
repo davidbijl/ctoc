@@ -28,6 +28,10 @@ const qualityAgent = require('../src/lib/quality-agent');
 const push = require('../src/commands/push');
 const { SASTRunner } = require('../src/lib/sast-runner');
 const { SecretsScanner } = require('../src/lib/secrets-scanner');
+// Taken at load, before any test reloads the fleet, so this is the same class the top-level
+// qualityAgent above uses (plan the-test-suite-runs-faster-and-never-weaker-s2, criteria 18 to 20).
+const { DependencyAuditor } = require('../src/lib/dependency-auditor');
+const { withClosedNpmRegistry } = require('./helpers/security-scan-fixtures');
 const { initProject } = require('../src/lib/init-project');
 
 function mkTmp(prefix) {
@@ -258,10 +262,10 @@ describe('DEPENDENCIES: a real vulnerable manifest produces a real signal (never
   let dir;
   before(() => {
     dir = mkTmp('ctoc-dep-');
-    // lodash 4.17.4 carries well-known advisories (prototype pollution). A real
-    // `npm audit` against this lockfile either surfaces the vulnerability (when
-    // the advisory DB is reachable) or reports a loud skip (when it is not) —
-    // both are correct; a silent clean pass on a known-vulnerable tree is not.
+    // lodash 4.17.4 carries well-known advisories (prototype pollution). The first test
+    // below parses a RECORDED real `npm audit` answer for this lockfile into a finding;
+    // the second starts the real installed npm against a closed local port and expects
+    // a loud skip. A silent clean pass on a known-vulnerable tree is wrong in both.
     fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({
       name: 'ctoc-dep-fixture', version: '1.0.0', dependencies: { lodash: '4.17.4' }
     }, null, 2), 'utf8');
@@ -282,8 +286,48 @@ describe('DEPENDENCIES: a real vulnerable manifest produces a real signal (never
   });
   after(() => rm(dir));
 
-  it('the dependency auditor runs in the live path and never silently swallows the result', async () => {
-    const res = await qualityAgent.runSecurityScan(null, { projectRoot: dir, allFiles: true });
+  it('a recorded real npm audit answer for lodash 4.17.4 surfaces as a dependency finding, and no real npm starts', async (t) => {
+    // The answer below is a real `npm audit --json` output captured once from this very lodash
+    // project (tests/fixtures/security-scan/, with the npm version and date beside it), handed to
+    // the auditor through the child-process seam. The recording covers the REPORT FORMAT: the
+    // parser is held on a real finding as npm worded it when it was captured. It says nothing
+    // about how the npm installed NOW behaves; the LIVE test right after this one covers only how
+    // the installed npm reports a registry it cannot reach, not the format of a report with findings.
+    const fixtureDir = path.join(__dirname, 'fixtures', 'security-scan');
+    const recording = fs.readFileSync(path.join(fixtureDir, 'npm-audit-lodash-4.17.4.json'), 'utf8');
+    const capture = JSON.parse(fs.readFileSync(path.join(fixtureDir, 'npm-audit-lodash-4.17.4.capture.json'), 'utf8'));
+    assert.match(capture.npm, /^\d+\.\d+\.\d+$/, 'the capture file must name the npm version that made the recording');
+    assert.match(capture.captured, /^\d{4}-\d{2}-\d{2}$/, 'the capture file must name the capture date');
+    assert.match(capture.recapture, /Redo this when npm's major version changes/,
+      'the capture file must say how and when to record the answer again');
+    const known = JSON.parse(recording).metadata.vulnerabilities;
+    assert.ok(known.critical + known.high >= 1, 'the recording must hold at least one critical or high advisory');
+
+    const shellStarts = [];
+    const fileStarts = [];
+    cp.execSync = (command, opts) => {
+      shellStarts.push({ command: String(command), cwd: opts && opts.cwd });
+      if (command === 'npm --version') return `${capture.npm}\n`;
+      if (String(command).startsWith('npm audit')) {
+        // npm audit exits 1 when it finds vulnerabilities and still prints its report.
+        throw Object.assign(new Error(`Command failed: ${command}`), { status: 1, stdout: recording });
+      }
+      throw new Error('not installed');
+    };
+    cp.execFileSync = (file) => {
+      fileStarts.push(file);
+      throw Object.assign(new Error(`spawn ${file} ENOENT`), { code: 'ENOENT' });
+    };
+    // secrets-scanner is not reloaded (RELOAD_PATHS), so its probes would otherwise start real programs.
+    t.mock.method(SecretsScanner.prototype, 'isToolAvailable', () => false);
+    let res;
+    try {
+      const qa = freshQualityAgent();
+      ({ res } = await captureLog(() => qa.runSecurityScan(null, { projectRoot: dir, allFiles: true })));
+    } finally {
+      restoreCp();
+    }
+
     const surfacedFinding = /dependency\[/.test(res.details);
     const loudSkip = res.skipped.some(s => /dependency audit skipped/i.test(s));
     assert.ok(
@@ -293,6 +337,66 @@ describe('DEPENDENCIES: a real vulnerable manifest produces a real signal (never
     );
     // Whatever happens, the scan must not crash and must return a well-formed result.
     assert.equal(typeof res.passed, 'boolean');
+    // Tighter than the two assertions above (which accepted a finding OR a skip): the recorded
+    // real answer must be parsed into a finding for lodash, with no skip, and block the push.
+    assert.match(res.details, /^dependency\[[A-Z]+\] lodash: /m, 'the recorded advisory must surface as a lodash finding');
+    assert.equal(loudSkip, false, `no dependency-audit skip may appear: ${JSON.stringify(res.skipped)}`);
+    assert.equal(res.passed, false, 'a known-vulnerable dependency must block the push');
+    // No real npm started, and every audit start is the exact command in the fixture folder.
+    const audits = shellStarts.filter(c => c.command.startsWith('npm audit'));
+    assert.ok(audits.length >= 1, 'the auditor must have asked for an audit');
+    for (const a of audits) {
+      assert.equal(a.command, 'npm audit --json');
+      assert.equal(a.cwd, dir);
+    }
+    t.diagnostic(`audit starts recorded: ${audits.length}; execFileSync starts: ${fileStarts.length}`);
+  });
+
+  it('LIVE, no internet: the real installed npm, pointed at a closed local port, makes the dependency audit skip loudly with no finding', async (t) => {
+    // The one deliberately live check (the owner's words: "keep one deliberately live check only if
+    // a real contract needs it, clearly marked"). The contract: how the INSTALLED npm reports a
+    // registry it cannot reach, and how the auditor reads that. npm is the only real process; the
+    // registry is a loopback port that this test opened and closed: npm's request goes to an address
+    // on this machine that refuses it, and reaches no registry (the debug log below shows npm tried it).
+    // The recording of the test above goes stale when npm changes its report format; this test
+    // is what notices a change in how npm reports an unreachable registry.
+    const realAuditorProbe = DependencyAuditor.prototype.isToolAvailable;
+    // yarn and pnpm absent, so a corepack shim cannot download them.
+    t.mock.method(DependencyAuditor.prototype, 'isToolAvailable', function (manager) {
+      return manager === 'npm' ? realAuditorProbe.call(this, manager) : false;
+    });
+    t.mock.method(SASTRunner.prototype, 'isToolAvailable', () => false);
+    t.mock.method(SCARunner.prototype, 'isToolAvailable', () => false);
+    t.mock.method(SecretsScanner.prototype, 'isToolAvailable', () => false);
+    const res = await withClosedNpmRegistry(async ({ cache, port }) => {
+      assert.equal(realAuditorProbe.call(new DependencyAuditor(dir), 'npm'), true,
+        'this live check needs the real installed npm');
+      const { res: scanned } = await captureLog(() =>
+        qualityAgent.runSecurityScan(null, { projectRoot: dir, allFiles: true }));
+      // npm really tried the closed address: its own debug log, written under the cache folder,
+      // names the refused connection. Without this, a skip for any other reason would pass.
+      const logDir = path.join(cache, '_logs');
+      const logs = fs.existsSync(logDir) ? fs.readdirSync(logDir).map(f => fs.readFileSync(path.join(logDir, f), 'utf8')).join('\n') : '';
+      assert.match(logs, /ECONNREFUSED/, `npm's debug log under <cache>/_logs/ must name the refused connection (${logs.length} bytes read)`);
+      assert.ok(logs.includes(`127.0.0.1:${port}`), `npm's debug log must name the closed address 127.0.0.1:${port}`);
+      return scanned;
+    });
+    // A diagnostic, not a failure: a different npm major on another machine is not a defect, but
+    // the recording of the test above was made by another major, so it may need to be recaptured
+    // (the steps are in the "recapture" field of the capture file).
+    const capturedMajor = JSON.parse(fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'security-scan', 'npm-audit-lodash-4.17.4.capture.json'), 'utf8')).npm.split('.')[0];
+    const installedMajor = cp.execSync('npm --version', { encoding: 'utf8' }).trim().split('.')[0];
+    if (installedMajor !== capturedMajor) {
+      t.diagnostic(`npm major differs: the recording was captured with npm ${capturedMajor}, this machine has npm ${installedMajor}; ` +
+        'see the "recapture" field of tests/fixtures/security-scan/npm-audit-lodash-4.17.4.capture.json');
+    }
+    t.diagnostic(`skipped: ${JSON.stringify(res.skipped)}`);
+    assert.ok(
+      res.skipped.some(s => /^dependency audit skipped \(npm\): /.test(s)),
+      `an unreachable registry must be a loud dependency-audit skip, never a clean pass: ${JSON.stringify(res.skipped)}`
+    );
+    assert.doesNotMatch(res.details, /dependency\[/, 'no dependency finding may appear without an answer from the registry');
   });
 });
 
@@ -485,9 +589,12 @@ describe('F1 — SCA coverage hole: a manager DependencyAuditor does NOT impleme
       }, null, 2), 'utf8');
       fs.writeFileSync(path.join(dir, 'index.js'), 'module.exports = 1;\n', 'utf8');
 
-      const { res, out } = await captureLog(() =>
+      // npm stays real but reaches no registry (a closed loopback port): this test is about SCA's
+      // deferral, and the real npm --version, yarn --version, pnpm --version and npm audit --json
+      // it starts would otherwise reach the registry (plan the-test-suite-runs-faster-and-never-weaker-s2).
+      const { res, out } = await withClosedNpmRegistry(() => captureLog(() =>
         qualityAgent.runSecurityScan(null, { projectRoot: dir, allFiles: true })
-      );
+      ));
 
       assert.equal(typeof res.passed, 'boolean');
       // SCA must NOT skip javascript — it is deferred to DependencyAuditor, not

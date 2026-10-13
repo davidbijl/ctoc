@@ -27,6 +27,7 @@ const {
   FRAMEWORK_PUBLIC_PREFIXES
 } = require('../src/lib/framework-security-checker');
 const qualityAgent = require('../src/lib/quality-agent');
+const { withClosedNpmRegistry } = require('./helpers/security-scan-fixtures');
 
 function mkTmp(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -542,7 +543,11 @@ describe('quality-agent integration: a NEXT_PUBLIC_*_SECRET bumps the HIGH tally
   after(() => rm(dir));
 
   it('runSecurityScan surfaces the client-exposed secret as HIGH and FAILS the gate', async () => {
-    const res = await qualityAgent.runSecurityScan(null, { projectRoot: dir, allFiles: true });
+    // npm stays real but reaches no registry (a closed loopback port): the package.json of this
+    // project makes the scan start the real npm (probes and the dependency audit), which would
+    // otherwise reach the registry (plan the-test-suite-runs-faster-and-never-weaker-s2).
+    const res = await withClosedNpmRegistry(() =>
+      qualityAgent.runSecurityScan(null, { projectRoot: dir, allFiles: true }));
     assert.ok(res.high >= 1, `client-exposed secret must bump the HIGH tally; got high=${res.high}`);
     assert.equal(res.passed, false, 'a HIGH finding must fail the security gate');
     assert.match(res.details, /framework-security\[HIGH\]/, 'the finding must be reported in details');

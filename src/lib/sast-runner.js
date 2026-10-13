@@ -85,12 +85,14 @@ const TOOL_CONFIGS = {
   },
   javascript: {
     primary: 'eslint',
-    command: 'npx eslint --plugin security --format json .',
+    // Descriptive only: nothing reads `command`; the scanned project's own eslint, started by
+    // the running Node program, never npx.
+    command: 'node <project eslint bin script> --plugin security --format json .',
     fallback: 'semgrep --config=p/javascript --json .'
   },
   typescript: {
     primary: 'eslint',
-    command: 'npx eslint --plugin security --format json .',
+    command: 'node <project eslint bin script> --plugin security --format json .',
     fallback: 'semgrep --config=p/typescript --json .'
   },
   go: {
@@ -108,6 +110,88 @@ const TOOL_CONFIGS = {
     command: 'semgrep --config=p/security-audit --config=p/owasp-top-ten --json .'
   }
 };
+
+/**
+ * Whether `child` lies strictly inside `parent`. Both are absolute real paths; a path on
+ * another drive (Windows) is never inside.
+ * @param {string} child
+ * @param {string} parent
+ * @returns {boolean}
+ */
+function isStrictlyInside(child, parent) {
+  const rel = path.relative(parent, child);
+  return rel !== '' && rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel);
+}
+
+/**
+ * The real path of the scanned project's own eslint bin script, found without starting a
+ * process, or null when the project has none.
+ *
+ * The search starts at the project folder's real path and goes upward, but only as far as the
+ * repository: it stops after the first folder that contains `.git` (a folder, or a file in a git
+ * worktree). With no `.git` on the way, the project folder alone is searched. A filesystem root
+ * is never searched, and on POSIX neither is any folder whose mode has the other-write bit (the
+ * shared temporary folder, say) nor anything above it: the walk stops before it, so a `.git` and
+ * a `node_modules/eslint` planted there by another local user count for nothing. That closes an
+ * eslint planted in `/node_modules`, `/tmp/node_modules` and the like for a project that has none.
+ * It does not close Windows, where fs.stat carries no access-control information (a folder such
+ * as `C:\Users\Public` looks like any other); there only the repository bound and the root rule
+ * apply. The project folder itself is asked too: one that anyone can write into finds no eslint.
+ * Within that
+ * reach, the first `<dir>/node_modules/eslint/package.json` that exists names the candidate
+ * package; no later level is tried. The candidate counts only when its bin script (`bin` as a
+ * string, or `bin.eslint`) lies inside the package folder: checked on the joined path first, so a
+ * path outside (a network path on Windows) is refused without being touched, then again on the
+ * real path, so a link out of the package is refused too. NODE_PATH, the global folders and the
+ * package's `exports` are never read, and where the package folder itself is linked from (pnpm's
+ * store, a linked node_modules) is not asked: whoever controls that link already controls the
+ * project's eslint configuration, which eslint runs as code. Anything else (no candidate,
+ * unreadable, malformed) is "not installed": the scan then skips loudly; it never fetches eslint
+ * from a registry.
+ * @param {unknown} projectRoot
+ * @returns {string|null}
+ */
+function findProjectEslintBin(projectRoot) {
+  if (typeof projectRoot !== 'string' || projectRoot.length === 0) return null;
+  try {
+    const start = safeFs.realpathSync(path.resolve(projectRoot));
+    /** @type {string[]} */
+    const levels = [];
+    let bounded = false;
+    for (let dir = start; path.dirname(dir) !== dir; dir = path.dirname(dir)) {
+      // A folder any local user can write into (as git does for its safe directories) is out of
+      // reach with everything above it: its `.git` and `node_modules` are whatever a stranger put
+      // there. Only the folders being climbed are asked, never where a link points. Windows has
+      // no such bit in fs.stat (a documented residual), so the rule applies on POSIX only.
+      if (process.platform !== 'win32' && (safeFs.statSync(dir).mode & 0o002) !== 0) break;
+      levels.push(dir);
+      if (safeFs.existsSync(path.join(dir, '.git'))) {
+        bounded = true;
+        break;
+      }
+    }
+    // With no repository on the way, the project folder alone; a filesystem root never.
+    const reach = bounded ? levels : levels.slice(0, 1);
+    const level = reach.find((dir) =>
+      safeFs.existsSync(path.join(dir, 'node_modules', 'eslint', 'package.json')));
+    if (level === undefined) return null;
+    const pkgDir = safeFs.realpathSync(path.join(level, 'node_modules', 'eslint'));
+    const manifest = JSON.parse(String(safeFs.readFileSync(path.join(pkgDir, 'package.json'), 'utf8')));
+    const bin = manifest && manifest.bin;
+    const rel = typeof bin === 'string' ? bin
+      : (bin && typeof bin.eslint === 'string' ? bin.eslint : null);
+    if (rel === null) return null;
+    const joined = path.resolve(pkgDir, rel);
+    if (!isStrictlyInside(joined, pkgDir)) return null;
+    const script = safeFs.realpathSync(joined);
+    return isStrictlyInside(script, pkgDir) ? script : null;
+  } catch {
+    // A folder that does not exist, an unreadable or malformed manifest, a bin script that
+    // does not exist: the project has no usable eslint. This is not a verdict on the code;
+    // the caller reports the scanner as not installed, loudly.
+    return null;
+  }
+}
 
 /**
  * SAST Runner class
@@ -129,6 +213,8 @@ class SASTRunner {
     };
     this.findings = [];
     this.errors = [];
+    /** @type {string|null|undefined} */
+    this._eslintBin = undefined;
   }
 
   /**
@@ -378,16 +464,31 @@ class SASTRunner {
   }
 
   /**
+   * The real path of this project's own eslint bin script, or null. Looked up once per
+   * scanner (findProjectEslintBin), so the availability probe and the run use the same
+   * project folder and the same script.
+   * @returns {string|null}
+   */
+  projectEslintBin() {
+    if (this._eslintBin === undefined) this._eslintBin = findProjectEslintBin(this.projectRoot);
+    return this._eslintBin;
+  }
+
+  /**
    * Check if a SAST tool is available
    * @param {string} tool - Tool name
    * @returns {boolean} True if tool is available
    */
   isToolAvailable(tool) {
+    // eslint is the scanned project's own install, found without starting a process. The old
+    // probe, `npx eslint --version`, ran in the process's working folder and, where eslint was
+    // missing, fetched it from the npm registry.
+    if (tool === 'eslint') return this.projectEslintBin() !== null;
+
     const checks = {
       semgrep: 'semgrep --version',
       bandit: 'bandit --version',
       gosec: 'gosec --version',
-      eslint: 'npx eslint --version',
       spotbugs: 'mvn --version'
     };
 
@@ -661,35 +762,47 @@ class SASTRunner {
   }
 
   /**
-   * Run ESLint with security plugins
+   * Run ESLint with its security plugin: the scanned project's own eslint bin script,
+   * started by the running Node program with an argument list and no command interpreter
+   * on every platform. Never npm, never npx, nothing fetched from a registry; on Windows no
+   * `.cmd` file is involved, so Node can start it without a command interpreter.
    */
   async runESLintSecurity() {
-    // M13 (cross-platform): invoke npx via an argument array with no shell, so
-    // there is no POSIX-only stderr redirect (the null device is absent on
-    // Windows) and no POSIX-only success-forcing shell operator. On Windows the
-    // npx launcher is named npx.cmd.
-    const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-    const args = ['eslint', '--plugin', 'security', '--format', 'json', '.'];
+    const bin = this.projectEslintBin();
+    if (bin === null) {
+      // Reached only by a direct caller: runLanguageScanner checks isToolAvailable first.
+      this.errors.push({ tool: 'eslint-security', error: 'eslint is not installed in this project' });
+      return;
+    }
+    const args = [bin, '--plugin', 'security', '--format', 'json', '.'];
 
     let out = '';
     try {
-      out = execFileSync(npx, args, {
+      out = execFileSync(process.execPath, args, {
         cwd: this.projectRoot,
         timeout: this.options.timeout,
         encoding: 'utf8',
-        // The stdio setting discards stderr without a shell redirect.
-        stdio: ['ignore', 'pipe', 'ignore']
+        // A large report is read, not turned into a skip: the limit semgrep has.
+        maxBuffer: 50 * 1024 * 1024,
+        // Standard error is piped, not shown: the first line of it explains a failed start.
+        stdio: ['ignore', 'pipe', 'pipe']
       });
     } catch (error) {
       // ESLint exits non-zero when it finds issues but still prints its JSON report
       // to stdout, which the error object carries. If there is no stdout, ESLint
       // ran but produced nothing usable (a crash / config error to stderr) — that
-      // is a scanner failure, recorded loudly (this method is only reached after
-      // isToolAvailable('eslint') already confirmed ESLint is installed). Mirrors
-      // runSemgrep's fail-closed shape.
+      // is a scanner failure, recorded loudly (the project's own eslint was found
+      // above, so it started), with the first line eslint wrote to its standard
+      // error so the cause reads in plain words. Mirrors runSemgrep's fail-closed shape.
       out = (error && error.stdout) ? String(error.stdout) : '';
       if (!(out && out.trim())) {
-        this.errors.push({ tool: 'eslint-security', error: error.message });
+        // eslint's own text is data: control characters are removed and the line is capped.
+        const clean = (text) => text.replace(/[\u0000-\u001f\u007f-\u009f]/g, '').trim().slice(0, 300);
+        const said = String((error && error.stderr) || '').split(/[\r\n]+/).map(clean).find((l) => l !== '');
+        this.errors.push({
+          tool: 'eslint-security',
+          error: said ? `${said} (${clean(String(error.message).split('\n')[0])})` : error.message
+        });
         return;
       }
     }

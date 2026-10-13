@@ -756,7 +756,7 @@ class DependencyAuditor {
     //       that verified nothing. Every remaining entry is also abandoned.
     //   (b) STRING-only via → `typeof 'lodash' === 'object'` is false → the entry was
     //       SKIPPED, silently dropping a real (possibly CRITICAL) advisory.
-    // Fix: index safely, prefer the first OBJECT advisory for its rich fields, and when
+    // Fix: index safely, prefer the most severe OBJECT advisory for its rich fields, and when
     // there is none still record the vuln from the entry's own severity/range/name.
     // A per-entry try/catch records a LOUD error instead of letting one malformed entry
     // nuke the whole report.
@@ -764,14 +764,29 @@ class DependencyAuditor {
       for (const [name, vuln] of Object.entries(data.vulnerabilities)) {
         try {
           const via = Array.isArray(vuln.via) ? vuln.via : [];
-          const advisory = via.find(v => v && typeof v === 'object');
+          // The severity is the package's HIGHEST, never the first advisory's: npm lists a
+          // package's advisories in no severity order, and its own package-level `severity`
+          // is their maximum. Taking the first one passed a push with a known critical
+          // dependency behind a lower first advisory. The advisory that sets the severity
+          // also supplies the finding's title and fields (the first of equals).
+          const rank = [SEVERITY.INFO, SEVERITY.LOW, SEVERITY.MODERATE, SEVERITY.HIGH, SEVERITY.CRITICAL];
+          const higher = (a, b) => (rank.indexOf(b) > rank.indexOf(a) ? b : a);
+          const severityOf = (advisory) => this.mapNpmSeverity(advisory.severity || vuln.severity);
+          const advisories = via.filter(v => v && typeof v === 'object');
+          const advisory = advisories.reduce((top, next) =>
+            (higher(severityOf(top), severityOf(next)) === severityOf(top) ? top : next), advisories[0]);
           if (advisory) {
+            const severity = higher(vuln.severity ? this.mapNpmSeverity(vuln.severity) : SEVERITY.INFO, severityOf(advisory));
+            // When npm's package-level severity outranks every object advisory, it came
+            // through a dependency that `via` lists by name: say so in the title.
+            const through = via.filter(v => typeof v === 'string');
+            const outranked = severity !== severityOf(advisory) && through.length > 0;
             this.vulnerabilities.push({
               manager: 'npm',
               package: name,
               version: vuln.range || vuln.version,
-              severity: this.mapNpmSeverity(advisory.severity || vuln.severity),
-              title: advisory.title || vuln.name,
+              severity,
+              title: (advisory.title || vuln.name) + (outranked ? ` (through ${through.join(', ')})` : ''),
               description: advisory.overview || advisory.title,
               cve: advisory.cve || null,
               cwe: advisory.cwe || null,
@@ -989,7 +1004,12 @@ class DependencyAuditor {
       low: SEVERITY.LOW,
       info: SEVERITY.INFO
     };
-    return map[severity?.toLowerCase()] || SEVERITY.MODERATE;
+    // A severity that is not a string (a number, an object) is not a label npm uses. It goes
+    // through the CVSS bands, the same never-under-report rule as the other managers (a score of
+    // 9.8 is CRITICAL; null or an object with no score stays MODERATE), and never throws, so the
+    // package entry is not lost.
+    if (typeof severity !== 'string') return this.mapCvssOrLabel(severity);
+    return map[severity.toLowerCase()] || SEVERITY.MODERATE;
   }
 
   /**

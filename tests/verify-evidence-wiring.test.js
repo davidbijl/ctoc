@@ -24,6 +24,9 @@ const path = require('node:path');
 
 const actions = require('../src/lib/actions');
 const { verifyEvidencePath, readVerifyEvidence } = require('../src/lib/step-13-verify');
+// npm's own update check asks the npm registry; it is switched off for the npm this file starts
+// (plan the-test-suite-runs-faster-and-never-weaker-s2, criterion 21: tests never reach the registry).
+process.env.npm_config_update_notifier = 'false';
 
 // The nine Iron Loop execution steps (labels are mandatory / validated).
 const STEPS = [

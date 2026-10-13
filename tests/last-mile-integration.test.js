@@ -19,6 +19,9 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { runVerify } = require('../src/lib/step-13-verify');
+// npm's own update check asks the npm registry; it is switched off for the npm this file starts
+// (plan the-test-suite-runs-faster-and-never-weaker-s2, criterion 21: tests never reach the registry).
+process.env.npm_config_update_notifier = 'false';
 
 const projects = [];
 function makeProject(prefix) {

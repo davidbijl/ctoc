@@ -30,6 +30,9 @@ const BASH_HOOK = path.join(REPO, 'src', 'hooks', 'PreToolUse.Bash.js');
 const GUARD_FILES_HOOK = path.join(REPO, 'src', 'hooks', 'guard-files.js');
 const STOP_GATE_HOOK = path.join(REPO, 'src', 'hooks', 'stop-test-gate.js');
 const stateManager = require(path.join(REPO, 'src', 'lib', 'state-manager'));
+// npm's own update check asks the npm registry; it is switched off for the npm this file starts
+// (plan the-test-suite-runs-faster-and-never-weaker-s2, criterion 21: tests never reach the registry).
+process.env.npm_config_update_notifier = 'false';
 
 // ─────────────────────────────────────────────────────────────────────
 //  Hermetic project + signed-state harness (mirrors security-bash-hook.test)
