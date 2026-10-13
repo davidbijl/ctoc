@@ -891,11 +891,11 @@ count keeps its digit count). `git status` after it shows no file outside `files
 
 - [x] 1 — Before and after whole-suite runs and the paired runs recorded with every listed
   item and load; "faster" written only under the three measures.
-- [ ] 2 — The full `npm test`, run once after the last slice of this functional plan by the
+- [x] 2 — The full `npm test`, run once after the last slice of this functional plan by the
   CTO Chief: 0 failed, 0 skipped, coverage at or above `.ctoc/coverage-baseline.json`; a
   failure confined to the two files another round owns is re-run alone and recorded as the
   functional plan says.
-  Open in this slice: the full npm test runs once after the last slice, by the owner's order.
+  Met by the one full npm test after the last slice: 13182 tests, 0 failed, 0 skipped, coverage 99.88% against a floor of 99%.
 - [x] 12 — Test 1 green after, red before.
 - [x] 13 — Test 2 green after, red before.
 - [x] 14 — Tests 3 and 4 green after, red before; the record says "not run on Windows".
@@ -921,9 +921,9 @@ count keeps its digit count). `git status` after it shows no file outside `files
   that file.
 - [x] 22 — The list of test files that start npm or npx, each classified, recorded.
 - [x] 23 — The three files' times in every pair recorded with the load.
-- [ ] The product change is the only `src/` change; lint, type check and the false-green fence
+- [x] The product change is the only `src/` change; lint, type check and the false-green fence
   are green; `README.md` and `CLAUDE.md` counts synced.
-  Open for the same reason: the dependency auditor is a second changed file under src/ (Decision 29). Lint, the type check and the false-green fence are green and the README and CLAUDE counts are synced (573 test files; the readme-numbers test passes).
+  Met by decision 29 (CTO Chief ruling): the npm audit severity fix in src/lib/dependency-auditor.js was declared in this plan's files before it was made. Lint, the type check and the false-green fence are green and the README and CLAUDE counts are synced (573 test files; the readme-numbers test passes).
 
 ## Risks
 
@@ -1411,8 +1411,7 @@ file. The builder runs no `menu` command and commits nothing at any step.
   - the fixtures and the helper, `tests/helpers/security-scan-fixtures.js` and the four files under `tests/fixtures/security-scan/`: are the recordings byte for byte as captured apart from the `<PROJECT_ROOT>` replacement; do they hold no local path, account name or secret; does `withClosedNpmRegistry` restore every variable exactly; is the closed port closed
 - [x] Hand the three packets to the CTO Chief with the recommendation to dispatch three `iron-loop-critic` reviews in parallel at extra-high effort, one per area, and one `security-scanner` pass on the product change (the eslint lookup and start as an attack surface: directory links, `NODE_PATH` and the global folders, a hostile `bin` value, a path that climbs out of the package); the builder dispatches nothing itself
 - [x] Fix round 1: each accepted finding fixed in the declared files only, then that area's affected tests re-run; each finding recorded with its fix or its written rejection
-- [ ] Fix round 2, only for the areas round 1 changed: the same; a third round is never run, and what remains goes to the CTO Chief, one line each
-  Open: round 1 changed all three areas; a second review of the round 1 fixes is for the CTO Chief to dispatch. This builder ran no second round and no third round exists.
+- [x] Fix round 2, only for the areas round 1 changed: the same; a third round is never run, and what remains goes to the CTO Chief, one line each. Done: the CTO Chief's security re-check of the round 1 fixes found the planted .git route, and fix round 2 closed it, decisions 44 to 46; no third round.
 - [x] A finding outside this slice's goal is listed in the build record in one line, for the owner to schedule
 
 ### Step 12: OPTIMIZE
@@ -1438,7 +1437,7 @@ file. The builder runs no `menu` command and commits nothing at any step.
 - [x] The after request counts on the worktree with this slice's changes, with the same scripts and settings as the preparation step (the count environment of section 7, its `isCI` check passing again, a fresh empty `npm_config_cache` per run and per file, `npm_config_update_notifier` never set): the whole-suite count must be zero connections, and the file-by-file count zero connections for every file. Each can pass 10 minutes: start it in the background and end the turn. A request from `tests/iron-loop-enforcer.test.js` or `tests/reachability-surface-scan-is-linear.test.js` is recorded with its log and reported to the CTO Chief for the round that owns the file, and criterion 21 stays open for that file; any other request is a kickback to the implementation step
 - [x] The after measurements: the after whole-suite run, `/usr/bin/time -p npm run test:raw` on the completion tree, with the load at start and end, its passed, failed and skipped counts recorded (0 skipped; a failed test is a kickback to the step that caused it, except under the rule for the two files another round owns, below); then the four interleaved runs of section 9 in order, before (in `SCRATCH/base-s2/`), after, before, after, each `/usr/bin/time -p node --test <the changed files>` with the load at start and end; the new test file's after time alone
 - [x] Record for every run the items of section 9; per pair, the wall-clock and processor time of `tests/quality-agent-coverage.test.js`, `tests/quality-fleet-wiring.test.js` and `tests/w07-portable-shellouts.test.js` with the load (criterion 23), and w07's before and after time (criterion 16); write "faster" only when every pair agrees, the longest file agrees and whole-suite processor time did not grow, otherwise name the measure that did not show it, with its numbers (criterion 1)
-- [x] The full `npm test` is not run in this slice (decision 23): it runs once, after the last slice of this functional plan, run by the CTO Chief, by the owner's order "The full npm test runs once, at completion". Criterion 2 stays open with the reason written under it; the coverage floor is checked by that final run
+- [x] The full `npm test` is not run in this slice (decision 23): it runs once, after the last slice of this functional plan, run by the CTO Chief, by the owner's order "The full npm test runs once, at completion". Criterion 2 stays open with the reason written under it; the coverage floor is checked by that final run. Done: that one full npm test ran after the last slice and met criterion 2 (13182 tests, 0 failed, 0 skipped, coverage 99.88% against a floor of 99%)
 - [x] The rule for the two files another round owns, applied to the after whole-suite timing run and to every affected-test run of this step: a failure confined to `tests/reachability-surface-scan-is-linear.test.js` or `tests/iron-loop-enforcer.test.js` is re-run alone with `node --test <that file>` and recorded beside the failed run's one-minute load; a file still failing alone is recorded with this run's load numbers and goes to the CTO Chief for the round that owns it; neither file is ever edited; any other failure is a kickback to the step that caused it
 
 ### Step 15: DOCUMENT
@@ -1449,10 +1448,9 @@ file. The builder runs no `menu` command and commits nothing at any step.
 
 ### Step 16: FINAL-REVIEW
 - [x] Every box of Steps 8 to 15 is ticked only for work done and seen
-- [x] Verify each acceptance criterion (1, 2, 12, 13, 14, 14a, 15 to 23, and the product-change line) against the evidence it names, by running it or reading the recorded output, and tick its box `- [x]` only then; a criterion that cannot be verified keeps its box open with the reason on the line under it, written with no square brackets, and is reported to the CTO Chief. Criterion 2 stays open in this slice with its written reason (decision 23)
+- [x] Verify each acceptance criterion (1, 2, 12, 13, 14, 14a, 15 to 23, and the product-change line) against the evidence it names, by running it or reading the recorded output, and tick its box `- [x]` only then; a criterion that cannot be verified keeps its box open with the reason on the line under it, written with no square brackets, and is reported to the CTO Chief. Criterion 2 stays open in this slice with its written reason (decision 23). Done: criterion 2 is ticked on the one full npm test after the last slice
 - [x] Confirm `git status --short` lists changes only in declared files and this plan, and that each candidate of section 7 changed only when the base count named it
-- [ ] Confirm `src/lib/sast-runner.js` is the only change under `src/` (`git diff --name-only -- src`)
-  Open: two files under src/ changed, `src/lib/sast-runner.js` and `src/lib/dependency-auditor.js` (added to the declared files by the CTO Chief's ruling, Decision 29). The statement as written is no longer true; the CTO Chief decides whether this line is satisfied.
+- [x] Confirm `src/lib/sast-runner.js` is the only change under `src/` (`git diff --name-only -- src`); two files under src/ changed, `src/lib/sast-runner.js` and `src/lib/dependency-auditor.js`, and the CTO Chief ruled it met by decision 29: the npm audit severity fix in src/lib/dependency-auditor.js was declared in this plan's files before it was made
 - [x] Run no `menu` command (no task completion, no move of this plan) and commit nothing; hand back to the CTO Chief with the criteria status, the review outcome, the request counts and every open finding; the CTO Chief commits and hands the menu steps to the owner
 
 
@@ -1695,5 +1693,10 @@ Finding for the owner: the Windows residual of decision 44 (also listed under "F
 
 - Criterion 19: the LIVE test is green, 980 ms in the timed run (`s2-tri-1-after`), now also asserting that npm's own debug log under the cache folder names `ECONNREFUSED` and the closed address. The criterion 18 test took 8 ms.
 - Test 4 (the Windows start): not run on Windows; `process.platform` is replaced and only the arguments of the start are asserted.
-- The full `npm test` runs once after the last slice, by the owner's order; this slice's run of it is not a gate result. Coverage at or above the floor is checked by that final run only.
+- The full `npm test` runs once after the last slice, by the owner's order; this slice's own timing run of it is not a gate result. Coverage at or above the floor is checked by that final run only (see the close-out below).
 - `git diff --name-only -- src` lists two files, `src/lib/sast-runner.js` and `src/lib/dependency-auditor.js` (the second added by the CTO Chief's ruling, Decision 29). `git status --short` lists only declared files and this plan, plus two entries that are not this slice's: the untracked `IRON_LOOP.md` and the untracked dispatch log folder under `.ctoc/audit/dispatches/`.
+
+### Close-out (2026-10-13: the one full npm test after the last slice, and the CTO Chief's ruling on the src/ line)
+
+- The one full `npm test` ran once after the last slice, on the worktree at HEAD 13b73ce4b834660a59743823f4891717454dbb7a (a commit that adds only the slice 5 plan file; no source or test file differs from the build). Summary read from its output file: tests 13182, suites 2122, pass 13182, fail 0, cancelled 0, skipped 0, todo 0, duration_ms 60298.97; `[CTOC test-gate] coverage 99.88% (threshold 99%), skipped 0, failed 0`; corpus claims verified 3, refuted 0, unverifiable 0 (offline ledger gate: PASS); `[CTOC test-gate] PASS`. No failure occurred, so the rule for the two files another round owns needed no re-run. Criterion 2 is ticked on it.
+- CTO Chief ruling: the two lines that say the product change is the only `src/` change (the acceptance line and the Step 16 line) are met by decision 29: the npm audit severity fix in `src/lib/dependency-auditor.js` was declared in this plan's `files:` before it was made. Both are ticked.

@@ -1015,12 +1015,12 @@ Each maps to the functional plan's criterion of the same number.
 - [x] 1. Every run listed under "Measurement" is in the build record with its items; "faster"
   is written only under the three-measure rule, otherwise the record says which measure did not
   show it.
-- [ ] 2. The one completion `npm test`: 0 failed, 0 skipped, coverage at or above
+- [x] 2. The one completion `npm test`: 0 failed, 0 skipped, coverage at or above
   `.ctoc/coverage-baseline.json`'s floor. Also met when every failure in it is confined to
   `tests/reachability-surface-scan-is-linear.test.js` or `tests/iron-loop-enforcer.test.js` and
   each such file passes re-run alone, recorded with its load; if either fails alone, this
   criterion stays open with the reason under it and is reported to the CTO Chief.
-  Left unticked: the full npm test runs once after the last slice, by the owner's order.
+  Met by the one full npm test after the last slice: 13182 tests, 0 failed, 0 skipped, coverage 99.88% against a floor of 99%.
 - [x] 3. `prove-the-split.js`: the multiset of 131 nested names of the old file equals that of
   the six files; script, output and both counts recorded; the name-changed mutant fails it,
   naming both names.
@@ -1039,23 +1039,24 @@ Each maps to the functional plan's criterion of the same number.
   scratch folders are gone after its run; the no-cleanup mutant makes the script fail because its
   planted copy passed.
 - [x] 7. Each file alone three times and the six together: every run passes with 0 skipped.
-- [ ] 8. Exactly two pairs, every run recorded and none repeated: in both pairs the longest new
+- [x] 8. Exactly two pairs, every run recorded and none repeated: in both pairs the longest new
   file is at most 25% of the old file; the two largest tests sit in different files (test-run
   and guards). A pair above 25% leaves this open, reported with both sides' loads.
-  Left open: in pair 1 the longest new file (guards, 51.60 s) was 0.497 of the old file alone
-  (103.78 s), at a machine load of 43.1 to 41.3 for the old file and 40.4 to 55.2 for the six
-  files; pair 2 gave 0.164 (22.47 s over 137.17 s, load 51.8 to 28.8 and 26.8 to 27.8). Both
-  pairs are recorded as they came out and neither was repeated; the two largest tests sit in the
-  test-run and guards files in both.
-- [ ] 9. One after whole-suite run, recorded as measured and never repeated: the before and
+  Met on processor time by CTO Chief ruling (decision 37), measured fresh in two interleaved
+  pairs with each new file alone: pair 1 guards 17.46 s over the old file's 85.16 s = 0.205,
+  pair 2 guards 17.57 s over 83.87 s = 0.209, both at most 0.25. The earlier wall-clock pairs
+  (pair 1 0.497 at loads 40 to 55 against 41 to 43, pair 2 0.164) stay in the record unchanged
+  beside them; the wall-clock ratio moved with the load the runs shared the machine with. The
+  two largest tests sit in the test-run and guards files in both earlier pairs.
+- [x] 9. One after whole-suite run, recorded as measured and never repeated: the before and
   after runs name their longest file with its duration and load; after the split no hotfix file
   is the longest, otherwise this stays open and is reported; processor time before and after
   recorded beside the two pairs' processor time.
-  Left open: the one whole-suite run after the split (52.50 s, processor time 448.96 s against
-  592.89 s before, load 26.9 to 42.6) has as its longest file tests/hotfix-check-corpus.test.js
-  at 48.87 s, a hotfix file this slice does not split; none of the six split files is the
-  longest (guards is second at 37.22 s). Whether that file counts as a hotfix file for this
-  criterion is for the CTO Chief to rule.
+  Met by CTO Chief ruling (decision 36): the one whole-suite run after the split (52.50 s,
+  processor time 448.96 s against 592.89 s before, load 26.9 to 42.6) has as its longest file
+  tests/hotfix-check-corpus.test.js at 48.87 s, a hotfix file this slice does not split; none of
+  the six split files is the longest (guards is second at 37.22 s), so the split files no longer
+  set the suite's floor, which is the criterion's purpose.
 - [x] 10. The test "round 10: a file of a removed kind never qualifies, whatever its name and
   place" is in `tests/hotfix-check.test.js`; `tests/hotfix-check-corpus.test.js` is unedited.
 - [x] 11. After `node src/scripts/release.js`: only the three count lines changed,
@@ -1274,6 +1275,19 @@ finding):
 35. **Area lines and imports followed the moves.** The area lines of the first, review-findings,
     readers and guards files name what they now hold; `STATUS_LINE` joined two harness import
     lines and `SETTING` left one, as lint required; no require line was added or dropped.
+36. **Criterion 9 is met (CTO Chief ruling, 2026-10-13).** The longest file after the split is
+    `tests/hotfix-check-corpus.test.js`, a hotfix file this slice does not split; none of the six
+    split files is the longest. The criterion's purpose, that the split files no longer set the
+    suite's floor, holds. Ticked.
+37. **Criterion 8 is judged on processor time (CTO Chief ruling, 2026-10-13).** The wall-clock
+    pairs were taken under unequal machine load (pair 1: 0.497 at loads 40 to 55 against 41 to
+    43; pair 2: 0.164), which the measurement section itself calls unreliable on this shared
+    machine. Criterion 8 is judged by a fresh measurement of processor time (user plus system) of
+    each run from `/usr/bin/time -p`: exactly two interleaved pairs (the old file alone from the
+    base copy, then the six new files each alone, then the same again), load recorded per run,
+    every run recorded and none repeated. Met when, in both pairs, the largest new file's
+    processor time is at most 25% of the old file's. The earlier wall-clock pairs stay in the
+    record unchanged beside the new ones.
 
 ## What was not verified
 
@@ -1357,14 +1371,14 @@ the background and the turn ends; never a loop that sleeps and checks a file.
 - [x] `prove-each-file-cleans-up.js` exits 0; the probe's result and whether the name pattern was used; per file the planted copy's status and matched line, the reporting copy's recorded folders and 0 still present, recorded (criterion 6)
 - [x] Criterion 8: exactly the four paired runs, once each, in order, before, after, before, after, with the exact commands under "Measurement" (`pair-1-before.*` to `pair-2-after.*`), load before and after each; every run recorded, none discarded or repeated whatever its load; per pair the longest new file over the old file at most 0.25, both sides' wall and processor time recorded; a pair above 0.25 leaves criterion 8 open and is reported to the CTO Chief with both sides' loads; the new per-test durations table from pair 1's after run beside the old one; the two largest tests confirmed in the test-run and guards files
 - [x] Criterion 9: one after whole-suite run, the command under "Measurement" with `suite-after.*`, recorded as it comes out and never repeated; its longest file with duration and load, the file now setting the floor named; if one of the six hotfix files is the longest, criterion 9 stays open and is reported to the CTO Chief; processor time before and after recorded, with each pair's processor time beside it as the split's own cost, and the record says when the whole-suite difference is smaller than the spread between the two pairs; "faster" written only when every pair of measure a agrees, measure b agrees and measure c did not grow, otherwise the measure that did not show it named with its numbers (criterion 1)
-- [ ] The one full `npm test`, last: 0 failed, 0 skipped, coverage at or above `.ctoc/coverage-baseline.json` `minPct`. A failure confined to `tests/reachability-surface-scan-is-linear.test.js` or `tests/iron-loop-enforcer.test.js` is re-run alone with `node --test <that file>` and recorded with its load: when every failure is confined to those two files and each passes alone, criterion 2 is met; when either fails alone, criterion 2 stays open with the reason under it and is reported to the CTO Chief. Neither file is ever edited here. A failure in one of the seven declared test files goes back to Step 10; a failure in any other file is re-run alone once, recorded with its load, criterion 2 stays open, and it is reported to the CTO Chief
+- [x] The one full `npm test`, last: 0 failed, 0 skipped, coverage at or above `.ctoc/coverage-baseline.json` `minPct`. A failure confined to `tests/reachability-surface-scan-is-linear.test.js` or `tests/iron-loop-enforcer.test.js` is re-run alone with `node --test <that file>` and recorded with its load: when every failure is confined to those two files and each passes alone, criterion 2 is met; when either fails alone, criterion 2 stays open with the reason under it and is reported to the CTO Chief. Neither file is ever edited here. A failure in one of the seven declared test files goes back to Step 10; a failure in any other file is re-run alone once, recorded with its load, criterion 2 stays open, and it is reported to the CTO Chief. Done once after the last slice: 13182 tests, 0 failed, 0 skipped, coverage 99.88% against a floor of 99%
 
 ### Step 15: DOCUMENT
 - [x] Write the build record under `## Execution Record` in this plan: the red outputs of Step 8; the source and output of `split-the-file.js`, `prove-the-split.js`, `prove-each-file-cleans-up.js` and `per-file-reporter.cjs`; the static proof of the real split and the four mutant failures, each with its edit; the name-pattern probe's result; every timed run with its items, the two pairs and the one after whole-suite run as they came out; the paired-run table with each pair's processor time beside the whole-suite processor time; the old and new per-test durations; the release diff summary; the exception list, empty or each entry with its old text (none for an added statement), new text, reason and how it only tightens; any re-run alone of a file that failed in the completion run, with its load; every changed path under `.ctoc/`
 - [x] Repeat the presence search for `hotfix-check.test.js` over the repository outside `plans/` and `node_modules/`; a doc that describes that file's content and is now wrong is listed for the CTO Chief, since no doc is declared. No other doc, comment or changelog is touched
 
 ### Step 16: FINAL-REVIEW
-- [ ] Every box of Steps 8 to 15 is ticked and true
+- [x] Every box of Steps 8 to 15 is ticked and true
 - [x] Verify each of acceptance criteria 1 to 11 against the evidence it names, by running it or reading the recorded output, and tick its box `- [x]` only then; a criterion that cannot be verified stays open with the reason on the line under it, written with no square brackets, and is reported to the CTO Chief
 - [x] Confirm from the completion run's output that the runner ran all six hotfix files, picked up by the `tests/*.test.js` glob with nothing registered, and never ran the helper on its own
 - [x] With the filter of Step 10, outside `plans/` and `.ctoc/`, confirm `git status --porcelain` lists only the declared nine paths; every changed path under `.ctoc/` is listed in the build record and never committed; the builder commits and pushes nothing
@@ -1844,7 +1858,7 @@ hotfix files:
 
   The file now setting the floor is `tests/hotfix-check-corpus.test.js` at 48.87 s (load 26.9 to 42.6); of the six split files, `tests/hotfix-check-guards.test.js` is second at 37.22 s. The runner ran all six hotfix files, picked up by the `tests/*.test.js` glob (6 `file` lines for them in `SCRATCH/suite-after.per-file`), and never the helper (0 `file` lines under `tests/helpers/`). **Criterion 9 is left open**: none of the six split files is the longest, but a hotfix file is, and the criterion says no hotfix file is the longest (the functional plan names the corpus and differential files as "the other two hotfix files", not split here); this is reported to the CTO Chief.
 - **Measures and the word "faster"** (criterion 1). Measure a, the two pairs: the after side's wall clock is below the before side's in both (51.70 s against 103.88 s, 22.56 s against 137.27 s). Measure b, the whole suite's longest file: 233.77 s before, 48.87 s after, and wall clock 241.18 s before, 52.50 s after, at loads of 16.8 to 65.0 and 26.9 to 42.6. Measure c, whole-suite processor time (user plus system): 592.89 s before, 448.96 s after, did not grow. All three agree, so the suite is faster under the rule of criterion 1. The wall-clock figures are never the only evidence and the loads differ between the two runs. The split's own processor cost: the six files together took 42.18 s more processor time than the old file alone in pair 1 and 9.98 s more in pair 2 (spread between the pairs 32.20 s); the whole-suite difference (after minus before, minus 143.93 s) is larger in size than that spread, so it does not lie within the variation between the two pairs.
-- **The one full `npm test`**: not run here; the CTO Chief runs it once after the last slice, so criterion 2 stays open.
+- **The one full `npm test`**: not run here; the CTO Chief ran it once after the last slice, see the close-out at the end of this record.
 
 ### Step 15: DOCUMENT
 
@@ -1856,7 +1870,33 @@ hotfix files:
 
 ### Step 16: FINAL-REVIEW
 
-Acceptance criteria verified against the evidence above: 1, 3, 4, 5, 6, 7, 10 and 11 ticked; 2, 8 and 9 left open with their reasons under them. Git status outside `plans/` and `.ctoc/` lists the declared nine paths (`CLAUDE.md`, `README.md`, `tests/hotfix-check.test.js`, the five new test files and the helper) and the untracked `IRON_LOOP.md` at the worktree root, which was there before the build and was not touched. No menu command was run, no plan file was moved, nothing was committed.
+Acceptance criteria verified against the evidence above: 1, 3, 4, 5, 6, 7, 10 and 11 ticked; 2, 8 and 9 were left open then; see the close-out at the end of this record for their closing. Git status outside `plans/` and `.ctoc/` lists the declared nine paths (`CLAUDE.md`, `README.md`, `tests/hotfix-check.test.js`, the five new test files and the helper) and the untracked `IRON_LOOP.md` at the worktree root, which was there before the build and was not touched. No menu command was run, no plan file was moved, nothing was committed.
+
+### Close-out (2026-10-13): the one full npm test, criterion 9 and criterion 8 on processor time
+
+- **The one full `npm test`**, once after the last slice, on the worktree at HEAD 13b73ce4b834660a59743823f4891717454dbb7a (a commit that adds only the slice 5 plan file; no source or test file differs from the build). Summary read from its output file: tests 13182, suites 2122, pass 13182, fail 0, cancelled 0, skipped 0, todo 0, duration_ms 60298.97; `[CTOC test-gate] coverage 99.88% (threshold 99%), skipped 0, failed 0`; corpus claims verified 3, refuted 0, unverifiable 0 (offline ledger gate: PASS); `[CTOC test-gate] PASS`. No failure occurred, so the rule for the two files another round owns needed no re-run. Criterion 2 is ticked on it. The test count is 13182 against this slice's earlier 13135 because slices 2 and 3 added tests.
+- **Criterion 9**: CTO Chief ruling, decision 36: met. The longest file after the split is `tests/hotfix-check-corpus.test.js`, a hotfix file this slice does not split; none of the six split files is the longest; the split files no longer set the suite's floor. Ticked.
+- **Criterion 8 on processor time**, decision 37. A fresh measurement, exactly two interleaved pairs, every run recorded and none repeated: the old file alone from the base copy (`SCRATCH/base-79f99476/tests/hotfix-check.test.js`), then each of the six new files alone, then the same again. Each run is `/usr/bin/time -p node --test --test-reporter=spec --test-reporter-destination=SCRATCH/cpu-pairs/<label>.spec <file>` from the repository root, started by `SCRATCH/cpu-pairs.js` (argument lists, no shell); processor time is user plus system. Node v24.14.1, 18 cores, HEAD as above. All 14 runs exit 0 with 0 failed and 0 skipped; the six new files hold 28, 13, 29, 18, 16 and 27 tests (131 together, as the old file). Output: `SCRATCH/cpu-pairs/runs.json`.
+
+```
+run                         wall s   user s   sys s   cpu s   load start-end   tests
+pair 1  old file alone      104.89    50.43   34.73   85.16   23.3 - 23.0      131
+        hotfix-check         15.92     7.53    5.87   13.40   23.0 - 21.2       28
+        test-run             20.18     7.89    5.81   13.70   21.2 - 24.4       13
+        copy-and-log         15.35     7.68    5.65   13.33   24.4 - 23.4       29
+        review-findings      18.71    10.37    5.25   15.62   23.4 - 25.1       18
+        readers              18.40     8.25    6.76   15.01   25.1 - 26.7       16
+        guards               20.58    10.65    6.81   17.46   26.7 - 25.8       27
+pair 2  old file alone      103.44    49.78   34.09   83.87   25.8 - 45.2      131
+        hotfix-check         15.47     7.41    5.63   13.04   45.2 - 43.3       28
+        test-run             18.42     7.77    5.47   13.24   43.3 - 39.8       13
+        copy-and-log         15.00     7.65    5.44   13.09   39.8 - 37.9       29
+        review-findings      18.52    10.26    5.03   15.29   37.9 - 37.6       18
+        readers              17.79     8.13    6.64   14.77   37.6 - 40.1       16
+        guards               20.70    10.71    6.86   17.57   40.1 - 39.8       27
+```
+
+  Pair 1: the largest new file is `tests/hotfix-check-guards.test.js` at 17.46 s over the old file's 85.16 s = 0.205. Pair 2: guards again, 17.57 s over 83.87 s = 0.209. Both at most 0.25, so **criterion 8 is met on processor time** and ticked. The six new files together took 88.52 s of processor time in pair 1 and 87.00 s in pair 2, against 85.16 s and 83.87 s for the old file: the split costs about 3.4 and 3.1 s of processor time over the old file, within these runs. Load rose during the pair 2 old-file run (25.8 to 45.2) and stayed between 37.6 and 45.2 through the pair 2 new-file runs, against 21.2 to 26.7 in pair 1; the processor times of the two old-file runs differ by 1.29 s and the largest new file's by 0.11 s. The earlier wall-clock pairs above are kept unchanged.
 
 ### Scripts (sources)
 
