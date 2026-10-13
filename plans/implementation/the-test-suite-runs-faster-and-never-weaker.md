@@ -6,6 +6,9 @@ created: 2026-10-12
 priority: high
 effort: large
 depends_on: none
+approved_by: human
+approved_at: 2026-10-13T11:15:32.871Z
+gate_crossed: functional → implementation
 ---
 
 # The test suite runs faster and never weaker

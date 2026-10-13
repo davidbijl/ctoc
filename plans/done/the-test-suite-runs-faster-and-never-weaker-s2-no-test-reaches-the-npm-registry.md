@@ -1,4 +1,6 @@
 ---
+iron_loop_verdict: true
+iron_loop: true
 title: "No test and no security scan reaches the npm registry"
 type: implementation
 created: 2026-10-12
@@ -49,6 +51,9 @@ files:
   # test file (a counted artifact): the test-file count in both.
   - README.md
   - CLAUDE.md
+approved_by: human
+approved_at: 2026-10-13T11:47:26.590Z
+gate_crossed: review → done
 ---
 
 # No test and no security scan reaches the npm registry
@@ -1443,7 +1448,7 @@ file. The builder runs no `menu` command and commits nothing at any step.
 - [x] The rule for the two files another round owns, applied to the after whole-suite timing run and to every affected-test run of this step: a failure confined to `tests/reachability-surface-scan-is-linear.test.js` or `tests/iron-loop-enforcer.test.js` is re-run alone with `node --test <that file>` and recorded beside the failed run's one-minute load; a file still failing alone is recorded with this run's load numbers and goes to the CTO Chief for the round that owns it; neither file is ever edited; any other failure is a kickback to the step that caused it
 
 ### Step 15: DOCUMENT
-- [x] Write the build record under `## Execution Record` at the end of this plan: the red runs and their greens; the machine facts, including whether `node_modules` is a link and where it points; the base copy's `rev-parse` and `status` lines; the count environment's removed variable names (names only) and its `isCI` check; the base and after request counts (whole suite and per file, connections and requests, each request's path and test file); the classification of every named file, every scope-growth request with its answer, and each candidate edited with the line it got; the criterion 22 list; both capture records; the LIVE test's duration and `skipped` list; the no-configuration run; the deliberate breaks; every timed run with its items and the paired-run table; the release diff summary; each review finding with its fix, rejection or hand-off; the Step 13 probe's four lines (two cases, control and lookup); the after whole-suite timing run's passed, failed and skipped counts; any re-run of the two foreign files with its load; the line "the full npm test runs once after the last slice, by the owner's order" in place of a full-suite gate result; and "not run on Windows" for test 4
+- [x] Write the build record under `## Execution Record` at the end of this plan: the red runs and their greens; the machine facts, including whether `node_modules` is a link and where it points; the base copy's `rev-parse` and `status` lines; the count environment's removed variable names (names only) and its `isCI` check; the base and after request counts (whole suite and per file, connections and requests, each request's path and test file); the classification of every named file, every scope-growth request with its answer, and each candidate edited with the line it got; the criterion 22 list; both capture records; the LIVE test's duration and `skipped` list; the no-configuration run; the deliberate breaks; every timed run with its items and the paired-run table; the release diff summary; each review finding with its fix, rejection or hand-off; the Step 13 probe's four lines (two cases, control and lookup); the after whole-suite timing run's passed, failed and `skipped` counts; any re-run of the two foreign files with its load; the line "the full npm test runs once after the last slice, by the owner's order" in place of a full-suite gate result; and "not run on Windows" for test 4
 - [x] List in the record the projects that now get the loud eslint message instead of a scan (the risk row on projects that lose eslint scanning), as the cost the functional plan accepted
 - [x] State in the record that the lookup accepts an ancestor's `node_modules`, so `/node_modules`, `/tmp/node_modules` and `$HOME/node_modules` serve every project below them that has no eslint of its own, consistent with the CTO Chief's ruling and changed by no code (the risk row on ancestors)
 - [x] Every comment the change touches says what the code does now: the doc comments of section 1, the w07 header's point (b), the comment on each moved spy, each closed-registry wrap and each update-check line; no other documentation file and no CHANGELOG entry (VERSION does not change here)
@@ -1702,3 +1707,12 @@ Finding for the owner: the Windows residual of decision 44 (also listed under "F
 
 - The one full `npm test` ran once after the last slice, on the worktree at HEAD 13b73ce4b834660a59743823f4891717454dbb7a (a commit that adds only the slice 5 plan file; no source or test file differs from the build). Summary read from its output file: tests 13182, suites 2122, pass 13182, fail 0, cancelled 0, skipped 0, todo 0, duration_ms 60298.97; `[CTOC test-gate] coverage 99.88% (threshold 99%), skipped 0, failed 0`; corpus claims verified 3, refuted 0, unverifiable 0 (offline ledger gate: PASS); `[CTOC test-gate] PASS`. No failure occurred, so the rule for the two files another round owns needed no re-run. Criterion 2 is ticked on it.
 - CTO Chief ruling: the two lines that say the product change is the only `src/` change (the acceptance line and the Step 16 line) are met by decision 29: the npm audit severity fix in `src/lib/dependency-auditor.js` was declared in this plan's `files:` before it was made. Both are ticked.
+
+
+## Deferred Questions
+
+_Written by the Iron Loop integrator (src/lib/iron-loop.js), which performs NO
+quality evaluation. These entries are the integrator's own report on itself, not
+findings from a critic that read this plan._
+
+- **evaluation**: NOT EVALUATED — no automated critique was performed on this plan. The refinement loop appended the Steps 8-16 template and assessed nothing. (The scores this step used to report were computed from that same template, not from the plan.) A human or a real critic must review this plan before it is built.

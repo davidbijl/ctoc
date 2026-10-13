@@ -1,4 +1,6 @@
 ---
+iron_loop_verdict: true
+iron_loop: true
 title: "The hotfix-check test file is split into six files by area, proven unchanged"
 type: implementation
 created: 2026-10-12
@@ -20,6 +22,9 @@ files:
   # writes into both files (src/scripts/release.js lines 98-104 and 384-388).
   - CLAUDE.md
   - README.md
+approved_by: human
+approved_at: 2026-10-13T11:15:33.212Z
+gate_crossed: implementation → todo
 ---
 
 # The hotfix-check test file is split into six files by area, proven unchanged
@@ -3219,3 +3224,12 @@ const mode = process.argv[2];
 (mode === 'alone' ? alone() : mode === 'together' ? together() : Promise.reject(new Error('mode: alone | together')))
   .catch((e) => { console.error(e); process.exit(2); });
 ```
+
+
+## Deferred Questions
+
+_Written by the Iron Loop integrator (src/lib/iron-loop.js), which performs NO
+quality evaluation. These entries are the integrator's own report on itself, not
+findings from a critic that read this plan._
+
+- **evaluation**: NOT EVALUATED — no automated critique was performed on this plan. The refinement loop appended the Steps 8-16 template and assessed nothing. (The scores this step used to report were computed from that same template, not from the plan.) A human or a real critic must review this plan before it is built.

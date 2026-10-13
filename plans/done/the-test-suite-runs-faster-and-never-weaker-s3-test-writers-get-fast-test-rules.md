@@ -1,4 +1,6 @@
 ---
+iron_loop_verdict: true
+iron_loop: true
 title: "The test-writing agents get fast-test rules, and the builder ticks only the criteria it verified"
 type: implementation
 created: 2026-10-12
@@ -13,6 +15,9 @@ files:
   - agents/iron-loop/iron-loop-executor.md
   - README.md
   - CLAUDE.md
+approved_by: human
+approved_at: 2026-10-13T11:16:56.230Z
+gate_crossed: implementation → todo
 ---
 
 # The test-writing agents get fast-test rules, and the builder ticks only the criteria it verified
@@ -863,3 +868,12 @@ Trigger: the CTO Chief's re-review found ten of eleven earlier items closed and 
 
 - The one full `npm test` ran once after the last slice, on the worktree at HEAD 13b73ce4b834660a59743823f4891717454dbb7a (a commit that adds only the slice 5 plan file; no source, test or agent file differs from the build). Summary read from its output file: tests 13182, suites 2122, pass 13182, fail 0, cancelled 0, skipped 0, todo 0, duration_ms 60298.97; `[CTOC test-gate] coverage 99.88% (threshold 99%), skipped 0, failed 0`; corpus claims verified 3, refuted 0, unverifiable 0 (offline ledger gate: PASS); `[CTOC test-gate] PASS`. No failure occurred, so the rule for the two files owned by another round needed no re-run.
 - Criterion 2 and the two Step 14 boxes for the full `npm test` are ticked on that run; the Step 16 box that waited on it is true. Nothing was run by the builder before this run, as the owner ordered.
+
+
+## Deferred Questions
+
+_Written by the Iron Loop integrator (src/lib/iron-loop.js), which performs NO
+quality evaluation. These entries are the integrator's own report on itself, not
+findings from a critic that read this plan._
+
+- **evaluation**: NOT EVALUATED — no automated critique was performed on this plan. The refinement loop appended the Steps 8-16 template and assessed nothing. (The scores this step used to report were computed from that same template, not from the plan.) A human or a real critic must review this plan before it is built.
