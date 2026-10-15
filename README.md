@@ -886,7 +886,7 @@ Escape phrases (typed by you): `hotfix`, `trivial fix`, `trivial change`, `quick
 
 ## Smart Quality Gates
 
-A background quality agent runs on every commit without blocking your workflow; `/ctoc:push` runs the same checks in the foreground.
+A background quality agent runs on every commit without blocking your workflow; `/ctoc:push` runs the same checks in the foreground, except that its test check is always the project's whole declared test suite, never only the affected tests.
 
 | Tier | When | Checks | Blocking? |
 |------|------|--------|-----------|

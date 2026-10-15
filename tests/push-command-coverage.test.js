@@ -44,6 +44,7 @@ const toolDetector = require('../src/lib/tool-detector');
 function makeDeps(overrides = {}) {
   const calls = { pushToRemote: 0, lintTools: undefined };
   const pass = async () => ({ passed: true });
+  const passTests = async () => ({ passed: true, text: 'Tests: passed — `npm test`: 3 passed.' });
   const deps = {
     detect: overrides.detect || (() => ({ languages: ['javascript'], tools: {} })),
     runLint: async (t) => {
@@ -51,8 +52,10 @@ function makeDeps(overrides = {}) {
       return (overrides.runLint || pass)(t);
     },
     runTypecheck: overrides.runTypecheck || pass,
-    runSmartTests: overrides.runSmartTests || pass,
+    runWholeSuite: overrides.runWholeSuite || passTests,
     runSecurityScan: overrides.runSecurityScan || pass,
+    readHead: () => 'h1',
+    uncommittedPaths: () => [],
     pushToRemote: () => {
       calls.pushToRemote++;
       return overrides.pushToRemote ? overrides.pushToRemote() : true;
@@ -217,7 +220,9 @@ describe('push.main — CLI entry (dark: lines 171-185)', () => {
   const realQA = {
     runLint: qualityAgent.runLint,
     runTypecheck: qualityAgent.runTypecheck,
-    runSmartTests: qualityAgent.runSmartTests,
+    runWholeSuiteBeforePush: qualityAgent.runWholeSuiteBeforePush,
+    readGitHead: qualityAgent.readGitHead,
+    uncommittedTrackedPaths: qualityAgent.uncommittedTrackedPaths,
     runSecurityScan: qualityAgent.runSecurityScan,
     pushToRemote: qualityAgent.pushToRemote
   };
@@ -227,7 +232,9 @@ describe('push.main — CLI entry (dark: lines 171-185)', () => {
   function patchBoundary({ lintPasses = true, pushOk = true } = {}) {
     qualityAgent.runLint = async () => ({ passed: lintPasses });
     qualityAgent.runTypecheck = async () => ({ passed: true });
-    qualityAgent.runSmartTests = async () => ({ passed: true });
+    qualityAgent.runWholeSuiteBeforePush = async () => ({ passed: true, text: 'Tests: passed — `npm test`: 3 passed.' });
+    qualityAgent.readGitHead = () => 'h1';
+    qualityAgent.uncommittedTrackedPaths = () => [];
     qualityAgent.runSecurityScan = async () => ({ passed: true, skipped: [] });
     qualityAgent.pushToRemote = () => pushOk;
     toolDetector.detectTools = () => ({ languages: [], tools: {} });
@@ -266,6 +273,7 @@ describe('push.main — CLI entry (dark: lines 171-185)', () => {
     // Assert — main wired run()'s result to exit code 0.
     assert.equal(result.ok, true);
     assert.equal(result.pushed, true);
+    assert.match(result.text, /3 passed/, 'main reaches the whole-suite check by its real export name');
     assert.equal(process.exitCode, 0, 'clean pass exits 0 (ok ? 0 : 1, true branch)');
   });
 
