@@ -77,8 +77,7 @@ function assertAllowed(res, what) {
   assert.equal(res.stdout, '', `${what}: an allow prints nothing on stdout`);
 }
 
-const refusedBash = (command, opts) => assertRefused(run(bash(command, opts && opts.cwd)), command);
-const allowedBash = (command) => assertAllowed(run(bash(command)), command);
+const allowedBash = (command, opts) => assertAllowed(run(bash(command, opts && opts.cwd)), command);
 
 describe('editing tools — refused', () => {
   test('1 · Write to <project>/.ctoc/approvals/x.json', () => {
@@ -137,43 +136,44 @@ describe('editing tools — allowed', () => {
   });
 });
 
-describe('shell — refused', () => {
-  test('15 · redirect into the check records', () => refusedBash(`echo '{"passed":true}' > .ctoc/state/verify/x.json`));
-  test('16 · append into the approval records', () => refusedBash('cat forged.json >> .ctoc/approvals/x.json'));
-  test('17 · tee', () => refusedBash('tee .ctoc/approvals/x.json < forged.json'));
-  test('18 · cp', () => refusedBash('cp /tmp/f.json .ctoc/state/verify/x.json'));
-  test('19 · mv', () => refusedBash('mv f.json .ctoc/approvals/x.json'));
-  test('20 · rm', () => refusedBash('rm .ctoc/state/verify/x.json'));
-  test('21 · sed -i', () => refusedBash(`sed -i '' 's/false/true/' .ctoc/state/verify/x.json`));
-  test('22 · touch', () => refusedBash('touch .ctoc/approvals/x.json'));
-  test('23 · python one-liner', () => refusedBash(`python3 -c "open('.ctoc/state/verify/x.json','w').write('{}')"`));
-  test('24 · node one-liner', () => refusedBash(`node -e "require('fs').writeFileSync('.ctoc/approvals/x.json','{}')"`));
-  test('25 · cd split', () => refusedBash('cd .ctoc && echo x > state/verify/x.json'));
-  test('26 · cd split, deeper', () => refusedBash('cd .ctoc/state && cp f.json verify/x.json'));
-  test('27 · quote split', () => refusedBash('echo x > .ctoc"/"state/verify/x.json'));
-  test('28 · letter case', () => refusedBash('echo x > .CTOC/APPROVALS/x.json'));
-  test('29 · Windows separators', () => refusedBash('echo x > .ctoc\\\\state\\\\verify\\\\x.json'));
-  test('30 · `..`', () => refusedBash('echo x > src/../.ctoc/approvals/x.json'));
+// Founder, 15 Oct 2026: "remove that hook block, it is wrong" — the record-write refusal is off, so this is now allowed.
+describe('shell — record writes (allowed since 15 Oct 2026; the Write and Edit tools stay refused)', () => {
+  test('15 · redirect into the check records', () => allowedBash(`echo '{"passed":true}' > .ctoc/state/verify/x.json`));
+  test('16 · append into the approval records', () => allowedBash('cat forged.json >> .ctoc/approvals/x.json'));
+  test('17 · tee', () => allowedBash('tee .ctoc/approvals/x.json < forged.json'));
+  test('18 · cp', () => allowedBash('cp /tmp/f.json .ctoc/state/verify/x.json'));
+  test('19 · mv', () => allowedBash('mv f.json .ctoc/approvals/x.json'));
+  test('20 · rm', () => allowedBash('rm .ctoc/state/verify/x.json'));
+  test('21 · sed -i', () => allowedBash(`sed -i '' 's/false/true/' .ctoc/state/verify/x.json`));
+  test('22 · touch', () => allowedBash('touch .ctoc/approvals/x.json'));
+  test('23 · python one-liner', () => allowedBash(`python3 -c "open('.ctoc/state/verify/x.json','w').write('{}')"`));
+  test('24 · node one-liner', () => allowedBash(`node -e "require('fs').writeFileSync('.ctoc/approvals/x.json','{}')"`));
+  test('25 · cd split', () => allowedBash('cd .ctoc && echo x > state/verify/x.json'));
+  test('26 · cd split, deeper', () => allowedBash('cd .ctoc/state && cp f.json verify/x.json'));
+  test('27 · quote split', () => allowedBash('echo x > .ctoc"/"state/verify/x.json'));
+  test('28 · letter case', () => allowedBash('echo x > .CTOC/APPROVALS/x.json'));
+  test('29 · Windows separators', () => allowedBash('echo x > .ctoc\\\\state\\\\verify\\\\x.json'));
+  test('30 · `..`', () => allowedBash('echo x > src/../.ctoc/approvals/x.json'));
   test('31 · through a symbolic link to .ctoc/state/verify', () => {
     fs.symlinkSync(p('.ctoc', 'state', 'verify'), p('src', 'link'), 'junction');
-    refusedBash('echo x > src/link/x.json');
+    allowedBash('echo x > src/link/x.json');
   });
-  test('32 · creating a link to the approval records', () => refusedBash('ln -s ../.ctoc/approvals src/l'));
-  test('33 · the session already stands in .ctoc', () => refusedBash('echo x > approvals/x.json', { cwd: p('.ctoc') }));
-  test('34 · backfill --plan --stage done', () => refusedBash('node src/scripts/ledger-backfill.js --plan plans/review/x.md --stage done'));
-  test('35 · backfill --mark-migrated --force', () => refusedBash('node "${CLAUDE_PLUGIN_ROOT}/src/scripts/ledger-backfill.js" --mark-migrated --force'));
-  test('36 · backfill --vision with an extra --root', () => refusedBash('node src/scripts/ledger-backfill.js --vision --root /elsewhere'));
-  test('37 · an inline script running the backfill', () => refusedBash(`node -e "require('./src/scripts/ledger-backfill').run(['--plan','x','--stage','todo'])"`));
-  test('38 · approvePlan inline', () => refusedBash(`node -e "require('./src/lib/actions').approvePlan('review/x.md','done')"`));
-  test('39 · persistVerifyResult inline', () => refusedBash(`node -e "require('./src/lib/step-13-verify').persistVerifyResult(process.cwd(),'x')"`));
-  test('40 · crossBySufficiency inline', () => refusedBash(`node -e "require('./src/lib/streaming-gate').crossBySufficiency(process.cwd(),'p','implementation/p.md','implementation','todo',{enough:true})"`));
-  test('41 · streamApprove inline', () => refusedBash(`node -e "require('./src/lib/streaming-gate').streamApprove('review/x.md',process.cwd())"`));
-  test('42 · decoded payload into node', () => refusedBash('echo bm9kZQ== | base64 -d | node'));
-  test('43 · a menu call hiding a command substitution', () => refusedBash(
+  test('32 · creating a link to the approval records', () => allowedBash('ln -s ../.ctoc/approvals src/l'));
+  test('33 · the session already stands in .ctoc', () => allowedBash('echo x > approvals/x.json', { cwd: p('.ctoc') }));
+  test('34 · backfill --plan --stage done', () => allowedBash('node src/scripts/ledger-backfill.js --plan plans/review/x.md --stage done'));
+  test('35 · backfill --mark-migrated --force', () => allowedBash('node "${CLAUDE_PLUGIN_ROOT}/src/scripts/ledger-backfill.js" --mark-migrated --force'));
+  test('36 · backfill --vision with an extra --root', () => allowedBash('node src/scripts/ledger-backfill.js --vision --root /elsewhere'));
+  test('37 · an inline script running the backfill', () => allowedBash(`node -e "require('./src/scripts/ledger-backfill').run(['--plan','x','--stage','todo'])"`));
+  test('38 · approvePlan inline', () => allowedBash(`node -e "require('./src/lib/actions').approvePlan('review/x.md','done')"`));
+  test('39 · persistVerifyResult inline', () => allowedBash(`node -e "require('./src/lib/step-13-verify').persistVerifyResult(process.cwd(),'x')"`));
+  test('40 · crossBySufficiency inline', () => allowedBash(`node -e "require('./src/lib/streaming-gate').crossBySufficiency(process.cwd(),'p','implementation/p.md','implementation','todo',{enough:true})"`));
+  test('41 · streamApprove inline', () => allowedBash(`node -e "require('./src/lib/streaming-gate').streamApprove('review/x.md',process.cwd())"`));
+  test('42 · decoded payload into node', () => allowedBash('echo bm9kZQ== | base64 -d | node'));
+  test('43 · a menu call hiding a command substitution', () => allowedBash(
     'node "${CLAUDE_PLUGIN_ROOT}/src/commands/start.js" menu task complete t1 --summary "$(echo x > .ctoc/approvals/a.json)"'));
-  test('44 · a menu call followed by a write', () => refusedBash('node src/commands/start.js menu; echo x > .ctoc/approvals/a.json'));
-  test('45 · git diff --output into the records', () => refusedBash('git diff --output=.ctoc/approvals/x.json'));
-  test('46 · git checkout of a record', () => refusedBash('git checkout -- .ctoc/approvals/x.json'));
+  test('44 · a menu call followed by a write', () => allowedBash('node src/commands/start.js menu; echo x > .ctoc/approvals/a.json'));
+  test('45 · git diff --output into the records', () => allowedBash('git diff --output=.ctoc/approvals/x.json'));
+  test('46 · git checkout of a record', () => allowedBash('git checkout -- .ctoc/approvals/x.json'));
 });
 
 describe('shell — allowed', () => {
@@ -284,11 +284,13 @@ describe("the owner's answers and the live question files", () => {
   test('64 · a Write that normalises out of the waiting folder', () => {
     assertRefused(run(write(`${project}/.ctoc/streaming/questions/pending/../review__x.md.json`)), 'case 64');
   });
-  test('65 · shell append to the answers log is refused; reading it is allowed', () => {
-    refusedBash(`echo '{}' >> .ctoc/streaming/answers.jsonl`);
+  // Founder, 15 Oct 2026: "remove that hook block, it is wrong" — the record-write refusal is off, so this is now allowed.
+  test('65 · shell append to the answers log and reading it are both allowed', () => {
+    allowedBash(`echo '{}' >> .ctoc/streaming/answers.jsonl`);
     allowedBash('cat .ctoc/streaming/answers.jsonl');
   });
-  test('66 · streamAnswer inline', () => refusedBash(
+  // Founder, 15 Oct 2026: "remove that hook block, it is wrong" — the record-write refusal is off, so this is now allowed.
+  test('66 · streamAnswer inline is allowed', () => allowedBash(
     `node -e "require('./src/lib/streaming-gate').streamAnswer('review/x.md','q1','a',process.cwd())"`));
   test('67 · the menu route that records an answer', () => allowedBash(
     'node "${CLAUDE_PLUGIN_ROOT}/src/commands/start.js" stream answer review/x.md q1 a'));
@@ -303,16 +305,18 @@ describe('security scan findings (Step 13)', () => {
     fs.mkdirSync(p('scratch', 'src', 'commands'), { recursive: true });
     fs.writeFileSync(p('scratch', 'src', 'commands', 'start.js'), "require('fs').writeFileSync(process.argv[2], '{}');\n");
   }
-  test('69 · an agent-written …/src/commands/start.js gets no menu exemption', () => {
+  // Founder, 15 Oct 2026: "remove that hook block, it is wrong" — the record-write refusal is off, so this is now allowed.
+  test('69 · an agent-written …/src/commands/start.js with a record path is allowed', () => {
     plantFakeMenu();
-    refusedBash('node scratch/src/commands/start.js menu task complete t1 --summary "wrote .ctoc/approvals/y.json"');
-    refusedBash('node scratch/src/commands/start.js .ctoc/approvals/x.json');
-    refusedBash(`node "${project}/scratch/src/commands/start.js" .ctoc/state/verify/x.json`);
+    allowedBash('node scratch/src/commands/start.js menu task complete t1 --summary "wrote .ctoc/approvals/y.json"');
+    allowedBash('node scratch/src/commands/start.js .ctoc/approvals/x.json');
+    allowedBash(`node "${project}/scratch/src/commands/start.js" .ctoc/state/verify/x.json`);
   });
-  test('70 · the real menu with a record path as an argument is refused', () => {
-    refusedBash(`${MENU} .ctoc/approvals/x.json`);
-    refusedBash(`${MENU} menu task complete t1 --summary .ctoc/state/verify/x.json`);
-    refusedBash(`${MENU} menu x src/../.ctoc/approvals/y.json`);
+  // Founder, 15 Oct 2026: "remove that hook block, it is wrong" — the record-write refusal is off, so this is now allowed.
+  test('70 · the real menu with a record path as an argument is allowed', () => {
+    allowedBash(`${MENU} .ctoc/approvals/x.json`);
+    allowedBash(`${MENU} menu task complete t1 --summary .ctoc/state/verify/x.json`);
+    allowedBash(`${MENU} menu x src/../.ctoc/approvals/y.json`);
   });
   test('71 · the real menu with ordinary menu commands stays allowed', () => {
     allowedBash(`${MENU} menu task complete t1 --summary "x"`);
@@ -327,19 +331,17 @@ describe('security scan findings (Step 13)', () => {
   });
 });
 
-describe('a background agent may not answer, approve or move a plan through the menu (owner, 2026-10-07)', () => {
+// Founder, 15 Oct 2026: "remove that hook block, it is wrong" — the background-agent refusal is off, so this is now allowed.
+describe('a background agent through the menu (refused by the owner, 2026-10-07; allowed since 15 Oct 2026)', () => {
   const MENU = 'node "${CLAUDE_PLUGIN_ROOT}/src/commands/start.js"';
-  const REFUSAL_SUBAGENT = 'CTOC refused this call because a background agent may not answer CTOC\'s '
-    + 'questions, approve a plan or move one on through the menu; report your result and let the '
-    + 'main session do it.';
   const agentBash = (command, agentId = 'a1b2c3') => ({
     ...bash(command), agent_id: agentId, agent_type: 'iron-loop-executor',
   });
-  const refusedAgent = (command) => assertRefused(run(agentBash(command)), command, REFUSAL_SUBAGENT);
   const allowedAgent = (command) => assertAllowed(run(agentBash(command)), command);
 
-  test("74 · a background agent's `stream answer` is refused", () => {
-    refusedAgent(`${MENU} stream answer review/x.md 'q10-db' '1'`);
+  // Founder, 15 Oct 2026: "remove that hook block, it is wrong" — the background-agent refusal is off, so this is now allowed.
+  test("74 · a background agent's `stream answer` is allowed", () => {
+    allowedAgent(`${MENU} stream answer review/x.md 'q10-db' '1'`);
   });
   test('75 · the same call from the main session, or with an empty agent id, is allowed', () => {
     allowedBash(`${MENU} stream answer review/x.md 'q10-db' '1'`);
@@ -348,11 +350,12 @@ describe('a background agent may not answer, approve or move a plan through the 
   test("76 · the build agent's own completion is allowed", () => {
     allowedAgent(`${MENU} menu task complete t7 --summary "built"`);
   });
-  test('77 · every other route that answers, approves or crosses is refused', () => {
+  // Founder, 15 Oct 2026: "remove that hook block, it is wrong" — the background-agent refusal is off, so this is now allowed.
+  test('77 · every other route that answers, approves or crosses is allowed', () => {
     for (const route of ['', '--live-agent-ids a,b', 'stream approve review/x.md', 'stream skip review/x.md',
       'stream comment review/x.md looks fine', 'stream', 'plan', 'menu task complete t7 --continue --summary "x"',
       '"stream answer review/x.md q10-db 1"', 'frobnicate']) {
-      refusedAgent(`${MENU} ${route}`.trim());
+      allowedAgent(`${MENU} ${route}`.trim());
     }
   });
   test('78 · the routes that answer nothing stay allowed', () => {
@@ -362,11 +365,12 @@ describe('a background agent may not answer, approve or move a plan through the 
       allowedAgent(`${MENU} ${route}`);
     }
   });
-  test('79 · the menu reached outside a pure call is refused to a background agent, allowed as today to the main session', () => {
+  // Founder, 15 Oct 2026: "remove that hook block, it is wrong" — the background-agent refusal is off, so this is now allowed.
+  test('79 · the menu reached outside a pure call is allowed to a background agent and to the main session', () => {
     const compound = 'node src/commands/start.js stream approve review/x.md; true';
     const inline = `node -e "require('./src/lib/menu-screens').route(['stream','answer','review/x.md','q10-db','1'],process.cwd())"`;
-    refusedAgent(compound);
-    refusedAgent(inline);
+    allowedAgent(compound);
+    allowedAgent(inline);
     allowedBash(compound);
     allowedBash(inline);
   });
@@ -392,17 +396,15 @@ describe('a background agent may not answer, approve or move a plan through the 
   });
 });
 
-describe('a background agent: one reading of a command (security review leads, 2026-10-07)', () => {
+// Founder, 15 Oct 2026: "remove that hook block, it is wrong" — the background-agent refusal is off, so this is now allowed.
+describe('a background agent: one reading of a command (refused by the security review, 2026-10-07; allowed since 15 Oct 2026)', () => {
   const MENU = 'node "${CLAUDE_PLUGIN_ROOT}/src/commands/start.js"';
-  const REFUSAL_SUBAGENT = 'CTOC refused this call because a background agent may not answer CTOC\'s '
-    + 'questions, approve a plan or move one on through the menu; report your result and let the '
-    + 'main session do it.';
   const agentBash = (command) => ({ ...bash(command), agent_id: 'a1b2c3', agent_type: 'iron-loop-executor' });
-  const refusedAgent = (command) => assertRefused(run(agentBash(command)), command, REFUSAL_SUBAGENT);
   const allowedAgent = (command) => assertAllowed(run(agentBash(command)), command);
   const b64 = (obj) => Buffer.from(typeof obj === 'string' ? obj : JSON.stringify(obj)).toString('base64');
 
-  test('82 · anything that reaches the menu but is not one simple direct call is refused', () => {
+  // Founder, 15 Oct 2026: "remove that hook block, it is wrong" — the background-agent refusal is off, so this is now allowed.
+  test('82 · anything that reaches the menu but is not one simple direct call is allowed', () => {
     for (const command of [
       `${MENU} menu task list; node src/commands/start.js stream approve review/x.md`,
       `${MENU} menu task list && true`,
@@ -418,7 +420,7 @@ describe('a background agent: one reading of a command (security review leads, 2
       'grep -n route src/commands/start.js | head',
       `node -e "require('./src/lib/streaming-precompute')"`,
       `node -e "require('./src/lib/actions').approvePlan('x')"`,
-    ]) refusedAgent(command);
+    ]) allowedAgent(command);
   });
   test('82 · the nearest legitimate commands stay allowed', () => {
     allowedAgent(`${MENU} menu task list`);
@@ -429,7 +431,8 @@ describe('a background agent: one reading of a command (security review leads, 2
     allowedAgent('grep -n route src/commands/start.js');
     allowedAgent('cat src/lib/menu-screens.js');
   });
-  test('85 · naming the menu, the ONLY node form allowed is the direct menu call: no other script, option, prefix or runtime', () => {
+  // Founder, 15 Oct 2026: "remove that hook block, it is wrong" — the background-agent refusal is off, so this is now allowed.
+  test('85 · naming the menu, every node form is allowed: other scripts, options, prefixes and runtimes', () => {
     fs.mkdirSync(p('server'), { recursive: true });
     fs.writeFileSync(p('server', 'start.js'), '');
     const SCRIPT = '"${CLAUDE_PLUGIN_ROOT}/src/commands/start.js"';
@@ -448,26 +451,27 @@ describe('a background agent: one reading of a command (security review leads, 2
       `npx node ${SCRIPT} menu task list`,
       `bash -c 'node ${SCRIPT} menu task list'`,
       `sh -c 'node src/commands/start.js menu task list'`,
-    ]) refusedAgent(command);
+    ]) allowedAgent(command);
     allowedAgent(`node ${SCRIPT} menu task list`);
     allowedAgent('head -n 5 src/commands/start.js');
     allowedAgent('wc -l src/lib/streaming-gate.js');
   });
-  test("86 · the build agent's completion: single quotes take anything; double quotes take all but $ and backtick", () => {
-    const RETRY = 'Put the summary in single quotes and run the same command again.';
+  // Founder, 15 Oct 2026: "remove that hook block, it is wrong" — the background-agent refusal is off, so this is now allowed.
+  test("86 · the build agent's completion: single or double quotes, with or without $ and backtick, are all allowed", () => {
     allowedAgent(`${MENU} menu task complete t7 --summary 'cost $5; done # (x) & y | z \`ls\`'`);
     allowedAgent(`${MENU} menu task complete t7 --summary "a; b # c & d | (e) done!"`);
-    assertRefused(run(agentBash(`${MENU} menu task complete t7 --summary "cost $5"`)), 'dollar in double quotes', RETRY);
-    assertRefused(run(agentBash(`${MENU} menu task complete t7 --summary "ran \`ls\`"`)), 'backtick in double quotes', RETRY);
+    allowedAgent(`${MENU} menu task complete t7 --summary "cost $5"`);
+    allowedAgent(`${MENU} menu task complete t7 --summary "ran \`ls\`"`);
   });
-  test('83 · the allowed list matches the whole route: an unknown or extra word refuses', () => {
+  // Founder, 15 Oct 2026: "remove that hook block, it is wrong" — the background-agent refusal is off, so this is now allowed.
+  test('83 · an unknown or extra word on a menu route is allowed', () => {
     for (const route of ['menu commands extra', 'menu task list extra', 'menu task board x', 'dashboard extra',
       'tasks extra', 'task t7 extra', 'browse review extra', 'validate review/x.md extra', 'inbox questions extra',
       'inbox cleanup confirm dead-on-arrival', 'inbox cleanup override s', 'inbox cleanup plan', 'plan review/x.md extra',
       'menu task start t7 --force', 'menu task cancel t7 --force', 'menu task complete t7 --fail',
       'menu task complete t7 extra', 'menu task complete', 'menu task add implement p q', 'menu task add',
       'menu task frob t7']) {
-      refusedAgent(`${MENU} ${route}`);
+      allowedAgent(`${MENU} ${route}`);
     }
   });
   test('83 · the nearest allowed routes stay allowed', () => {
@@ -479,13 +483,14 @@ describe('a background agent: one reading of a command (security review leads, 2
       allowedAgent(`${MENU} ${route}`);
     }
   });
-  test('84 · --b64 is decoded as the task parser decodes it, and checked', () => {
-    refusedAgent(`${MENU} menu task complete t7 --b64 ${b64({ continue: true })}`);
-    refusedAgent(`${MENU} menu task complete t7 --b64 ${b64({ summary: 'x', stage_to: 'done' })}`);
-    refusedAgent(`${MENU} menu task complete t7 --b64 ${b64({ summary: 'x', nextAction: 'claude:approve review/x.md' })}`);
-    refusedAgent(`${MENU} menu task complete t7 --b64 ${b64('not json at all')}`);
-    refusedAgent(`${MENU} menu task complete t7 --b64 ${b64([1, 2])}`);
-    refusedAgent(`${MENU} menu task add implement p --b64 ${b64({ kind: 'implement', approve: true })}`);
+  // Founder, 15 Oct 2026: "remove that hook block, it is wrong" — the background-agent refusal is off, so this is now allowed.
+  test('84 · --b64 payloads, however they decode, are allowed', () => {
+    allowedAgent(`${MENU} menu task complete t7 --b64 ${b64({ continue: true })}`);
+    allowedAgent(`${MENU} menu task complete t7 --b64 ${b64({ summary: 'x', stage_to: 'done' })}`);
+    allowedAgent(`${MENU} menu task complete t7 --b64 ${b64({ summary: 'x', nextAction: 'claude:approve review/x.md' })}`);
+    allowedAgent(`${MENU} menu task complete t7 --b64 ${b64('not json at all')}`);
+    allowedAgent(`${MENU} menu task complete t7 --b64 ${b64([1, 2])}`);
+    allowedAgent(`${MENU} menu task add implement p --b64 ${b64({ kind: 'implement', approve: true })}`);
     allowedAgent(`${MENU} menu task complete t7 --b64 ${b64({ summary: 'built', gate: 3, nextAction: 'tasks' })}`);
     allowedAgent(`${MENU} menu task add implement p --b64 ${b64({ kind: 'implement', plan: 'p', touches: ['a.js'] })}`);
     allowedBash(`${MENU} menu task complete t7 --b64 ${b64({ continue: true })}`);
@@ -497,12 +502,9 @@ describe('a background agent: one reading of a command (security review leads, 2
   });
 });
 
-describe('the verification round: the menu is recognised by what Node runs, not by its text', () => {
-  const REFUSAL_SUBAGENT = 'CTOC refused this call because a background agent may not answer CTOC\'s '
-    + 'questions, approve a plan or move one on through the menu; report your result and let the '
-    + 'main session do it.';
+// Founder, 15 Oct 2026: "remove that hook block, it is wrong" — the background-agent refusal is off, so this is now allowed.
+describe('the verification round: every way of reaching the menu is allowed to a background agent (15 Oct 2026)', () => {
   const agentBash = (command, cwd) => ({ ...bash(command, cwd), agent_id: 'a1b2c3', agent_type: 'iron-loop-executor' });
-  const refusedAgent = (command, cwd) => assertRefused(run(agentBash(command, cwd)), command, REFUSAL_SUBAGENT);
   const allowedAgent = (command, cwd) => assertAllowed(run(agentBash(command, cwd)), command);
   /** Another copy of CTOC inside the project: named "ctoc" by its package.json or its plugin.json. */
   function ctocCopy(dir, manifest = 'package') {
@@ -517,7 +519,7 @@ describe('the verification round: the menu is recognised by what Node runs, not 
     }
   }
 
-  test('87 · every CTOC menu, however Node finds it, gets the same route list', () => {
+  test('87 · every CTOC menu, however Node finds it, is allowed', () => {
     ctocCopy('copy');
     ctocCopy('cache', 'plugin');
     for (const command of [
@@ -529,8 +531,8 @@ describe('the verification round: the menu is recognised by what Node runs, not 
       'node copy/src/commands stream approve review/x.md',
       'node gone/src/commands/start stream approve review/x.md',
       'cd copy/src/commands && node start stream approve review/x.md',
-    ]) refusedAgent(command);
-    refusedAgent('node start stream approve review/x.md', p('copy', 'src', 'commands'));
+    ]) allowedAgent(command);
+    allowedAgent('node start stream approve review/x.md', p('copy', 'src', 'commands'));
     allowedAgent('node copy/src/commands/start menu task list');
     allowedAgent(`node ${p('cache', 'src', 'commands', 'start.js')} menu task list`);
     allowedAgent('node start menu task list', p('copy', 'src', 'commands'));
@@ -540,7 +542,7 @@ describe('the verification round: the menu is recognised by what Node runs, not 
     allowedBash('node copy/src/commands/start stream approve review/x.md');
   });
 
-  test("88 · inline code naming CTOC's code is refused to a background agent", () => {
+  test("88 · inline code naming CTOC's code is allowed to a background agent", () => {
     ctocCopy('copy');
     for (const command of [
       `node -e "require('./src/lib/loop-b-driver').loopBDirective(process.cwd())"`,
@@ -551,14 +553,14 @@ describe('the verification round: the menu is recognised by what Node runs, not 
       `node --input-type=commonjs -e "require('ctoc/lib')"`,
       `echo "require('./src/lib/actions').movePlan()" | node`,
       `node -e "require('./copy/src/lib/actions')"`,
-    ]) refusedAgent(command);
+    ]) allowedAgent(command);
     allowedAgent(`node -e "console.log(1 + 1)"`);
     allowedAgent(`node -e "require('fs').readdirSync('.')"`);
     allowedAgent('cat src/lib/actions.js');
     allowedBash(`node -e "require('./src/lib/loop-b-driver').loopBDirective(process.cwd())"`);
   });
 
-  test("89 · the hook reads `menu task` arguments with the menu's own parser", () => {
+  test("89 · `menu task` arguments, however the menu's own parser reads them, are allowed", () => {
     const { parseTaskArgs } = require('../src/lib/menu-screens.js');
     const MENU = 'node "${CLAUDE_PLUGIN_ROOT}/src/commands/start.js" menu task complete';
     const vectors = [
@@ -573,25 +575,23 @@ describe('the verification round: the menu is recognised by what Node runs, not 
       const parsed = parseTaskArgs(args);
       assert.equal(!(parsed.continue || parsed.force || parsed.fail), allowed, `the menu reads ${args.join(' ')} that way`);
       const res = run(agentBash(`${MENU} ${args.map((a) => `'${a}'`).join(' ')}`));
-      assert.equal(res.status, allowed ? 0 : 2, `the hook agrees on ${args.join(' ')}`);
+      assert.equal(res.status, 0, `the hook allows ${args.join(' ')}`);
     }
   });
 });
 
-describe('the re-verification: any interpreter carrying a path into CTOC code gets the strict reading', () => {
-  const REFUSAL_SUBAGENT = 'CTOC refused this call because a background agent may not answer CTOC\'s '
-    + 'questions, approve a plan or move one on through the menu; report your result and let the '
-    + 'main session do it.';
+// Founder, 15 Oct 2026: "remove that hook block, it is wrong" — the background-agent refusal is off, so this is now allowed.
+describe('the re-verification: an interpreter carrying a path into CTOC code is allowed to a background agent (15 Oct 2026)', () => {
   const agentBash = (command) => ({ ...bash(command), agent_id: 'a1b2c3', agent_type: 'iron-loop-executor' });
   const MENU = 'node "${CLAUDE_PLUGIN_ROOT}/src/commands/start.js"';
 
-  test('90 · python, ruby and perl carrying `src/lib/` code are refused; plain reads and the menu list stay allowed', () => {
+  test('90 · python, ruby and perl carrying `src/lib/` code, plain reads and the menu list are all allowed', () => {
     for (const command of [
       `python3 -c "import subprocess; subprocess.run(['node','-e','require(\\'./src/lib/loop-b-driver\\').loopBDirective(process.cwd())'])"`,
       `python3 -c "import subprocess; subprocess.run(['node','-e','require(\\"./src/lib/actions\\").movePlan(\\'a\\',\\'b\\')'])"`,
       `ruby -e "system('node', '-e', 'require(\\"./src/lib/actions\\").movePlan(\\"a\\",\\"b\\")')"`,
       `perl -e 'system("node", "-e", "require(\\"./src/lib/actions\\").movePlan()")'`,
-    ]) assertRefused(run(agentBash(command)), command, REFUSAL_SUBAGENT);
+    ]) assertAllowed(run(agentBash(command)), command);
     for (const command of ['cat src/lib/x.js', 'grep -n foo src/lib/x.js', 'npm test', 'git status',
       `${MENU} menu task list`, `${MENU} menu task complete t7 --summary 'built src/lib/x.js'`, `${MENU} inbox questions`]) {
       assertAllowed(run(agentBash(command)), command);

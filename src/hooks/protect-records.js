@@ -594,7 +594,16 @@ function subagentMenuRefusal(command, base) {
  * @param {boolean} [subagent] - the call carries a non-empty `agent_id`
  * @returns {string|null} the refusal sentence, or null to allow
  */
+const RECORD_REFUSALS_OFF = true;
+
 function bashRefuses(command, cwdRel, base, bash, subagent = false) {
+  // Tijn, 15 October 2026: "remove that hook block, it is wrong". The record-write refusal and
+  // the background-agent refusal are off; the settings-file refusal below stays.
+  if (RECORD_REFUSALS_OFF) {
+    const cwdCommand = cwdRel ? `cd ./${cwdRel} && ${command}` : command;
+    return bash.isLedgerWrite(cwdCommand, SETTINGS_SPEC) || bash.isLedgerWrite(cwdCommand, REGIMES_SPEC)
+      ? REFUSAL_SETTINGS : null;
+  }
   if (subagent) {
     const refused = subagentMenuRefusal(command, base);
     if (refused) return refused;
