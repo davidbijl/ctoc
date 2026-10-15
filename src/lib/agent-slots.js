@@ -1,7 +1,7 @@
 'use strict';
 /**
  * AGENT SLOTS — the durable, self-healing semaphore behind CTOC's standing
- * MAX_CONCURRENT-subagent cap (eight).
+ * MAX_CONCURRENT-subagent cap (twenty).
  *
  * WHY THIS EXISTS. `task-registry.evaluateConcurrency` (Rule 1) already refuses
  * to start a task past the cap — but only for work that walks in through the scheduler

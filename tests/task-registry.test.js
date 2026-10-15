@@ -1346,8 +1346,8 @@ describe('precompute kind (streaming gate-question generation)', () => {
 });
 
 describe('Exported constants + surface', () => {
-  it('exposes MAX_CONCURRENT=8, REGISTRY_VERSION=1, frozen KINDS; kind-based plan-serial export is removed', () => {
-    assert.equal(reg.MAX_CONCURRENT, 8);
+  it('exposes MAX_CONCURRENT=20, REGISTRY_VERSION=1, frozen KINDS; kind-based plan-serial export is removed', () => {
+    assert.equal(reg.MAX_CONCURRENT, 20);
     assert.equal(reg.REGISTRY_VERSION, 1);
     assert.ok(reg.KINDS.has('implement'));
     assert.ok(reg.KINDS.has('sync'));

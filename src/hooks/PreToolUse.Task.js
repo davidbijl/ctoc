@@ -3,7 +3,7 @@
 /**
  * CTOC PreToolUse Enforcement Hook — Task (the concurrency fence)
  *
- * WHY THIS EXISTS. CTOC's standing limit is MAX_CONCURRENT (eight) concurrent
+ * WHY THIS EXISTS. CTOC's standing limit is MAX_CONCURRENT (twenty) concurrent
  * background subagents, and `src/lib/task-registry.js` really does enforce it —
  * `evaluateConcurrency` Rule 1 returns `{run:false, reason:'max-concurrent'}` the
  * moment the cap is reached. But that check only ever fired for work that walked in

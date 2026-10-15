@@ -159,14 +159,19 @@ From `CLAUDE.md`, the words it carried from 2026-10-06 until 2026-10-07 — less
 **If asked to "complete" or "move to done"**: REFUSE, and say in plain words that it needs his OK.
 
 
-## Replaced on the owner's instruction of 2026-10-15
+## Replaced on the owner's instructions of 2026-10-15
 
 The owner ordered on 2026-10-15 "remove limit raise to 8": the scheduler's cap on tasks that
 occupy a slot at once, and the subagent cap that shares its number (`MAX_CONCURRENT` in
 `src/lib/task-registry.js`), went from five to eight, because built plans waiting for their
-closing run were holding all five slots. The rule below said five; it is kept here word for
-word, with the file it came from.
+closing run were holding all five slots. The same day he ordered "raise ctoc limit to 20 if you
+have to", and it went from eight to twenty. The rule said five, then eight; both are kept here
+word for word, with the file they came from.
 
 From `docs/PROJECT_REFERENCE.md`, Subagent Guidelines:
 
 **Everything else: Parallelize when independent — up to 5 concurrent subagents.** Independent work fans out, but never more than **5 background subagents in flight at any one time**. When 5 are running, wait for one to complete before launching the next, refilling the free slot immediately so the slots stay full while work remains.
+
+From `docs/PROJECT_REFERENCE.md`, Subagent Guidelines, the words it carried on 2026-10-15 between the two orders:
+
+**Everything else: Parallelize when independent — up to 8 concurrent subagents.** Independent work fans out, but never more than **8 background subagents in flight at any one time**. When 8 are running, wait for one to complete before launching the next, refilling the free slot immediately so the slots stay full while work remains.

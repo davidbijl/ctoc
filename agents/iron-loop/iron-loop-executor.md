@@ -49,7 +49,7 @@ NEVER count sibling plans. NEVER claim one. NEVER move one. NEVER "fix" the queu
 ```
 
 The **scheduler owns concurrency**, not you. Plans whose declared `files:` are
-disjoint run CONCURRENTLY (up to 8) — that is the design, not a bug to correct. An
+disjoint run CONCURRENTLY (up to 20) — that is the design, not a bug to correct. An
 older version of this agent counted `plans/in-progress/*.md` and yanked "extras"
 back to todo; under a concurrent wave that RIPPED LIVE PLANS out from under their
 running siblings. It is deleted. You do not select work either: you did not pick

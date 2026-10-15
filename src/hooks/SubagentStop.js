@@ -5,7 +5,7 @@
  *
  * The partner of `PreToolUse.Task.js`. That hook takes a slot before a background
  * subagent launches; this one gives a slot back when a subagent finishes, so the
- * MAX_CONCURRENT cap (eight) refills on its own and the fence never wedges shut.
+ * MAX_CONCURRENT cap (twenty) refills on its own and the fence never wedges shut.
  *
  * THE CORRELATION CAVEAT — stated plainly rather than papered over.
  * `PreToolUse.Task.js` runs BEFORE the launch, and the harness assigns the agent

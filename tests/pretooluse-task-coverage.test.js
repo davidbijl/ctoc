@@ -129,10 +129,10 @@ function isDeny(stdout) {
 }
 
 // ===========================================================================
-// THE FENCE — the launch one past the cap (the ninth) is refused.
+// THE FENCE — the launch one past the cap is refused.
 // ===========================================================================
 
-describe('PreToolUse.Task — the ninth launch is BLOCKED', () => {
+describe('PreToolUse.Task — the launch past the cap is BLOCKED', () => {
   it('allows a launch while slots are free, and takes a slot for it', async () => {
     const root = mkFixture();
     markCtoc(root);
@@ -305,7 +305,7 @@ describe('PreToolUse.Task — escape phrases and non-CTOC projects', () => {
     });
     const { exitCode, stdout, stderr } = await runEnforce(taskPayload({ transcript_path }), { cwd: root });
 
-    assert.equal(isDeny(stdout), true, 'typing "urgent" must never buy a ninth concurrent subagent');
+    assert.equal(isDeny(stdout), true, 'typing "urgent" must never buy one more concurrent subagent');
     assert.equal(exitCode, 2);
     assert.match(stderr, /BLOCKED/);
     assert.equal(
@@ -486,14 +486,14 @@ describe('the real hooks, spawned as the harness spawns them', () => {
     assert.equal(agentSlots.activeCount(root), 1, 'the production path must COUNT the launch');
   });
 
-  it('DENIES the ninth launch through the real stdin path', () => {
+  it('DENIES the launch past the cap through the real stdin path', () => {
     const root = mkFixture();
     markCtoc(root);
     for (let i = 0; i < MAX_CONCURRENT; i++) {
       assert.equal(spawnHook(TASK_HOOK, taskPayload(), root).status, 0, `launch ${i + 1}`);
     }
     const out = spawnHook(TASK_HOOK, taskPayload(), root);
-    assert.equal(isDeny(out.stdout), true, 'the shipped hook must really deny the ninth launch');
+    assert.equal(isDeny(out.stdout), true, 'the shipped hook must really deny the launch past the cap');
     assert.equal(out.status, 2);
     // W1: the shipped hook reports the live count AND the cap (see the tightened
     // in-process assertion above); MAX_CONCURRENT, never a literal.

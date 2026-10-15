@@ -340,15 +340,16 @@ describe('NB2 — edge cases (E1–E7)', () => {
 
   it('renderTasksSection: failed line + running overflow + non-dep wait reason', () => {
     const running = [];
-    for (let i = 1; i <= 8; i++) running.push(T({ id: 'r' + i, kind: 'review', plan: 'p' + i, status: 'running' }));
+    const cap = taskRegistry.MAX_CONCURRENT; // the cap full, so q1 waits on it
+    for (let i = 1; i <= cap; i++) running.push(T({ id: 'r' + i, kind: 'review', plan: 'p' + i, status: 'running' }));
     const reg = mkReg([
       ...running,
       T({ id: 'q1', kind: 'implement', plan: 'pq', status: 'queued', touches: ['src/pq.js'] }), // blocked by max-concurrent
       T({ id: 'f1', kind: 'review', plan: 'pf', status: 'failed', result: { ok: false, cancelled: true } }),
     ]);
     const s = taskView.renderTasksSection(reg);
-    assert.match(s, /8 running/);
-    assert.match(s, /\+2/, 'overflow marker beyond first 6 running');
+    assert.match(s, new RegExp(`${cap} running`));
+    assert.match(s, new RegExp(`\\+${cap - 6}`), 'overflow marker beyond first 6 running');
     assert.match(s, /1 failed/);
     assert.match(s, /\(cancelled\)/);
     assert.match(s, /waits: max-concurrent/);
