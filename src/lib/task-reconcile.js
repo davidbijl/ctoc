@@ -19,7 +19,7 @@
  *   • ORPHAN ⇒ OFF-CONCURRENCY FOR FREE (D-NB4-3). task-registry's `runningTasks` /
  *     `evaluateConcurrency` / `nextRunnable` count `status === 'running'` EXCLUSIVELY,
  *     so transitioning a task `running → orphaned` (a legal NB1 transition) removes it
- *     from the ≤5 count with ZERO change to task-registry.js. Re-run is offered by
+ *     from the ≤MAX_CONCURRENT count with ZERO change to task-registry.js. Re-run is offered by
  *     handing the freed slot back through the scheduler (`nextRunnable`), never a
  *     direct launch.
  *   • FAIL-OPEN, TOTAL (D1). `reconcile` never throws on malformed input — a corrupt

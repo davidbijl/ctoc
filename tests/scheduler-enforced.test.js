@@ -95,21 +95,22 @@ describe('R3-B item 1 — guarded start: the ladder is CHECKED, not just defined
     assert.equal(t.ts.started, null, 'no start timestamp was stamped');
   });
 
-  it('E-MAX: the 6th concurrent start is REFUSED (max-concurrent)', () => {
+  it('E-MAX: the sixth, seventh and eighth starts run; the 9th is REFUSED (max-concurrent)', () => {
+    // the owner's order of 2026-10-15: "remove limit raise to 8"
     const ids = [];
-    for (let i = 1; i <= 5; i++) {
+    for (let i = 1; i <= 8; i++) {
       const a = ms.route(['menu', 'task', 'add', 'review', 'p' + i], root);
       const s = ms.route(['menu', 'task', 'start', a.taskId], root);
-      assert.equal(s.status, 'running', 'the first five start');
+      assert.equal(s.status, 'running', `start ${i} of 8 runs`);
       ids.push(a.taskId);
     }
-    const sixth = ms.route(['menu', 'task', 'add', 'review', 'p6'], root);
-    const res = ms.route(['menu', 'task', 'start', sixth.taskId], root);
+    const ninth = ms.route(['menu', 'task', 'add', 'review', 'p9'], root);
+    const res = ms.route(['menu', 'task', 'start', ninth.taskId], root);
     assert.equal(res.ok, false);
     assert.equal(res.reason, 'max-concurrent');
     assert.equal(
-      taskRegistry.load(root).tasks.filter((t) => t.status === 'running').length, 5,
-      'still exactly 5 running — the ≤5 budget held'
+      taskRegistry.load(root).tasks.filter((t) => t.status === 'running').length, 8,
+      'still exactly 8 running — the ≤8 budget held'
     );
   });
 

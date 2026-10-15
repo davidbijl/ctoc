@@ -1790,7 +1790,7 @@ function taskSpecFromPlan(plan, projectPath) {
  * Start the todo executor agent (scheduler-backed, LOCK-FREE).
  *
  * The global agent lock is retired: the s1 scheduler is now the safety mechanism
- * (file-based serialization, git-exclusive, sync barrier, ≤5 concurrent), so
+ * (file-based serialization, git-exclusive, sync barrier, ≤MAX_CONCURRENT concurrent), so
  * MULTIPLE plans may run concurrently when their declared files are DISJOINT —
  * that is the point of the file-based model, not a bug. Flow: clear any drain-stop
  * → sweep stale in-progress → pick the next todo plan (FIFO) → translate it to a

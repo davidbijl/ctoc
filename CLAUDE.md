@@ -144,7 +144,7 @@ Numbered menus after every CTOC response, `[0]` always back; recommended option 
 
 ## Subagent Guidelines
 
-Plans one at a time, never in parallel. Other independent work fans out, at most 5 background subagents at once.
+Plans one at a time, never in parallel. Other independent work fans out, at most 8 background subagents at once.
 
 ---
 

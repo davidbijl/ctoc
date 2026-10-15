@@ -316,17 +316,17 @@ describe('SPEC-B — B-PROMOTE (complete/fail/cancel fold nextRunnable into prom
   it('B-PROMOTE-cap: with one freed slot, promote never exceeds the concurrency budget', () => {
     const reg = taskRegistry.emptyRegistry();
     const running = [];
-    for (let i = 1; i <= 5; i++) {
+    for (let i = 1; i <= taskRegistry.MAX_CONCURRENT; i++) {
       const t = taskRegistry.addTask(reg, { kind: 'review', plan: 'r' + i });
       taskRegistry.updateTask(reg, t.id, { status: 'running' });
       running.push(t);
     }
-    for (let i = 1; i <= 6; i++) taskRegistry.addTask(reg, { kind: 'review', plan: 'q' + i });
+    for (let i = 1; i <= taskRegistry.MAX_CONCURRENT + 1; i++) taskRegistry.addTask(reg, { kind: 'review', plan: 'q' + i });
     taskRegistry.save(root, reg);
 
     const done = ms.route(['menu', 'task', 'complete', running[0].id, '--summary', 'ok'], root);
     assert.ok(Array.isArray(done.promote));
-    assert.equal(done.promote.length, 1, 'exactly one slot freed → exactly one promoted (≤5 honored)');
+    assert.equal(done.promote.length, 1, 'exactly one slot freed → exactly one promoted (≤MAX_CONCURRENT honored)');
   });
 
   it('B-PROMOTE-failcancel(fail): failing a running implement promotes the queued implement', () => {

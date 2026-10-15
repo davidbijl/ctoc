@@ -6,7 +6,7 @@
 <p align="center">
   <a href="https://github.com/robotijn/ctoc"><img alt="GitHub" src="https://img.shields.io/badge/GitHub-robotijn%2Fctoc-blue"></a>
   <a href="LICENSE"><img alt="License: PolyForm Shield" src="https://img.shields.io/badge/License-PolyForm%20Shield-brightgreen.svg"></a>
-  <img alt="Version" src="https://img.shields.io/badge/version-6.14.125-blue">
+  <img alt="Version" src="https://img.shields.io/badge/version-6.14.126-blue">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Claude%20Code-purple">
   <img alt="Agents" src="https://img.shields.io/badge/agents-125-orange">
   <img alt="Skills" src="https://img.shields.io/badge/skills-430-blue">
@@ -135,7 +135,7 @@ Answer them once; both choices are remembered. "Keep defaults, stop asking" and 
 **Worked example.** The classic pipeline overview (`Open the dashboard` on the first screen) of a busy project — this is a real capture of the CTO Chief repository itself:
 
 ```
-CTOC v6.14.125
+CTOC v6.14.126
 ────────────────────────────────────────────────────────────
 
 ▼ Business (2)
@@ -397,7 +397,7 @@ When validation **fails**, the failures are listed and "Approve anyway" is burie
 16 FINAL-REVIEW → the plan lands in review, waiting for your OK
 ```
 
-Plans whose declared `files:` are disjoint build **concurrently** (up to five); two plans that touch the same file serialize. When a wave finishes, a single `sync` barrier runs the integrated suite and commits.
+Plans whose declared `files:` are disjoint build **concurrently** (up to eight); two plans that touch the same file serialize. When a wave finishes, a single `sync` barrier runs the integrated suite and commits.
 
 **The task board** (`View board` on the Commands screen, or say `tasks`) — a real capture:
 
@@ -1107,7 +1107,7 @@ node --test tests/*.test.js   # fast pass only — does NOT enforce the floor
 ```javascript
 const { release, getVersion, syncAll, checkForUpdates } = require('./src/lib/version');
 
-getVersion()       // → '6.14.125'
+getVersion()       // → '6.14.126'
 release()          // → bumps patch, syncs all files
 release('minor')   // → bumps minor
 release('major')   // → bumps major
@@ -1178,6 +1178,6 @@ Use CTO Chief freely for any project. You may not offer CTO Chief itself or a de
 
 ---
 
-**6.14.125** · Built by [@robotijn](https://github.com/robotijn)
+**6.14.126** · Built by [@robotijn](https://github.com/robotijn)
 
 <p align="center"><i>"Excellence is not an act, but a habit."</i></p>

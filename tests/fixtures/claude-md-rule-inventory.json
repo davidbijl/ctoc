@@ -549,7 +549,9 @@
       "id": "r0087",
       "line": 813,
       "old": "**Everything else: Parallelize when independent — up to 5 concurrent subagents.** Independent work fans out, but never more than **5 background subagents in flight at any one time**.",
-      "home": "docs/PROJECT_REFERENCE.md"
+      "home": "docs/PROJECT_REFERENCE.md",
+      "new": "**Everything else: Parallelize when independent — up to 8 concurrent subagents.** Independent work fans out, but never more than **8 background subagents in flight at any one time**.",
+      "old_home": "docs/OPERATING_LESSONS.md"
     },
     {
       "id": "r0088",

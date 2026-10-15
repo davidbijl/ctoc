@@ -172,10 +172,10 @@ describe('Task model and persistence', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('Scheduler — canRun', () => {
-  it('ST-06: max concurrency reached blocks a 6th candidate', () => {
-    const running = [1, 2, 3, 4, 5].map(i => T({ id: `t${i}`, kind: 'review' }));
+  it('ST-06: max concurrency reached blocks the next candidate', () => {
+    const running = Array.from({ length: reg.MAX_CONCURRENT }, (_, i) => T({ id: `t${i + 1}`, kind: 'review' }));
     const r = mkReg(running);
-    const cand = C({ id: 't6', kind: 'review' });
+    const cand = C({ id: `t${reg.MAX_CONCURRENT + 1}`, kind: 'review' });
     const d = reg.canRun(cand, r);
     assert.equal(d.run, false);
     assert.equal(d.reason, 'max-concurrent');
@@ -425,7 +425,7 @@ describe('Scheduler — nextRunnable', () => {
 
     // The UNION (real-running ∪ returned) jointly satisfies EVERY invariant.
     const union = [...running, ...returned];
-    // ≤5 concurrent
+    // ≤MAX_CONCURRENT concurrent
     assert.ok(union.length <= reg.MAX_CONCURRENT, 'union ≤ MAX_CONCURRENT');
     // a sync (wave barrier) never runs alongside anything
     const syncs = union.filter(t => t.kind === 'sync');
@@ -596,11 +596,12 @@ describe('Edge / boundary behavior', () => {
   });
 
   it('ST-21: greedy cumulative nextRunnable is jointly startable', () => {
-    // (a) fill-to-cap: 3 running + 5 disjoint queued → exactly the FIFO first 2.
+    // (a) fill-to-cap: 3 running + MAX_CONCURRENT disjoint queued → exactly the FIFO first
+    //     MAX_CONCURRENT - 3 (more queued than free slots, so the cap is what stops the walk).
     const running3 = [1, 2, 3].map(i => T({ id: `r${i}`, kind: 'review', touches: [`r${i}.js`] }));
-    const queued5 = [1, 2, 3, 4, 5].map(i => C({ id: `q${i}`, kind: 'review', touches: [`q${i}.js`] }));
-    const rA = mkReg([...running3, ...queued5]);
-    assert.deepEqual(reg.nextRunnable(rA).map(t => t.id), ['q1', 'q2']);
+    const queued = Array.from({ length: reg.MAX_CONCURRENT }, (_, i) => C({ id: `q${i + 1}`, kind: 'review', touches: [`q${i + 1}.js`] }));
+    const rA = mkReg([...running3, ...queued]);
+    assert.deepEqual(reg.nextRunnable(rA).map(t => t.id), queued.slice(0, reg.MAX_CONCURRENT - 3).map(t => t.id));
 
     // (b) file-cumulative: q1,q2 both touch a.js → q1 only.
     const rB = mkReg([
@@ -1047,9 +1048,9 @@ describe('Cancelling status (C1-2)', () => {
   });
 
   it('C1-2c2: a cancelling task counts toward max-concurrent and the sync barrier', () => {
-    const occ = [1, 2, 3, 4].map(i => T({ id: `t${i}`, kind: 'review' }));
-    occ.push(T({ id: 't5', kind: 'review', status: 'cancelling' }));
-    assert.equal(reg.canRun(C({ id: 't6', kind: 'review' }), mkReg(occ)).reason, 'max-concurrent');
+    const occ = Array.from({ length: reg.MAX_CONCURRENT - 1 }, (_, i) => T({ id: `t${i + 1}`, kind: 'review' }));
+    occ.push(T({ id: `t${reg.MAX_CONCURRENT}`, kind: 'review', status: 'cancelling' }));
+    assert.equal(reg.canRun(C({ id: `t${reg.MAX_CONCURRENT + 1}`, kind: 'review' }), mkReg(occ)).reason, 'max-concurrent');
 
     const rSync = mkReg([T({ id: 't1', kind: 'review', status: 'cancelling', touches: ['a.js'] })]);
     assert.equal(reg.canRun(C({ id: 's', kind: 'sync', gitOp: true, touches: [] }), rSync).reason, 'sync-barrier');
@@ -1345,8 +1346,8 @@ describe('precompute kind (streaming gate-question generation)', () => {
 });
 
 describe('Exported constants + surface', () => {
-  it('exposes MAX_CONCURRENT=5, REGISTRY_VERSION=1, frozen KINDS; kind-based plan-serial export is removed', () => {
-    assert.equal(reg.MAX_CONCURRENT, 5);
+  it('exposes MAX_CONCURRENT=8, REGISTRY_VERSION=1, frozen KINDS; kind-based plan-serial export is removed', () => {
+    assert.equal(reg.MAX_CONCURRENT, 8);
     assert.equal(reg.REGISTRY_VERSION, 1);
     assert.ok(reg.KINDS.has('implement'));
     assert.ok(reg.KINDS.has('sync'));

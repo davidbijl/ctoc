@@ -3,12 +3,12 @@
 /**
  * CTOC PreToolUse Enforcement Hook — Task (the concurrency fence)
  *
- * WHY THIS EXISTS. CTOC's standing limit is five concurrent background
- * subagents, and `src/lib/task-registry.js` really does enforce it —
+ * WHY THIS EXISTS. CTOC's standing limit is MAX_CONCURRENT (eight) concurrent
+ * background subagents, and `src/lib/task-registry.js` really does enforce it —
  * `evaluateConcurrency` Rule 1 returns `{run:false, reason:'max-concurrent'}` the
- * moment five are running. But that check only ever fired for work that walked in
+ * moment the cap is reached. But that check only ever fired for work that walked in
  * through the scheduler (`menu task add` → `canRun`). Nothing hooked the `Task`
- * tool, so a model could launch a sixth background subagent without recording it
+ * tool, so a model could launch one more background subagent without recording it
  * anywhere and the scheduler was never consulted. The cap was enforced; the
  * ON-RAMP to it was optional. This hook is the on-ramp, and it is not optional.
  *
@@ -26,8 +26,8 @@
  * ENFORCEMENT MODE. The sibling editing hooks (Edit/Write/MultiEdit/NotebookEdit)
  * NOW honor `enforcement.mode` from `.ctoc/settings.yaml` (via
  * `src/lib/enforcement-mode.js`) — but this hook deliberately does NOT, for the
- * same reason it has no escape hatch (below): the five-subagent cap is a RESOURCE
- * limit, not planning ceremony. Setting `mode: off` cannot conjure a sixth
+ * same reason it has no escape hatch (below): the subagent cap is a RESOURCE
+ * limit, not planning ceremony. Setting `mode: off` cannot conjure one more
  * execution context, so honoring it here would grant a launch WITHOUT a slot and
  * corrupt the slot accounting exactly as an escape phrase would.
  *
@@ -35,8 +35,8 @@
  * differs from its siblings here. An escape phrase ("urgent", "hotfix", "quick
  * fix") buys a bypass of the Iron Loop PLANNING CEREMONY: it says "this change is
  * too small to be worth a plan", and the only thing it spends is process. The
- * five-subagent cap is not process — it is a RESOURCE limit. Typing "urgent"
- * cannot conjure a sixth execution context, so honoring the phrase here would
+ * subagent cap is not process — it is a RESOURCE limit. Typing "urgent"
+ * cannot conjure one more execution context, so honoring the phrase here would
  * grant a launch WITHOUT a slot, and the accounting would then corrupt: the next
  * `SubagentStop` releases the OLDEST live entry, which belongs to a different,
  * still-running subagent. That frees a slot that is not free, and the cap
@@ -123,7 +123,7 @@ function buildBlockMessage(running, max, label) {
     + `  Wait for one to complete — the slot refills automatically the moment it finishes,\n`
     + `  and this launch will then go through unchanged.\n\n`
     + `  An escape phrase does not lift this cap. Escape phrases skip planning overhead;\n`
-    + `  this is a resource limit, and no phrase creates a sixth place to run.\n\n`;
+    + `  this is a resource limit, and no phrase creates one more place to run.\n\n`;
 }
 
 /**
@@ -212,8 +212,8 @@ async function enforce(stdinJson) {
     //    `slot.running`, and the difference is real work rather than a second
     //    opinion. `acquire` filters stale holders out of its IN-MEMORY count but
     //    returns before `writeSlots` on the refuse path, so it never PERSISTS that
-    //    reap: a store holding five live entries and three crashed ones refuses
-    //    correctly at five and stays at eight on disk. `activeCount` reaps and
+    //    reap: a store holding the cap's worth of live entries and three crashed
+    //    ones refuses correctly at the cap and stays three over it on disk. `activeCount` reaps and
     //    persists. The cap-hit is exactly the moment that matters — a dead holder
     //    only ever costs a human a real launch once the fence is under pressure —
     //    so the refusal is where the store gets healed. The number is identical to

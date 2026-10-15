@@ -160,25 +160,27 @@ describe('reconcile — orphan frees the scheduler for re-run', () => {
     assert.equal(reg.canRun(candidate, before).reason, 'max-concurrent');
 
     const { tasks: after } = rec.reconcile(before, { ...OPTS, liveAgentIds: null });
-    // With all 5 stale + no TaskList, all orphan → slots free.
+    // With all MAX_CONCURRENT stale + no TaskList, all orphan → slots free.
     assert.equal(reg.canRun(candidate, after).run, true, 're-run allowed AFTER reconcile (scheduler path)');
   });
 
   it('orphaned-frees-a-concurrency-slot: exactly one orphan frees exactly one slot', () => {
     const tasks = [];
-    // 4 live-confirmed running + 1 stale orphan-eligible = 5 total (== MAX).
+    // MAX - 1 live-confirmed running + 1 stale orphan-eligible = MAX total.
+    const live = new Set();
     for (let i = 0; i < reg.MAX_CONCURRENT - 1; i++) {
       tasks.push(running({ id: 't' + i, agentTaskId: 'live' + i, started: ago(STALE + MIN) }));
+      live.add('live' + i);
     }
     tasks.push(running({ id: 'stale', agentTaskId: 'ghost', started: ago(STALE + MIN) }));
     const before = mkReg(tasks);
-    const live = new Set(['live0', 'live1', 'live2', 'live3']); // 'ghost' absent → orphan
+    // 'ghost' is absent from the live set → orphan
     const candidate = { kind: 'review', touches: [], blockedBy: [], gitOp: false, id: 'cand' };
 
     assert.equal(reg.canRun(candidate, before).reason, 'max-concurrent', 'full before reconcile');
     const { tasks: after, report } = rec.reconcile(before, { ...OPTS, liveAgentIds: live });
     assert.deepEqual(report.orphaned, ['stale'], 'only the ghost orphaned');
-    // Exactly one slot freed: 4 running remain → candidate now runnable.
+    // Exactly one slot freed: MAX - 1 running remain → candidate now runnable.
     const stillRunning = after.tasks.filter(t => t.status === 'running');
     assert.equal(stillRunning.length, reg.MAX_CONCURRENT - 1, 'one slot vacated');
     assert.equal(reg.canRun(candidate, after).run, true);

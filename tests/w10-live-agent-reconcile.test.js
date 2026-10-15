@@ -175,29 +175,28 @@ describe('W10-s4 (H8) — live-agent ids threaded through route → reconcile', 
     assert.match(res.text, /1 task orphaned — offer re-run/, 'only the dead task is offered for re-run');
   });
 
-  it('3. the live long-running task counts toward the ≤5 cap (scenario 6)', () => {
-    // t1 live+old, plus 4 freshly-started running tasks → 5 running once reconciled.
-    const [t1] = seedRunning([
-      { agentTaskId: 'a1', ageMinutes: PAST_STALE_MIN, plan: 'p1' },
-      { agentTaskId: 'a2', ageMinutes: 0, plan: 'p2' },
-      { agentTaskId: 'a3', ageMinutes: 0, plan: 'p3' },
-      { agentTaskId: 'a4', ageMinutes: 0, plan: 'p4' },
-      { agentTaskId: 'a5', ageMinutes: 0, plan: 'p5' },
-    ]);
+  it('3. the live long-running task counts toward the MAX_CONCURRENT cap (scenario 6)', () => {
+    // t1 live+old, plus freshly-started running tasks up to the cap → the cap is full once reconciled.
+    const cap = taskRegistry.MAX_CONCURRENT;
+    const specs = Array.from({ length: cap }, (_, i) => ({
+      agentTaskId: `a${i + 1}`, ageMinutes: i === 0 ? PAST_STALE_MIN : 0, plan: `p${i + 1}`,
+    }));
+    const [t1] = seedRunning(specs);
 
     // Reconcile via the real render, honoring the live set: t1 must NOT be freed.
-    ms.route(['menu'], root, { liveAgentIds: ['a1', 'a2', 'a3', 'a4', 'a5'] });
+    ms.route(['menu'], root, { liveAgentIds: specs.map((s) => s.agentTaskId) });
 
     const reg = taskRegistry.load(root);
-    assert.equal(reg.tasks.filter((t) => t.status === 'running').length, 5, 'all five stay running');
+    assert.equal(reg.tasks.filter((t) => t.status === 'running').length, cap, 'every one stays running');
     assert.equal(readTask(t1).status, 'running', 'the live long-running task keeps its slot');
 
-    // A 6th queued implement task on a different plan must be blocked by the cap.
+    // One more queued implement task on a different plan must be blocked by the cap.
+    const next = `p${cap + 1}`;
     const decision = taskRegistry.canRun(
-      { id: 't99', kind: 'implement', plan: 'p6', touches: ['src/p6.js'], blockedBy: [], gitOp: false },
+      { id: 't99', kind: 'implement', plan: next, touches: [`src/${next}.js`], blockedBy: [], gitOp: false },
       reg,
     );
-    assert.equal(decision.run, false, 'the ≤5 cap counts the live task, so a 6th is queued');
+    assert.equal(decision.run, false, 'the cap counts the live task, so one more is queued');
     assert.equal(decision.reason, 'max-concurrent');
   });
 

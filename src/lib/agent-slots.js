@@ -1,10 +1,10 @@
 'use strict';
 /**
  * AGENT SLOTS — the durable, self-healing semaphore behind CTOC's standing
- * five-concurrent-subagent cap.
+ * MAX_CONCURRENT-subagent cap (eight).
  *
  * WHY THIS EXISTS. `task-registry.evaluateConcurrency` (Rule 1) already refuses
- * to start a sixth task — but only for work that walks in through the scheduler
+ * to start a task past the cap — but only for work that walks in through the scheduler
  * (`menu task add` → `canRun`). Nothing ever forced a background subagent to take
  * that on-ramp: a launch that never registered itself was never counted, so the
  * cap was real in the scheduler and optional in practice. This module is the
@@ -13,7 +13,7 @@
  *
  * THE NUMBER LIVES IN ONE PLACE. `MAX_CONCURRENT` is imported from
  * `./task-registry` and re-exported — never redefined here. There is exactly one
- * `5` in CTOC.
+ * copy of the number in CTOC.
  *
  * THE STORE. `<root>/.ctoc/state/agent-slots.json`:
  *

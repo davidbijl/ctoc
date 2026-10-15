@@ -4,7 +4,7 @@
  * THE CONCURRENCY FENCE — behavior tests for the durable agent-slot semaphore.
  *
  * Root cause this closes: `src/lib/task-registry.js` really does enforce the
- * five-concurrent-subagent cap (`evaluateConcurrency` Rule 1 →
+ * MAX_CONCURRENT-subagent cap, eight (`evaluateConcurrency` Rule 1 →
  * `{run:false, reason:'max-concurrent'}`), but ONLY for work that walks in
  * through `menu task add` → `canRun`. Nothing forced a background subagent to
  * take that on-ramp, so a launch that never registered itself was never counted
@@ -17,7 +17,7 @@
  * microseconds and the suite stays deterministic.
  *
  * The load-bearing assertions, each of which goes red under the obvious mutant:
- *   • the sixth acquire is refused           (delete the cap check → red)
+ *   • the ninth acquire is refused           (delete the cap check → red)
  *   • a released slot refills                (drop the removal → red)
  *   • a slot past the TTL is reaped          (drop the reaping → red; this is
  *     what stops a CRASHED subagent from leaking a slot forever)
@@ -60,13 +60,14 @@ after(() => {
 });
 
 // ===========================================================================
-// The fence itself — five in flight is fine, the sixth is refused.
+// The fence itself — eight in flight is fine, the ninth is refused.
 // ===========================================================================
 
-describe('agent-slots — the five-concurrent cap', () => {
-  it('the cap number is task-registry\'s MAX_CONCURRENT, not a second copy of 5', () => {
+describe('agent-slots — the eight-concurrent cap', () => {
+  it('the cap number is task-registry\'s MAX_CONCURRENT, not a second copy of 8', () => {
     assert.equal(MAX_CONCURRENT, taskRegistry.MAX_CONCURRENT);
-    assert.equal(MAX_CONCURRENT, 5);
+    // the owner's order of 2026-10-15: "remove limit raise to 8"
+    assert.equal(MAX_CONCURRENT, 8);
   });
 
   it('MAX_CONCURRENT acquires succeed and the NEXT one is refused with max-concurrent', () => {
@@ -80,9 +81,9 @@ describe('agent-slots — the five-concurrent cap', () => {
     assert.equal(activeCount(root), MAX_CONCURRENT);
 
     // THE FENCE. Remove the cap check in acquire() and this line goes red.
-    const sixth = acquire(root, { label: 'agent-6' });
-    assert.deepEqual(sixth, { ok: false, reason: 'max-concurrent', running: MAX_CONCURRENT });
-    assert.equal(sixth.token, undefined, 'a refused acquire must not hand out a token');
+    const ninth = acquire(root, { label: 'agent-9' });
+    assert.deepEqual(ninth, { ok: false, reason: 'max-concurrent', running: MAX_CONCURRENT });
+    assert.equal(ninth.token, undefined, 'a refused acquire must not hand out a token');
 
     // A refusal must not be a silent acquire — the count is unchanged.
     assert.equal(activeCount(root), MAX_CONCURRENT);
@@ -128,14 +129,14 @@ describe('agent-slots — release refills the slot', () => {
     const root = mkRoot();
     const tokens = [];
     for (let i = 0; i < MAX_CONCURRENT; i++) tokens.push(acquire(root, { label: 'a' }).token);
-    assert.equal(acquire(root, { label: 'sixth' }).ok, false);
+    assert.equal(acquire(root, { label: 'ninth' }).ok, false);
 
     const released = release(root, tokens[2]);
     assert.equal(released.ok, true);
     assert.equal(released.released, tokens[2]);
     assert.equal(activeCount(root), MAX_CONCURRENT - 1);
 
-    const refilled = acquire(root, { label: 'sixth' });
+    const refilled = acquire(root, { label: 'ninth' });
     assert.equal(refilled.ok, true, 'the freed slot must be reusable');
     assert.equal(activeCount(root), MAX_CONCURRENT);
   });
@@ -244,13 +245,13 @@ describe('agent-slots — stale reaping (a crashed subagent leaks nothing)', () 
     const root = mkRoot();
     const t0 = 9_000_000;
     for (let i = 0; i < MAX_CONCURRENT; i++) acquire(root, { label: `x-${i}`, now: t0 });
-    // Four of the five stay alive; one crashed long ago.
+    // Every t0 holder is past the TTL by `later`; one short of the cap is taken fresh.
     const later = t0 + SLOT_TTL_MS + 1;
-    for (let i = 0; i < 4; i++) acquire(root, { label: `y-${i}`, now: later });
-    assert.equal(activeCount(root, later), 4);
-    assert.equal(acquire(root, { label: 'fifth', now: later }).ok, true);
+    for (let i = 0; i < MAX_CONCURRENT - 1; i++) acquire(root, { label: `y-${i}`, now: later });
+    assert.equal(activeCount(root, later), MAX_CONCURRENT - 1);
+    assert.equal(acquire(root, { label: 'last-free', now: later }).ok, true);
     assert.deepEqual(
-      acquire(root, { label: 'sixth', now: later }),
+      acquire(root, { label: 'one-past-the-cap', now: later }),
       { ok: false, reason: 'max-concurrent', running: MAX_CONCURRENT },
     );
   });

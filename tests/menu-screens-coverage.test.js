@@ -30,6 +30,7 @@ const { test, describe, afterEach } = require('node:test');
 const menu = require('../src/lib/menu-screens.js');
 const staleDetector = require('../src/lib/stale-detector.js');
 const safeFs = require('../src/lib/safe-fs.js');
+const { MAX_CONCURRENT } = require('../src/lib/task-registry.js');
 
 // ── fixtures ─────────────────────────────────────────────────────────────────
 const STAGES = ['canvas', 'functional', 'implementation', 'todo', 'in-progress', 'review', 'done', 'vision'];
@@ -876,10 +877,11 @@ describe('task command state machine — start / fail / cancel', () => {
   test('start_is_refused_when_the_concurrency_ladder_says_no', () => {
     const root = mkProject();
     const tasks = [];
-    for (let i = 1; i <= 5; i++) tasks.push(makeTask(`t${i}`, { kind: 'review', status: 'running' }));
-    tasks.push(makeTask('t6', { kind: 'review', status: 'queued' }));
-    writeRegistry(root, tasks, 6);
-    const r = menu.route(['menu', 'task', 'start', 't6'], root);
+    for (let i = 1; i <= MAX_CONCURRENT; i++) tasks.push(makeTask(`t${i}`, { kind: 'review', status: 'running' }));
+    const next = `t${MAX_CONCURRENT + 1}`;
+    tasks.push(makeTask(next, { kind: 'review', status: 'queued' }));
+    writeRegistry(root, tasks, MAX_CONCURRENT + 1);
+    const r = menu.route(['menu', 'task', 'start', next], root);
     assert.equal(r.ok, false);
     assert.equal(r.refused, true);
     assert.equal(r.reason, 'max-concurrent');
@@ -888,10 +890,11 @@ describe('task command state machine — start / fail / cancel', () => {
   test('start_force_overrides_a_ladder_refusal_and_shouts_it', () => {
     const root = mkProject();
     const tasks = [];
-    for (let i = 1; i <= 5; i++) tasks.push(makeTask(`t${i}`, { kind: 'review', status: 'running' }));
-    tasks.push(makeTask('t6', { kind: 'review', status: 'queued' }));
-    writeRegistry(root, tasks, 6);
-    const r = menu.route(['menu', 'task', 'start', 't6', '--force'], root);
+    for (let i = 1; i <= MAX_CONCURRENT; i++) tasks.push(makeTask(`t${i}`, { kind: 'review', status: 'running' }));
+    const next = `t${MAX_CONCURRENT + 1}`;
+    tasks.push(makeTask(next, { kind: 'review', status: 'queued' }));
+    writeRegistry(root, tasks, MAX_CONCURRENT + 1);
+    const r = menu.route(['menu', 'task', 'start', next, '--force'], root);
     assert.equal(r.ok, true);
     assert.equal(r.forced, true);
     assert.equal(r.status, 'running');

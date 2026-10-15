@@ -128,7 +128,7 @@ branch's plan; carry the approval record into the commit), and push.
 - Deepthink slice 4 (plan 00400, real run in a disposable project) is in todo; slices 1, 2, 3
   and 5 are in done.
 - The round protocol for "improved three times" slices: per file and round, the session
-  dispatches read-only agents (at most five in flight) and hands their reports to one long-lived
+  dispatches read-only agents (at most eight in flight) and hands their reports to one long-lived
   executor: `citation-validator` research → `agent-critic` findings with exact old/new text →
   `citation-validator` validates every new claim → the executor applies byte for byte → a quiet
   re-read → the executor writes the round entry. Save every report verbatim to the notes folder

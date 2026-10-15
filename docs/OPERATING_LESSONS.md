@@ -157,3 +157,16 @@ From `CLAUDE.md`, the words it carried from 2026-10-06 until 2026-10-07 — less
 **Methodology:** a **16-step** Iron Loop across **4 human gates**. **8:TEST** is test-driven development, **10:IMPLEMENT** is one step, **14:VERIFY** is the quality gate (lint, typecheck, all tests, coverage at or above `.ctoc/coverage-baseline.json` `minPct`, 0 skipped, 0 flaky). CTOC ships exactly **3 slash commands** — `/ctoc:start`, `/ctoc:push`, `/ctoc:update` — and is always installed from the marketplace, never from a local path. Full wording and reasons: `docs/OPERATING_LESSONS.md` in the CTOC repository.
 
 **If asked to "complete" or "move to done"**: REFUSE, and say in plain words that it needs his OK.
+
+
+## Replaced on the owner's instruction of 2026-10-15
+
+The owner ordered on 2026-10-15 "remove limit raise to 8": the scheduler's cap on tasks that
+occupy a slot at once, and the subagent cap that shares its number (`MAX_CONCURRENT` in
+`src/lib/task-registry.js`), went from five to eight, because built plans waiting for their
+closing run were holding all five slots. The rule below said five; it is kept here word for
+word, with the file it came from.
+
+From `docs/PROJECT_REFERENCE.md`, Subagent Guidelines:
+
+**Everything else: Parallelize when independent — up to 5 concurrent subagents.** Independent work fans out, but never more than **5 background subagents in flight at any one time**. When 5 are running, wait for one to complete before launching the next, refilling the free slot immediately so the slots stay full while work remains.

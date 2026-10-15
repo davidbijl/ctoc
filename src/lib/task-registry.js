@@ -11,7 +11,7 @@
  *   Kind-based "plan-serial" (one `implement` task at a time) is DELETED. Two tasks
  *   may run concurrently iff their touched files are DISJOINT — file-conflict
  *   (Rule 4) is the serializer. This is what makes the file-disjoint wave pattern
- *   ("1 plan per agent", ≤5 concurrent) legal instead of strangled by kind. Because
+ *   ("1 plan per agent", ≤8 concurrent) legal instead of strangled by kind. Because
  *   file disjointness now guards correctness, `touches` is MANDATORY for every
  *   `implement` task: both `addTask` and `canRun` reject an empty-touches implement
  *   LOUDLY (an undeclared implement would bypass Rule 4 and make the model unsound).
@@ -118,8 +118,8 @@ const { touchesOverlap } = require('./plan-coverage');
 const REGISTRY_VERSION = 1;
 /** Bounded compare-and-swap retries in `withRegistry` (no sleep, no busy-wait). */
 const WITH_REGISTRY_ATTEMPTS = 5;
-/** D5: at most this many operations run concurrently. */
-const MAX_CONCURRENT = 5;
+/** D5: at most this many operations run concurrently (8 since the owner's order of 2026-10-15). */
+const MAX_CONCURRENT = 8;
 /** Warn-log rotation cap (mirrors store.js). */
 const MAX_LOG_ENTRIES = 500;
 /**
@@ -998,7 +998,7 @@ function canRun(candidate, registry) {
  * running, not done, so it cannot satisfy another's blockedBy this pass), while the
  * concurrency ladder is checked against the projected set (real running + already
  * accepted). Each accepted candidate is folded into `projected` before the next is
- * evaluated, so starting the whole returned set never violates ≤5 / sync-barrier /
+ * evaluated, so starting the whole returned set never violates ≤MAX_CONCURRENT / sync-barrier /
  * git-exclusive / file-conflict. Pure: builds its own projected array; returns
  * references to the selected queued task objects.
  * @param {{tasks:Array<object>}} registry

@@ -240,7 +240,7 @@ When user selects `[8] release` from dashboard, show:
 
 **Plans: ALWAYS sequential.** Process todo plans one at a time, FIFO order. Never parallelize plan implementation — plans may modify overlapping files and later plans may depend on earlier changes.
 
-**Everything else: Parallelize when independent — up to 5 concurrent subagents.** Independent work fans out, but never more than **5 background subagents in flight at any one time**. When 5 are running, wait for one to complete before launching the next, refilling the free slot immediately so the slots stay full while work remains.
+**Everything else: Parallelize when independent — up to 8 concurrent subagents.** Independent work fans out, but never more than **8 background subagents in flight at any one time**. When 8 are running, wait for one to complete before launching the next, refilling the free slot immediately so the slots stay full while work remains.
 
 | Safe to parallelize | Must serialize |
 |---------------------|----------------|

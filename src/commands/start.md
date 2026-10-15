@@ -209,7 +209,7 @@ and offered for a duplicate re-run. Only when that list genuinely cannot be obta
 (the `start.js` child process running with no Task-tool access, or a true session
 restart where the harness reports no agents) does the **staleness threshold
 backstop** — a long-`running` task with no confirmable live agent is orphaned, which
-is exactly correct in the restart case where the agent really is gone. An `orphaned` task no longer counts toward the ≤5
+is exactly correct in the restart case where the agent really is gone. An `orphaned` task no longer counts toward the ≤8
 concurrency limit and is **offered for re-run through the scheduler**
 (`canRun`/`nextRunnable`), never a direct launch. A **`failed`** task always surfaces
 in the task plane / inbox (never silently lost). Reconciliation is fully fail-open: a

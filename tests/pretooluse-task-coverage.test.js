@@ -129,10 +129,10 @@ function isDeny(stdout) {
 }
 
 // ===========================================================================
-// THE FENCE — the sixth launch is refused.
+// THE FENCE — the launch one past the cap (the ninth) is refused.
 // ===========================================================================
 
-describe('PreToolUse.Task — the sixth launch is BLOCKED', () => {
+describe('PreToolUse.Task — the ninth launch is BLOCKED', () => {
   it('allows a launch while slots are free, and takes a slot for it', async () => {
     const root = mkFixture();
     markCtoc(root);
@@ -197,8 +197,8 @@ describe('PreToolUse.Task — the sixth launch is BLOCKED', () => {
   //
   // `acquire()` filters stale holders OUT of its in-memory count but, on the
   // REFUSE path, never persists that reap — it returns before `writeSlots`. So a
-  // store can hold 8 entries of which 3 are dead, refuse correctly at 5, and stay
-  // at 8 on disk indefinitely. `activeCount` reaps AND persists, which is exactly
+  // store can hold the cap plus three entries of which three are dead, refuse
+  // correctly at the cap, and stay that large on disk indefinitely. `activeCount` reaps AND persists, which is exactly
   // what the cap-hit moment needs: the pressure point is when a stale entry costs
   // the human a real launch.
   // ─────────────────────────────────────────────────────────────────────────
@@ -236,7 +236,7 @@ describe('PreToolUse.Task — the sixth launch is BLOCKED', () => {
     const now = Date.now();
     const stale = now - (agentSlots.SLOT_TTL_MS + 60_000); // holders presumed dead
 
-    // 8 entries: 5 genuinely live (correctly at the cap) + 3 crashed subagents.
+    // MAX_CONCURRENT genuinely live entries (correctly at the cap) + 3 crashed subagents.
     const planted = [];
     for (let i = 0; i < MAX_CONCURRENT; i++) planted.push({ token: `live-${i}`, label: 'live', acquiredAt: now });
     for (let i = 0; i < 3; i++) planted.push({ token: `dead-${i}`, label: 'crashed', acquiredAt: stale });
@@ -245,9 +245,9 @@ describe('PreToolUse.Task — the sixth launch is BLOCKED', () => {
 
     const { exitCode, stderr } = await runEnforce(taskPayload(), { cwd: root });
 
-    // The refusal is still correct: 5 live holders is the cap.
-    assert.equal(exitCode, 2, 'five LIVE holders is the cap — the launch is still refused');
-    assert.match(stderr, new RegExp(`${MAX_CONCURRENT} of ${MAX_CONCURRENT}`), 'and it reports the LIVE count, not 8');
+    // The refusal is still correct: MAX_CONCURRENT live holders is the cap.
+    assert.equal(exitCode, 2, 'the cap of LIVE holders is reached — the launch is still refused');
+    assert.match(stderr, new RegExp(`${MAX_CONCURRENT} of ${MAX_CONCURRENT}`), `and it reports the LIVE count, not ${MAX_CONCURRENT + 3}`);
 
     // The wiring's real work: the corpses are gone from disk.
     assert.equal(
@@ -305,7 +305,7 @@ describe('PreToolUse.Task — escape phrases and non-CTOC projects', () => {
     });
     const { exitCode, stdout, stderr } = await runEnforce(taskPayload({ transcript_path }), { cwd: root });
 
-    assert.equal(isDeny(stdout), true, 'typing "urgent" must never buy a sixth concurrent subagent');
+    assert.equal(isDeny(stdout), true, 'typing "urgent" must never buy a ninth concurrent subagent');
     assert.equal(exitCode, 2);
     assert.match(stderr, /BLOCKED/);
     assert.equal(
@@ -486,14 +486,14 @@ describe('the real hooks, spawned as the harness spawns them', () => {
     assert.equal(agentSlots.activeCount(root), 1, 'the production path must COUNT the launch');
   });
 
-  it('DENIES the sixth launch through the real stdin path', () => {
+  it('DENIES the ninth launch through the real stdin path', () => {
     const root = mkFixture();
     markCtoc(root);
     for (let i = 0; i < MAX_CONCURRENT; i++) {
       assert.equal(spawnHook(TASK_HOOK, taskPayload(), root).status, 0, `launch ${i + 1}`);
     }
     const out = spawnHook(TASK_HOOK, taskPayload(), root);
-    assert.equal(isDeny(out.stdout), true, 'the shipped hook must really deny the sixth launch');
+    assert.equal(isDeny(out.stdout), true, 'the shipped hook must really deny the ninth launch');
     assert.equal(out.status, 2);
     // W1: the shipped hook reports the live count AND the cap (see the tightened
     // in-process assertion above); MAX_CONCURRENT, never a literal.

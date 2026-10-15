@@ -550,7 +550,7 @@ function buildDashboardTable(projectPath, opts = {}) {
   // with no background tasks (protects every dashboard substring/count regression).
   // NB4/H8: reconcile the registry against the live harness TaskList BEFORE rendering,
   // so a session-restart orphan (a `running` task with no live agent) stops blocking
-  // the ≤5 concurrency count and is offered for re-run — WITHOUT falsely orphaning a
+  // the ≤MAX_CONCURRENT concurrency count and is offered for re-run — WITHOUT falsely orphaning a
   // genuinely-live long-running agent. The live agent-id list now flows in from the
   // caller as `opts.liveAgentIds` (start.js parses it from the `--live-agent-ids <csv>`
   // argv flag the parent session appends on each on-open render). When it is absent
@@ -2199,7 +2199,7 @@ function computePromote(reg) {
  *
  * R3-B item 1 — THE ENFORCEMENT POINT. `start` is where the concurrency ladder is
  * CHECKED, not merely defined: it calls `taskRegistry.canRun` and REFUSES (registry
- * byte-unchanged) when the ladder says no (deps / ≤5 / sync-barrier / git-exclusive /
+ * byte-unchanged) when the ladder says no (deps / ≤MAX_CONCURRENT / sync-barrier / git-exclusive /
  * file-conflict). `--force` is the human override — allowed, but recorded in the warn log
  * (`forced_start`) and SHOUTED in the result text, never silent. The whole cycle runs
  * inside the compare-and-swap helper (item 7), and a refusal `ctx.abort()`s so no write
