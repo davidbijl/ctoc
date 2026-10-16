@@ -218,8 +218,9 @@ explicitly open the gate. There is exactly ONE key that controls it, read only v
 
 - **`git.autoPushEnabled: false` (default)** — CTOC commits plan state locally
   (reversible) but NEVER pushes. You ship with `/ctoc:push`.
-- **`git.autoPushEnabled: true`** — you have opted in; the machine push paths
-  (post-commit hook, sync timer, dashboard sync) may push.
+- **`git.autoPushEnabled: true`** — you have opted in; the after-commit check (when its git hook
+  is installed) may push once its checks pass. The plan sync (its timer, the Doctor's Sync now and
+  the dashboard sync) commits plan state but never pushes; it says so and points to `/ctoc:push`.
 
 No environment profile (`dev`/`staging`/`prod`) may set this to `true` — opening a
 ship gate is the human's act alone. There is no `push.autoPush` key: earlier docs

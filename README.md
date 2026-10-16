@@ -380,7 +380,7 @@ When validation **fails**, the failures are listed and "Approve anyway" is burie
 |---|---|
 | **Vision** | Explore new ideas before formal planning |
 | **Start agent** | Execute the next plan from the todo queue |
-| **Sync plans** | Pull, commit, and push plan changes |
+| **Sync plans** | Pull and commit plan changes; never pushes — `/ctoc:push` ships |
 | **◀ Pipeline** | Return to the pipeline view |
 
 **What happens.** Each `todo` plan is built by the Iron Loop executor as a **background** task, following Steps 8–16 without interruption:
