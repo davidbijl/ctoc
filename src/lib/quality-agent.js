@@ -3,24 +3,28 @@
  * Background Quality Agent
  *
  * Runs all quality checks asynchronously after commit.
- * Auto-pushes on success, notifies on failure.
+ * Auto-pushes on success (only when the human opted in), notifies on failure.
  *
  * Features:
  * - Detects test frameworks automatically
- * - Runs only affected tests when possible (smart test selection)
+ * - After a commit it runs only the affected tests (smart test selection); when it is going
+ *   to push (--on-success=push) it runs the project's whole declared test suite instead
+ *   (runWholeSuiteBeforePush), pushes only the commit those checks ran on, and records and
+ *   shows a push it refused (recordAutoPushResult → the opening screen of /ctoc:start)
  * - Uses lockfile to prevent concurrent runs
  * - Self-heals from interrupted runs
  * - Terminal notifications
  * - Tiered execution (Tier 1 blocking, Tier 2 warning)
- * - Pull-rebase-push on remote conflict
  *
  * Dual role: this file is BOTH a script and a library.
  *  - As a script (run directly): a `require.main === module` guard runs main().
  *  - As a library (require'd): it exports the reusable check/push building blocks
  *    (runLint, runTypecheck, runSmartTests, runFullTests, runSecurityScan,
  *    runTieredChecks, pushToRemote, printSummary, plus the whole-suite check before a push
- *    — runWholeSuiteBeforePush — and the three git readers that keep the pushed commit the
- *    tested one — readGitHead, untestedCommitReason, uncommittedTrackedPaths — and
+ *    — runWholeSuiteBeforePush — and the git readers that keep the pushed commit the
+ *    tested one — readGitHead, untestedCommitReason, uncommittedTrackedPaths — plus
+ *    isOnUpstream (whether a commit is already on the branch's upstream; the opening screen
+ *    uses it to hide a refused-push line once nothing is left unshipped), and
  *    escapeForDisplay, which writes control characters visibly before text is shown) with NO
  *    auto-run side effect. Consumed by src/commands/push.js. `/ctoc:push` gets its test
  *    verdict from runWholeSuiteBeforePush, not from runSmartTests.
@@ -1366,11 +1370,16 @@ function blockedText(run, named, limitText) {
  * Each command runs with a 15-minute limit by default ({@link WHOLE_SUITE_TIMEOUT_MS}) and
  * with `CTOC_WHOLE_SUITE_ROOT` naming this project, so a whole-suite run started from inside
  * one for the same project is refused. A passing result carries no `output`; a block does.
+ * A pass also lists, as `testsOff`, the languages whose test phase an explicit `test: null` in
+ * `.ctoc/quality-config.yaml` turned off; only the automatic push reads it (`/ctoc:push` reads none of it).
  * Prints one line when it starts, and nothing else of its own; never throws beyond what
  * {@link runFullTests} throws.
  * @param {Object<string, Object>} tools detected tools per language
- * @param {{timeout?: number}} [options] the time limit of each command (900000 ms by default)
- * @returns {Promise<{passed: boolean, passCount: number, failed: number, skipped: number, flaky: number, commands: string[], countKnown?: boolean, undetermined?: boolean, refused?: boolean, output?: string, text: string}>}
+ * @param {{timeout?: number, wholeTree?: boolean}} [options] `timeout`: the time limit of each
+ *   command (900000 ms by default). `wholeTree`: end the whole process tree of each command when
+ *   it ends — for the detached quality agent, which has no terminal whose interrupt would be
+ *   lost; `/ctoc:push` leaves it off.
+ * @returns {Promise<{passed: boolean, passCount: number, failed: number, skipped: number, flaky: number, commands: string[], countKnown?: boolean, testsOff?: string[], undetermined?: boolean, refused?: boolean, output?: string, text: string}>}
  */
 async function runWholeSuiteBeforePush(tools, options = {}) {
   const root = path.resolve(process.cwd());
@@ -1412,7 +1421,9 @@ async function runWholeSuiteBeforePush(tools, options = {}) {
     const command = langTools.testFromScript ? 'npm test' : displayCommand(String(langTools.test));
     commands.push(command);
     const named = `\`${command}\`${langTools.testFromOverride ? " (test command set in .ctoc/quality-config.yaml, not by the project's own files)" : ''}`;
-    const run = await runFullTests({ [lang]: langTools }, { omitTotalLine: true, timeout: limitMs, env: { [WHOLE_SUITE_ENV]: root } });
+    const run = await runFullTests({ [lang]: langTools }, {
+      omitTotalLine: true, timeout: limitMs, env: { [WHOLE_SUITE_ENV]: root }, ...(options.wholeTree ? { wholeTree: true } : {})
+    });
     // What the earlier commands showed stays in front of a block on a later one.
     const before = parts.length ? `Tests: ${parts.join('; ')}. ` : '';
     if (!run.passed) return { ...run, commands, text: before + blockedText(run, named, limitText) };
@@ -1439,13 +1450,21 @@ async function runWholeSuiteBeforePush(tools, options = {}) {
     skipped += summary.skipped;
   }
 
+  /** @type {string[]} */
+  const testsOff = [];
   for (const [lang, t] of Object.entries(tools)) {
-    if (t && !t.test) parts.push(`not tested: ${lang} (no test command)`);
+    if (t && !t.test) {
+      parts.push(`not tested: ${lang} (no test command)`);
+      // An explicit `test: null` in .ctoc/quality-config.yaml: the one kind of "no test command" a person wrote down.
+      if (t.testFromOverride) testsOff.push(lang);
+    }
   }
   // Built field by field, never by spreading `run`: a passing run's output (up to 10 MiB) is not carried.
-  return { passed: true, passCount, failed: 0, skipped, flaky: 0, commands, countKnown, text: `Tests: passed — ${parts.join('; ')}.` };
+  return { passed: true, passCount, failed: 0, skipped, flaky: 0, commands, countKnown, testsOff, text: `Tests: passed — ${parts.join('; ')}.` };
 }
 
+/** Why the automatic push does not ship a pass whose test count is unknown (`/ctoc:push` shows it to the human). */
+const COUNT_UNKNOWN_REASON = 'test count unknown — ship with /ctoc:push, which shows it';
 /** What a push says when a commit arrived after the tests started. */
 const HEAD_MOVED_TEXT = 'a newer commit arrived during the checks and was not tested; not pushing — run /ctoc:push again';
 /** What a push says when the commit that was tested cannot be named, or the current one cannot be read. */
@@ -1475,6 +1494,24 @@ function readGit(args, cwd) {
 function readGitHead(cwd = process.cwd()) {
   const out = readGit(['rev-parse', 'HEAD'], cwd);
   return out && out.trim() ? out.trim() : null;
+}
+
+/**
+ * Whether `rev` is already on the branch's upstream (`git merge-base --is-ancestor`, read-only,
+ * 5-second limit). The opening screen asks it to stop telling the person about a refused
+ * automatic push whose commit has since reached the remote. Every failure — git missing, an
+ * unknown commit, no upstream, a timeout — answers false, so the screen keeps saying it.
+ * @param {string} rev a commit hash (the caller passes only hex or HEAD, so it cannot be an option)
+ * @param {string} [cwd] the project root
+ * @returns {boolean}
+ */
+function isOnUpstream(rev, cwd = process.cwd()) {
+  try {
+    execFileSync('git', ['merge-base', '--is-ancestor', rev, '@{upstream}'], { cwd, stdio: 'ignore', timeout: 5000, windowsHide: true });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -2100,13 +2137,23 @@ async function runSecurityScan(_tools, opts = {}) {
  * Run tiered quality checks
  * Tier 1: BLOCKING (must pass before push)
  * Tier 2: WARNING (should fix, does not block)
+ *
+ * The test check is one of two, never both: when the agent is going to push (`forPush`) it is
+ * the project's whole declared suite with the zero-test rules ({@link runWholeSuiteBeforePush}),
+ * ending the whole process tree of each command when it ends on macOS and Linux (the detached
+ * agent has no terminal whose interrupt would be lost; `/ctoc:push` keeps that off; the tree end
+ * is not verified on Windows ({@link endProcessTree}), so the push path asks for none there); otherwise the tests
+ * the change selects ({@link runSmartTests}), as always. Lint, type check and the security
+ * scan are the same either way.
+ * @param {Object<string, Object>} tools detected tools per language
+ * @param {{forPush?: boolean}} [options] `forPush`: true when the agent is going to push
  */
-async function runTieredChecks(tools) {
+async function runTieredChecks(tools, options = {}) {
   // Tier 1: BLOCKING
   const tier1 = {
     lint: await runLint(tools),
     typecheck: await runTypecheck(tools),
-    tests: await runSmartTests(tools),
+    tests: options.forPush ? await runWholeSuiteBeforePush(tools, { wholeTree: process.platform !== 'win32' }) : await runSmartTests(tools),
     security: await runSecurityScan()
   };
 
@@ -2178,11 +2225,31 @@ function pushToRemote() {
  * (`git.autoPushEnabled`, default false) and by nothing else: not argv, not an
  * environment variable, not an environment profile.
  *
+ * Once automatic pushing is on, three more refusals stand between the green checks and the
+ * push, in this order (each only removes a push, none adds one):
+ *  - the test count is unknown (`options.countKnown === false`): nobody reads this agent's
+ *    output, so a pass `/ctoc:push` would show the human is not shipped unseen;
+ *  - a language's tests are turned off (`options.testsOff` lists it): someone wrote
+ *    `test: null` for it in `.ctoc/quality-config.yaml`, so part of the project was not tested;
+ *  - the commit moved or cannot be read (`options.testedHead` given, {@link untestedCommitReason}):
+ *    only the commit the checks ran on is pushed.
+ * A caller that passes no options gets the answers it always got.
+ *
+ * Every answer given once automatic pushing is on carries `optedIn: true`, so `main()` records
+ * the result ({@link recordAutoPushResult}), and a refusal carries a fixed `code` for the
+ * record: 'count-unknown', 'tests-off', 'head-moved', 'no-head' or 'push-failed'. The code
+ * is chosen here, never taken from text git or a file printed. The answers for "not asked to
+ * push" and "automatic pushing is off" carry neither, and record nothing.
+ *
  * @param {{onSuccess?: string}} args - parsed CLI args (intent)
  * @param {string} [projectPath] - project root (authority is read from here)
- * @returns {{pushed: boolean, reason: string}}
+ * @param {{testedHead?: (string|null), countKnown?: boolean, testsOff?: string[]}} [options]
+ *   `testedHead`: the commit the checks started on (null when it could not be read);
+ *   `countKnown`: false when the passing test run reported no readable count; `testsOff`: the
+ *   languages whose tests an explicit `test: null` turned off
+ * @returns {{pushed: boolean, reason: string, optedIn?: boolean, code?: string}}
  */
-function maybePushOnSuccess(args, projectPath = process.cwd()) {
+function maybePushOnSuccess(args, projectPath = process.cwd(), options = {}) {
   if (!args || args.onSuccess !== 'push') {
     return { pushed: false, reason: 'on-success is not push' };
   }
@@ -2197,12 +2264,58 @@ function maybePushOnSuccess(args, projectPath = process.cwd()) {
     };
   }
 
+  if (options.countKnown === false) {
+    console.log(`\n  NOT pushing: ${COUNT_UNKNOWN_REASON}.`);
+    return { pushed: false, optedIn: true, code: 'count-unknown', reason: COUNT_UNKNOWN_REASON };
+  }
+
+  if (Array.isArray(options.testsOff) && options.testsOff.length > 0) {
+    const reason = `tests turned off in .ctoc/quality-config.yaml for ${options.testsOff.join(', ')} — ship with /ctoc:push, which shows it`;
+    console.log(`\n  NOT pushing: ${reason}.`);
+    return { pushed: false, optedIn: true, code: 'tests-off', reason };
+  }
+
+  if (options.testedHead !== undefined) {
+    const untested = untestedCommitReason(options.testedHead, projectPath);
+    if (untested) {
+      console.log(`\n  ${untested}.`);
+      return { pushed: false, optedIn: true, code: untested === HEAD_MOVED_TEXT ? 'head-moved' : 'no-head', reason: untested };
+    }
+  }
+
   const ok = pushToRemote();
-  return { pushed: ok, reason: ok ? 'auto-push enabled by the human' : 'push failed' };
+  return ok
+    ? { pushed: true, optedIn: true, reason: 'auto-push enabled by the human' }
+    : { pushed: false, optedIn: true, code: 'push-failed', reason: 'push failed' };
 }
 
 /**
- * Print summary
+ * Write the result of an automatic push (one that automatic pushing was on for) to the quality
+ * state, so the opening screen of `/ctoc:start` can say a push did not happen: the refusal
+ * (`{commit, code}`, `commit` null when git could not name it) after a refused or failed push,
+ * `null` after a successful one. Only the fixed `code` is stored, never the answer's `reason`
+ * or any text git printed: the screen says its own sentence for the code, because a file in
+ * the project is not text to show a person. `main()` calls it for the progress of a run too
+ * ('unconfirmed' before the checks, 'checks-failed', 'nothing-checked') and for an answer
+ * that carries `optedIn`, under the run lock it holds (`updateStatus` writes atomically).
+ * A write that fails throws: the run stops (`main().catch` releases the lock) rather than
+ * leave a record that says less than what happened.
+ * @param {{pushed: boolean, code?: string}} push the answer of {@link maybePushOnSuccess}, or `{pushed: false, code}`
+ * @param {string|null} testedHead the commit the checks ran on
+ * @returns {void}
+ */
+function recordAutoPushResult(push, testedHead) {
+  qualityState.updateStatus({ autoPushRefused: push.pushed ? null : { commit: testedHead || null, code: push.code } });
+}
+
+/**
+ * Print the summary of a run: the verdict, the duration, the tier-1 and tier-2 results. Under
+ * the tier-1 results it prints the test check's own text line when the result carries one (the
+ * whole-suite check's count and command, "zero tests ran", or "test count unknown"), else the
+ * old "Tests: N passed" line for the selected tests.
+ * @param {{allPassed: boolean, tier1?: any, tier2?: any}} results the answer of {@link runTieredChecks}
+ * @param {number} duration milliseconds the run took
+ * @returns {void}
  */
 function printSummary(results, duration) {
   console.log('\n' + '='.repeat(50));
@@ -2230,7 +2343,11 @@ function printSummary(results, duration) {
       ? ` (${securitySkips} scanner(s) skipped — see log)`
       : ''));
 
-    if (tier1.tests.passed && tier1.tests.passCount) {
+    // The whole-suite check's own line (count and command, zero, or count unknown) when it ran;
+    // the old count line for the selected tests.
+    if (tier1.tests.text) {
+      console.log(`\n  ${tier1.tests.text}`);
+    } else if (tier1.tests.passed && tier1.tests.passCount) {
       console.log(`\n  Tests: ${tier1.tests.passCount} passed`);
     }
   }
@@ -2246,7 +2363,16 @@ function printSummary(results, duration) {
 }
 
 /**
- * Main entry point
+ * Main entry point (the script path, run by the post-commit hook). Takes the run lock, then
+ * `setRunning` records the commit the checks run on: `testedHead`, read from its return value
+ * before detection and every check. When the person opted into automatic pushing
+ * (`--on-success=push` with `git.autoPushEnabled`), the record is written as the run's progress:
+ * 'unconfirmed' right after `setRunning`, replaced by 'nothing-checked' (no language),
+ * 'checks-failed' (the tiered checks did not pass), or the push answer of
+ * {@link maybePushOnSuccess}. A run that stops in between leaves 'unconfirmed' standing. A
+ * failed write of the record throws, which stops the run: `main().catch` and the `finally`
+ * release the lock, the process exits 1, and nothing is pushed.
+ * @returns {Promise<void>}
  */
 async function main() {
   const args = parseArgs();
@@ -2266,8 +2392,17 @@ async function main() {
   }
 
   try {
-    // Set running state (now includes gitHead tracking)
-    qualityState.setRunning(args.triggeredBy);
+    // Set running state (now includes gitHead tracking). The commit it records is the one the
+    // checks run on: read from the return value, before detection and every check, because the
+    // quality state caches its folder for the whole process.
+    const running = qualityState.setRunning(args.triggeredBy);
+    const testedHead = running && running.gitHead ? running.gitHead : null;
+
+    // A person who opted into automatic pushing is told when a push did not happen (nobody reads
+    // this agent's output). "Unconfirmed" is written FIRST, so a run that stops before it can say
+    // anything (killed, crashed, the machine off) leaves it standing; every later outcome replaces it.
+    const optedIn = args.onSuccess === 'push' && isAutoPushEnabled(process.cwd());
+    if (optedIn) recordAutoPushResult({ pushed: false, code: 'unconfirmed' }, testedHead);
 
     // Detect tools
     console.log('\n  Detecting tools...');
@@ -2276,6 +2411,7 @@ async function main() {
     if (detection.languages.length === 0) {
       console.log('   No supported languages detected');
       qualityState.setCompleted(true, {});
+      if (optedIn) recordAutoPushResult({ pushed: false, code: 'nothing-checked' }, testedHead);
       return;
     }
 
@@ -2290,7 +2426,7 @@ async function main() {
     }
 
     // Run tiered checks
-    const results = await runTieredChecks(detection.tools);
+    const results = await runTieredChecks(detection.tools, { forPush: args.onSuccess === 'push' });
 
     const duration = Date.now() - startTime;
 
@@ -2313,9 +2449,17 @@ async function main() {
 
     // Handle success/failure. The push decision is the ship gate's, not argv's.
     if (results.allPassed) {
-      maybePushOnSuccess(args, process.cwd());
+      const push = maybePushOnSuccess(args, process.cwd(), {
+        testedHead,
+        countKnown: tier1.tests?.countKnown !== false,
+        testsOff: (tier1.tests && tier1.tests.testsOff) || []
+      });
+      // Nobody reads this agent's output (the hook discards it), so a push that did not happen
+      // is recorded for the opening screen of /ctoc:start, and a successful one clears it.
+      if (push.optedIn) recordAutoPushResult(push, testedHead);
     } else {
       console.log('\n  Fix the issues above and commit again to retry.');
+      if (optedIn) recordAutoPushResult({ pushed: false, code: 'checks-failed' }, testedHead);
     }
 
   } finally {
@@ -2351,6 +2495,7 @@ module.exports = {
   runSmartTests,
   runWholeSuiteBeforePush,
   readGitHead,
+  isOnUpstream,
   untestedCommitReason,
   uncommittedTrackedPaths,
   escapeForDisplay,
@@ -2359,5 +2504,6 @@ module.exports = {
   runTieredChecks,
   pushToRemote,
   maybePushOnSuccess,
+  recordAutoPushResult,
   printSummary
 };
