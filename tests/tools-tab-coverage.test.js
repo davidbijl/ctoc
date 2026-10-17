@@ -215,6 +215,91 @@ describe('tools.handleKey() doctor sync message fallbacks', () => {
 });
 
 // ===========================================================================
+// handleKey Doctor mode — "Sync now" with automatic pushing on or off. The plan sync
+// never pushes: with the opt-in it commits and the message says nothing was pushed and
+// that /ctoc:push ships; without it the message is today's. Real git, a local bare
+// repository as origin, the real tab and the real sync (no fake of either).
+// ===========================================================================
+describe('tools.handleKey() doctor "Sync now" and automatic pushing', () => {
+  const { execFileSync } = require('child_process');
+  const run = (cwd, args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: 'pipe' });
+
+  // A repository with repo-level identity and signing set BEFORE any commit (syncPlans'
+  // own `git commit` passes no -c flags), plans/.keep committed on main and pushed to a
+  // bare origin: the bare remote's main is the recorded baseline.
+  function syncFixture({ optIn }) {
+    const project = makeProject({ plans: true });
+    const bare = makeTmp('ctoc-tools-bare-');
+    run(bare, ['init', '-q', '--bare']);
+    run(project, ['init', '-q']);
+    run(project, ['config', 'user.name', 't']);
+    run(project, ['config', 'user.email', 'a@b.c']);
+    run(project, ['config', 'commit.gpgsign', 'false']);
+    fs.writeFileSync(path.join(project, 'plans', '.keep'), '');
+    run(project, ['add', '-A']);
+    run(project, ['commit', '-q', '-m', 'init']);
+    run(project, ['branch', '-M', 'main']);
+    run(project, ['remote', 'add', 'origin', bare]);
+    run(project, ['push', '-q', 'origin', 'main']);
+    if (optIn) {
+      // Written after the baseline push and left uncommitted; outside plans/, so the sync never stages it.
+      fs.mkdirSync(path.join(project, '.ctoc'), { recursive: true });
+      fs.writeFileSync(
+        path.join(project, '.ctoc', 'settings.json'),
+        JSON.stringify({ git: { autoPushEnabled: true } })
+      );
+    }
+    return { project, bare, baseline: run(bare, ['rev-parse', 'main']).trim() };
+  }
+  const remoteMain = (fx) => run(fx.bare, ['rev-parse', 'main']).trim();
+
+  test('D1 opted in: plans are committed, the message says not pushed and points to /ctoc:push', () => {
+    const fx = syncFixture({ optIn: true });
+    fs.writeFileSync(path.join(fx.project, 'plans', 'new.md'), '# new\n');
+    const tools = freshTools();
+    const app = makeApp({ projectPath: fx.project, toolMode: '1' });
+
+    tools.handleKey(key('sync', '3'), app);
+
+    assert.match(app.message, /^Sync: plans committed, not pushed/);
+    assert.match(app.message, /\/ctoc:push/);
+    assert.notEqual(app.message, '✓ Synced successfully');
+    assert.match(run(fx.project, ['log', '-1', '--pretty=%s']), /auto-sync plans/);
+    assert.equal(remoteMain(fx), fx.baseline, 'the bare remote main did not move');
+  });
+
+  test('D2 automatic pushing off: the message is today\'s and nothing is pushed', () => {
+    const fx = syncFixture({ optIn: false });
+    fs.writeFileSync(path.join(fx.project, 'plans', 'new.md'), '# new\n');
+    const tools = freshTools();
+    const app = makeApp({ projectPath: fx.project, toolMode: '1' });
+
+    tools.handleKey(key('sync', '3'), app);
+
+    assert.equal(app.message, '✓ Synced successfully');
+    assert.match(run(fx.project, ['log', '-1', '--pretty=%s']), /auto-sync plans/);
+    assert.equal(remoteMain(fx), fx.baseline, 'the bare remote main did not move');
+  });
+
+  test('D3 opted in with nothing pending: "no changes" also says earlier commits are not pushed', () => {
+    const fx = syncFixture({ optIn: true });
+    // An earlier plan commit that sits unpushed, and nothing pending under plans/.
+    fs.writeFileSync(path.join(fx.project, 'plans', 'earlier.md'), '# earlier\n');
+    run(fx.project, ['add', 'plans/']);
+    run(fx.project, ['commit', '-q', '-m', 'plan: earlier']);
+    const tools = freshTools();
+    const app = makeApp({ projectPath: fx.project, toolMode: '1' });
+
+    tools.handleKey(key('sync', '3'), app);
+
+    assert.match(app.message, /^Sync: no changes; not pushed/);
+    assert.match(app.message, /\/ctoc:push/);
+    assert.notEqual(app.message, 'Sync: no changes');
+    assert.equal(remoteMain(fx), fx.baseline, 'the bare remote main did not move');
+  });
+});
+
+// ===========================================================================
 // renderUpdate() — version comparison, message vs affordance, real getVersion
 // ===========================================================================
 describe('tools.renderUpdate() version + affordance branches', () => {

@@ -152,7 +152,10 @@ describe('Sync Manager Tests', () => {
     }
   });
 
-  test('syncPlans pushes ONLY when the human opened the ship gate', (t) => {
+  // The plan sync never pushes: a push follows the whole declared suite, which only
+  // /ctoc:push runs (running it here would hold the menu for minutes). With the human's
+  // opt-in the sync still commits, and its result says nothing was pushed.
+  test('syncPlans commits but never pushes, even when the human opened the ship gate', (t) => {
     const childProcess = require('child_process');
     const originalExecFileSync = childProcess.execFileSync;
     childProcess.execFileSync = mockExecSync;
@@ -172,12 +175,16 @@ describe('Sync Manager Tests', () => {
       const result = syncModule.syncPlans('/test/project');
 
       assert.strictEqual(result.synced, true, 'Should sync');
-      assert.strictEqual(result.pushed, true, 'Should push once the human opted in');
+      assert.strictEqual(result.pushed, false, 'The sync never pushes');
+      assert.strictEqual(result.pushRefused, true, 'The refusal is flagged');
+      assert.match(result.reason, /never pushes/);
+      assert.match(result.reason, /\/ctoc:push/);
 
       const commands = execSyncCalls.map(c => c.cmd);
-      assert.ok(commands.some(c => c.includes('git push')), 'Should push');
+      assert.ok(commands.some(c => c.includes('git commit')), 'Should commit');
+      assert.ok(!commands.some(c => c.includes('git push')), 'Must NOT push');
 
-      console.log('# syncPlans pushes only when the human opened the ship gate');
+      console.log('# syncPlans commits but never pushes, even when the human opened the ship gate');
     } finally {
       childProcess.execFileSync = originalExecFileSync;
       settings.getSetting = originalGetSetting;
@@ -463,9 +470,9 @@ describe('Sync Manager Tests', () => {
     }
   });
 
-  // The pre-push rebase now lives on the OPTED-IN path only (R3-C: no unattended
-  // history rewrite behind a closed ship gate). With the gate open it must still
-  // degrade gracefully when there is no upstream.
+  // The rebase pull lives on the OPTED-IN path only (R3-C: no unattended history
+  // rewrite behind a closed ship gate); no push follows it, on any path. With the gate
+  // open a failed pull is reported with a fixed phrase and the sync still commits.
   test('syncPlans handles pull rebase failure gracefully (ship gate open)', (t) => {
     const childProcess = require('child_process');
     const originalExecFileSync = childProcess.execFileSync;
@@ -479,7 +486,7 @@ describe('Sync Manager Tests', () => {
       }
       if (cmd.includes('git pull --rebase')) {
         pullFailed = true;
-        throw new Error('No upstream');
+        throw new Error('No upstream https://example.invalid/private-remote.git');
       }
       return '';
     };
@@ -498,6 +505,13 @@ describe('Sync Manager Tests', () => {
 
       assert.ok(pullFailed, 'Pull should have been attempted on the opted-in path');
       assert.strictEqual(result.synced, true, 'Should still sync despite pull failure');
+      assert.strictEqual(result.pushRefused, true);
+      assert.match(
+        result.reason,
+        /^pull --rebase failed \(run git status\); not pushed — the plan sync never pushes/
+      );
+      assert.doesNotMatch(result.reason, /No upstream|example\.invalid/,
+        "git's own error text (which can carry a remote URL) is never reported");
 
       console.log('# syncPlans handles pull rebase failure gracefully');
     } finally {

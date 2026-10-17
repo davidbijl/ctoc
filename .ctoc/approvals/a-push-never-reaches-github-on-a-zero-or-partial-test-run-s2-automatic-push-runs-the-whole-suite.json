@@ -1,0 +1,10 @@
+{
+  "content_sha256": "2e8ae97a60aa45dd1d0c2583f663c955fad33cc2228087ae46154f43890d73c9",
+  "hash_scope": "specification",
+  "stage_from": "review",
+  "stage_to": "done",
+  "approved_at": "2026-10-16T15:53:49.783Z",
+  "advanced_by": "pipeline",
+  "evidence": "evidence: review→done — checks passed, recorded 2026-10-16T15:53:49.778Z in .ctoc/state/verify/a-push-never-reaches-github-on-a-zero-or-partial-test-run-s2-automatic-push-runs-the-whole-suite.json (VERIFY passed — ran: lint, typecheck, tests); coverage 99.88% against a floor of 99%, 0 skipped; every required step 8–16 is checked in the plan, including REVIEW, SECURE and FINAL-REVIEW (checked by the build itself); questions: none were stored; crossed on evidence, not approved by the human",
+  "plan_basename": "a-push-never-reaches-github-on-a-zero-or-partial-test-run-s2-automatic-push-runs-the-whole-suite"
+}

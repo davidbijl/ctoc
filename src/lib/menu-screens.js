@@ -1633,7 +1633,7 @@ function dashboardCommands(projectPath) {
   const options = [
     { label: `Vision (${visionCounts.total})`, description: 'Explore new ideas before formal planning' },
     { label: isAgentActive ? 'Stop agent' : 'Start agent', description: agentDescription },
-    { label: 'Sync plans', description: 'Pull, commit, and push plan changes' },
+    { label: 'Sync plans', description: 'Pull and commit plan changes; never pushes — /ctoc:push ships' },
     { label: '◀ Pipeline', description: 'Return to pipeline view' }
   ];
 

@@ -6,17 +6,18 @@
  * - Event-triggered sync on plan operations (create/edit/approve/delete)
  * - Rate-limited remote checks (60s cooldown by default)
  * - Auto-commit with descriptive messages
- * - Offline mode support (queues commits for later push)
+ * - Commits plan changes locally; never pushes — `/ctoc:push` runs the whole test
+ *   suite and pushes
  * - Conflict detection
  */
 
 const { execFileSync } = require('child_process');
 const safeFs = require('./safe-fs');
 const path = require('path');
-// R3-C: the push ship gate. `isAutoPushEnabled` is the ONE key every push path in
-// this file consults; it is FALSE unless the human explicitly opted in. Sync may
-// commit plan state freely — committing is local and reversible — but it never
-// ships. The human ships via /ctoc:push.
+// R3-C: the push ship gate. No function in this file pushes — sync commits plan
+// state (local and reversible) and the human ships via /ctoc:push. `isAutoPushEnabled`
+// (FALSE unless the human explicitly opted in) now only decides whether the opted-in
+// pull runs and which "not pushed" wording a result carries.
 const { getSetting, isAutoPushEnabled } = require('./settings');
 
 let syncInterval = null;
@@ -27,7 +28,7 @@ const DEFAULT_SYNC_CONFIG = {
   enabled: true,
   check_interval: 60,      // Minimum seconds between remote checks
   auto_commit: true,       // Auto-commit plan changes (local, reversible)
-  auto_push: false,        // SHIP GATE: never push unless the human opted in
+  auto_push: false,        // mirrors git.autoPushEnabled; the sync never pushes either way
   auto_pull: 'prompt',     // prompt | always | never
   branch: 'main'           // Branch to sync
 };
@@ -39,6 +40,13 @@ const COMMIT_MESSAGES = {
   delete: (name) => `plan: delete ${name}`,
   approve: (name, opts) => `plan: ${opts?.from || 'unknown'} → ${opts?.to || 'unknown'} ${name}`
 };
+
+// What every opted-in sync result from syncPlans, autoPush and fullPlansSync says
+// (onPlanOperation's rate-limited and offline returns do not carry it; it has no live
+// caller). The owner's order of 2026-10-14: a push follows
+// the whole declared test suite. Running that suite here would hold the menu for
+// minutes, so the sync never runs it and never pushes; /ctoc:push runs it and pushes.
+const NOT_PUSHED_BY_SYNC = 'not pushed — the plan sync never pushes; /ctoc:push runs the whole test suite and pushes';
 
 // SECURITY: every git subprocess in this module runs argv-safe via execFileSync — a
 // fixed argument vector, NO shell. Nothing (a plan name, a stage name, a branch name,
@@ -101,6 +109,11 @@ function syncPlans(projectPath = process.cwd()) {
 
     if (!status) {
       lastSync = new Date();
+      // Earlier timer commits may sit unpushed while plans/ is clean, so with the
+      // opt-in "no changes" must not read as "the plans reached GitHub".
+      if (isAutoPushEnabled(projectPath)) {
+        return { synced: false, pushed: false, pushRefused: true, reason: `no changes; ${NOT_PUSHED_BY_SYNC}` };
+      }
       return { synced: false, reason: 'no changes' };
     }
 
@@ -112,8 +125,8 @@ function syncPlans(projectPath = process.cwd()) {
 
     // SHIP GATE (R3-C). This timer fires every 5 minutes from a menu open. It used
     // to rebase and push `origin main` unattended — a machine crossing a human ship
-    // gate, on a clock. Both the rebase (history rewrite) and the push now happen
-    // ONLY when the human explicitly opted in.
+    // gate, on a clock. The rebase (history rewrite) still happens ONLY when the human
+    // explicitly opted in; the push happens on no path at all.
     if (!isAutoPushEnabled(projectPath)) {
       lastSync = new Date();
       return {
@@ -124,17 +137,25 @@ function syncPlans(projectPath = process.cwd()) {
       };
     }
 
-    // Pull first to avoid conflicts (only on the opted-in path).
+    // Pull (only on the opted-in path). A failure (no upstream, or a conflict that leaves
+    // the rebase stopped partway) is reported in the result instead of swallowed, so the
+    // person sees that the pull failed. The phrase is FIXED, never git's own text: that can carry a remote URL
+    // with credentials, and the Doctor shows this reason on screen.
+    let pullNote = '';
     try {
       git(['pull', '--rebase', 'origin', 'main'], { cwd: projectPath, stdio: 'pipe' });
-    } catch (e) {
-      // May fail if no upstream, continue anyway
+    } catch {
+      pullNote = 'pull --rebase failed (run git status); ';
     }
 
-    git(['push', 'origin', 'main'], { cwd: projectPath, stdio: 'pipe' });
-
     lastSync = new Date();
-    return { synced: true, pushed: true, timestamp: lastSync };
+    return {
+      synced: true,
+      pushed: false,
+      pushRefused: true,
+      timestamp: lastSync,
+      reason: `${pullNote}${NOT_PUSHED_BY_SYNC}`
+    };
 
   } catch (error) {
     return { synced: false, error: error.message };
@@ -350,8 +371,9 @@ function autoCommitPlan(action, planName, projectPath = process.cwd(), opts = {}
   }
 }
 
-// Auto-push to remote. SHIP GATE (R3-C): `config.auto_push` is `git.autoPushEnabled`
-// and is FALSE unless the human opted in, so this is a no-op by default.
+// Auto-push, which never pushes. With `config.auto_push` (= git.autoPushEnabled) off it
+// says automatic pushing is off; with it on it says the sync never pushes. No git
+// command runs on either path: the sync never runs the test suite, so it never pushes.
 function autoPush(projectPath = process.cwd()) {
   const config = getSyncConfig(projectPath);
 
@@ -359,16 +381,7 @@ function autoPush(projectPath = process.cwd()) {
     return { pushed: false, reason: 'auto-push disabled (ship gate) — push with /ctoc:push' };
   }
 
-  try {
-    git(['push', 'origin', config.branch], {
-      cwd: projectPath,
-      stdio: 'pipe'
-    });
-
-    return { pushed: true };
-  } catch (error) {
-    return { pushed: false, error: error.message };
-  }
+  return { pushed: false, reason: NOT_PUSHED_BY_SYNC };
 }
 
 // Main event handler: called on any plan operation
@@ -401,7 +414,7 @@ function onPlanOperation(action, planName, projectPath = process.cwd(), opts = {
   // Auto-commit local changes
   const commitResult = autoCommitPlan(action, planName, projectPath, opts);
 
-  // If online and committed, push
+  // If online and committed, ask autoPush (which never pushes, and says why)
   let pushResult = { pushed: false };
   if (!remoteResult.offline && commitResult.committed) {
     pushResult = autoPush(projectPath);
@@ -417,22 +430,21 @@ function onPlanOperation(action, planName, projectPath = process.cwd(), opts = {
     committed: commitResult.committed,
     commitMessage: commitResult.message,
     pushed: pushResult.pushed,
+    pushReason: pushResult.reason,
     conflicts: remoteResult.hasRemoteChanges ? detectConflicts(projectPath) : []
   };
 }
 
 /**
- * Full plans sync: pull, commit, push
+ * Full plans sync: pull and commit; never pushes
  * Used by the "Sync plans" dashboard command.
  *
  * Steps:
  * 1. git pull --rebase origin {current-branch}
  * 2. git add plans/
  * 3. git commit -m "plans: sync pipeline state" (if changes)
- * 4. git push origin {current-branch} — ONLY when the human opened the ship gate
- *    (`git.autoPushEnabled`). With the gate closed (the default) this function
- *    pulls and commits, and reports `pushed: false` with the reason. Shipping is
- *    the human's act: /ctoc:push.
+ * 4. Never pushes, opted in or not: `pushed` is false and `pushSkipped` says why;
+ *    /ctoc:push runs the whole test suite and pushes.
  *
  * @param {string} projectPath - Project root
  * @returns {Object} Sync result with details
@@ -480,24 +492,10 @@ function fullPlansSync(projectPath = process.cwd()) {
     result.errors.push(`Commit: ${e.message}`);
   }
 
-  // 4. Push — SHIP GATE (R3-C).
-  if (!config.auto_push) {
-    result.pushed = false;
-    result.pushSkipped = 'auto-push disabled (ship gate) — push with /ctoc:push';
-    return result;
-  }
-
-  try {
-    const branch = getCurrentBranch(projectPath) || config.branch;
-    git(['push', 'origin', branch], {
-      cwd: projectPath,
-      stdio: 'pipe'
-    });
-    result.pushed = true;
-  } catch (e) {
-    result.errors.push(`Push: ${e.message}`);
-  }
-
+  // 4. No push on any path; the wording says whether automatic pushing is on.
+  result.pushSkipped = config.auto_push
+    ? NOT_PUSHED_BY_SYNC
+    : 'auto-push disabled (ship gate) — push with /ctoc:push';
   return result;
 }
 

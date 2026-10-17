@@ -232,6 +232,23 @@ describe('tool-detector: user quality-config overrides are applied honestly (Fin
     } finally { rm(dir); }
   });
 
+  it('a test command set by the override is marked testFromOverride; a package.json script is not', () => {
+    const dir = makeProject('ctoc-td-override-flag-');
+    const scripted = makeProject('ctoc-td-override-flag-script-');
+    try {
+      write(dir, 'package.json', '{}');
+      write(dir, path.join('.ctoc', 'quality-config.yaml'),
+        ['languages:', '  javascript:', '    test: my-runner --all', ''].join('\n'));
+      const res = toolDetector.detectTools(dir);
+      assert.equal(res.tools.javascript.testFromOverride, true, 'the override is marked');
+
+      write(scripted, 'package.json', JSON.stringify({ scripts: { test: 'node run.js' } }));
+      const plain = toolDetector.detectTools(scripted);
+      assert.equal(plain.tools.javascript.testFromScript, true);
+      assert.equal(plain.tools.javascript.testFromOverride, undefined, 'a project script is not an override');
+    } finally { rm(dir); rm(scripted); }
+  });
+
   it('a config that overrides no detected language does NOT falsely claim source=user-config', () => {
     const dir = makeProject('ctoc-td-usercfg-noop-');
     try {

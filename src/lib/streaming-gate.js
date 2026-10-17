@@ -1962,7 +1962,10 @@ function gateScreenAt(decisions, index, statusLine, root) {
  * The streaming gate screen: the FIRST pending decision, or the nothing-pending
  * screen when the queue is empty. This is the new `/ctoc:start` default.
  *
- * Question GENERATION is NOT kicked here, and this module spawns no subprocess. The
+ * Question GENERATION is NOT kicked here, and this module spawns no subprocess itself; the one
+ * git read on this screen is `quality-agent.isOnUpstream`, called by `refusedAutoPushLine` only
+ * with automatic pushing on and a recorded commit (read-only, 5-second limit), to hide the
+ * refused-push line once the commit is on the upstream. The
  * CTOC runtime is a plugin inside the Claude command-line interface — plain code
  * cannot dispatch a CTOC subagent, and it must never spawn a second Claude. Generation
  * runs ONLY when the human asks: a decision whose questions are missing offers
@@ -2020,17 +2023,91 @@ function streamingGateScreen(projectRoot, statusLine, opts) {
  * (`loop-b-driver.loopBDirective`). Both return a leading-newline string or '' (already
  * capped, gate-number-clean, plain-title) — used verbatim. FAIL-OPEN per source: a throw
  * yields '' so the screen always renders (mirrors SessionStart's try/catch-to-'' shape).
+ * A push that did not happen comes FIRST ({@link refusedAutoPushLine}): the person who turned
+ * automatic pushing on is told, because the background agent's own output reaches nobody.
  * @param {string} root
  * @returns {string} '' or "line(s)\n\n"
  */
 function engineStatusBanner(root) {
   if (!isNonEmptyStr(root)) return '';
+  const refused = refusedAutoPushLine(root); // never throws: it answers '' on any fault
   let away = '';
   try { away = require('./increment-feed').whileYouWereAway(root) || ''; } catch { away = ''; }
   let loopB = '';
   try { loopB = require('./loop-b-driver').loopBDirective(root) || ''; } catch { loopB = ''; }
-  const body = `${away}${loopB}`.replace(/^\n+/, '');
+  const body = [refused, `${away}${loopB}`.replace(/^\n+/, '')].filter(Boolean).join('\n\n');
   return body ? `${body}\n\n` : '';
+}
+
+/**
+ * What the screen says for each code the quality agent records in `autoPushRefused.code`
+ * (`src/lib/quality-agent.js`). The sentences are fixed here, never read from the file: the file
+ * is project text, and quoting it on the owner's screen would be a prompt-injection path.
+ */
+const REFUSED_PUSH_SENTENCES = Object.freeze({
+  unconfirmed: 'the push after that commit was not confirmed — its checks may still be running, or the agent stopped before it finished. If this line stays, ship it with /ctoc:push.',
+  'checks-failed': 'the checks after that commit did not pass. /ctoc:push runs them again and shows why.',
+  'nothing-checked': 'no language was detected, so nothing was checked. Ship it with /ctoc:push.',
+  'count-unknown': 'the tests passed but printed no test count. Ship it with /ctoc:push, which shows it.',
+  'tests-off': 'the tests of at least one language are turned off in .ctoc/quality-config.yaml (test: null), so part of the project was not tested. Ship it with /ctoc:push, which names it.',
+  'head-moved': 'a newer commit arrived during the checks and was not tested. Ship it with /ctoc:push.',
+  'no-head': 'git could not name the commit, so nothing showed that what would be pushed was what was tested. Ship it with /ctoc:push.',
+  'push-failed': 'git push did not succeed. If the remote is ahead, run git pull --rebase, then /ctoc:push, which shows git\'s own message.'
+});
+
+/** Said when the record exists but cannot be read as one of the codes above. */
+const REFUSED_PUSH_UNREADABLE = 'The last automatic push could not be checked: its record in .ctoc/quality-state/status.json is unreadable. If the commit did not reach the remote, ship it with /ctoc:push.';
+
+/**
+ * The line that says the last automatic push did not happen, or '' when there is nothing to say.
+ *
+ * The quality agent records every refusal in `.ctoc/quality-state/status.json` as
+ * `autoPushRefused: {commit, code}` and the next successful automatic push sets it to null.
+ * Nothing is shown unless automatic pushing is on (turning it off hides a stale record). The
+ * status file of THIS project is read directly, not through the quality state, which caches the
+ * folder it was first asked about.
+ *
+ * Says, by `code`: unconfirmed, checks-failed, nothing-checked, count-unknown, tests-off,
+ * head-moved, no-head, push-failed — each its own fixed sentence ({@link REFUSED_PUSH_SENTENCES}),
+ * prefixed "Not pushed automatically (commit <hash>): " when the commit looks like a hash
+ * (7 to 40 hex characters) and "Not pushed automatically: " otherwise. A file that does not
+ * parse, a record that is not an object, or a code not in the table gets the generic sentence
+ * ({@link REFUSED_PUSH_UNREADABLE}). A missing file, no record, `null` and `{}` say nothing.
+ * No text from the file is ever shown: the record's other fields are not read.
+ *
+ * Git read: only with automatic pushing on and a hash recorded, ONE read-only call through
+ * `quality-agent.isOnUpstream` (`git merge-base --is-ancestor <commit> <the branch's upstream>`,
+ * limited to 5 seconds). A commit already on the upstream drops the line; an error, a timeout or
+ * no upstream keeps it. A hash cannot start with '-', so it cannot be read as an option.
+ * For 'head-moved' the recorded commit is the tested one (usually already pushed) and the
+ * unpushed work is the newer commit, so that code asks about HEAD instead of the recorded hash.
+ * @param {string} root the project root
+ * @returns {string} the line, or ''
+ */
+function refusedAutoPushLine(root) {
+  try {
+    if (!require('./settings').isAutoPushEnabled(root)) return '';
+    let record;
+    try {
+      record = JSON.parse(safeFs.readFileSync(path.join(root, '.ctoc', 'quality-state', 'status.json'), 'utf8')).autoPushRefused;
+    } catch (err) {
+      // A missing file is the normal case; any other read fault leaves nothing true to say.
+      return err instanceof SyntaxError ? REFUSED_PUSH_UNREADABLE : '';
+    }
+    if (record === null || record === undefined) return '';
+    const isObject = typeof record === 'object' && !Array.isArray(record);
+    if (isObject && Object.keys(record).length === 0) return '';
+    const sentence = isObject && typeof record.code === 'string' && Object.hasOwn(REFUSED_PUSH_SENTENCES, record.code)
+      ? REFUSED_PUSH_SENTENCES[record.code] : null;
+    if (!sentence) return REFUSED_PUSH_UNREADABLE;
+    const hasHash = typeof record.commit === 'string' && /^[0-9a-f]{7,40}$/i.test(record.commit);
+    // 'head-moved' records the commit that WAS tested, which is usually already pushed; what is
+    // left unpushed is the newer commit, so that code asks about HEAD instead.
+    if (hasHash && require('./quality-agent').isOnUpstream(record.code === 'head-moved' ? 'HEAD' : record.commit, root)) return '';
+    return `Not pushed automatically${hasHash ? ` (commit ${record.commit})` : ''}: ${sentence}`;
+  } catch {
+    return '';
+  }
 }
 
 /**

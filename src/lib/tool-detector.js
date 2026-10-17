@@ -515,7 +515,7 @@ function detectTools(projectPath = process.cwd()) {
     // typescript toolchain unless there is real TypeScript evidence.
     if (lang === 'typescript' && !hasTypeScriptEvidence(projectPath)) continue;
 
-    /** @type {{lint: ?string, typecheck: ?string, test: ?string, coverage: ?string, testFramework?: string, testUndetermined?: boolean, testFromScript?: boolean}} */
+    /** @type {{lint: ?string, typecheck: ?string, test: ?string, coverage: ?string, testFramework?: string, testUndetermined?: boolean, testFromScript?: boolean, testFromOverride?: boolean}} */
     const tools = toolsFromRegistry(lang, registryLanguages);
 
     // JAVA build-system nuance (documented decision): the registry's java commands are
@@ -602,6 +602,9 @@ function detectTools(projectPath = process.cwd()) {
             // project script: clear script provenance so the quality agent PARSES-OR-REFUSES
             // it (no npm launch of an arbitrary configured command). 00203 F1 repair.
             delete tools.testFromScript;
+            // The test command came from .ctoc/quality-config.yaml, so the whole-suite check
+            // before a push names it as such (the only reader; it blocks nothing).
+            tools.testFromOverride = true;
           }
         }
       }

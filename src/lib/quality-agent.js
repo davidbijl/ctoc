@@ -3,23 +3,31 @@
  * Background Quality Agent
  *
  * Runs all quality checks asynchronously after commit.
- * Auto-pushes on success, notifies on failure.
+ * Auto-pushes on success (only when the human opted in), notifies on failure.
  *
  * Features:
  * - Detects test frameworks automatically
- * - Runs only affected tests when possible (smart test selection)
+ * - After a commit it runs only the affected tests (smart test selection); when it is going
+ *   to push (--on-success=push) it runs the project's whole declared test suite instead
+ *   (runWholeSuiteBeforePush), pushes only the commit those checks ran on, and records and
+ *   shows a push it refused (recordAutoPushResult → the opening screen of /ctoc:start)
  * - Uses lockfile to prevent concurrent runs
  * - Self-heals from interrupted runs
  * - Terminal notifications
  * - Tiered execution (Tier 1 blocking, Tier 2 warning)
- * - Pull-rebase-push on remote conflict
  *
  * Dual role: this file is BOTH a script and a library.
  *  - As a script (run directly): a `require.main === module` guard runs main().
  *  - As a library (require'd): it exports the reusable check/push building blocks
  *    (runLint, runTypecheck, runSmartTests, runFullTests, runSecurityScan,
- *    runTieredChecks, pushToRemote, printSummary) with NO auto-run side effect.
- *    Consumed by src/commands/push.js.
+ *    runTieredChecks, pushToRemote, printSummary, plus the whole-suite check before a push
+ *    — runWholeSuiteBeforePush — and the git readers that keep the pushed commit the
+ *    tested one — readGitHead, untestedCommitReason, uncommittedTrackedPaths — plus
+ *    isOnUpstream (whether a commit is already on the branch's upstream; the opening screen
+ *    uses it to hide a refused-push line once nothing is left unshipped), and
+ *    escapeForDisplay, which writes control characters visibly before text is shown) with NO
+ *    auto-run side effect. Consumed by src/commands/push.js. `/ctoc:push` gets its test
+ *    verdict from runWholeSuiteBeforePush, not from runSmartTests.
  *
  * X4 — READING THE RUNNER. This module's test verdict GATES THE PUSH (src/commands/
  * push.js blocks on `!passed`), so it reads THREE runner vocabularies — node:test
@@ -169,7 +177,10 @@ function runCommand(cmd, options = {}) {
  *
  * @param {string} bin - the executable (an argv[0], never a shell string)
  * @param {string[]} args - argument vector; each element is passed literally
- * @param {{silent?: boolean, allowFail?: boolean, timeout?: number, wholeTree?: boolean}} [options]
+ * @param {{silent?: boolean, allowFail?: boolean, timeout?: number, wholeTree?: boolean, env?: Object<string, string>}} [options]
+ *   `env` adds environment variables for the program, merged over the process's own (never
+ *   replacing them, which would lose PATH); without it the program gets the process's environment
+ *   as before.
  * @returns {{success: boolean, output: string, stdout: string, stderr: string, error?: string, timedOut?: boolean, outputTooLarge?: boolean, notStarted?: boolean}}
  *   `output` is standard output and standard error together; `stdout` and `stderr` are
  *   kept apart so the counters are read from standard output first ({@link counterText}).
@@ -183,6 +194,7 @@ function runCommandArgv(bin, args, options = {}) {
     maxBuffer: 10 * 1024 * 1024, // 10MB
     timeout,
     windowsHide: true,
+    ...(options.env ? { env: { ...process.env, ...options.env } } : {}),
     ...(wholeTree && process.platform !== 'win32' ? { detached: true } : {})
   });
   // Whatever ended the run (its own exit, the time limit, more output than the buffer holds),
@@ -259,7 +271,7 @@ function npmLauncher(tool) {
  * nothing and answers a run that did not start.
  * @param {'npm'|'npx'} tool
  * @param {string[]} args
- * @param {{silent?: boolean, allowFail?: boolean, timeout?: number}} options
+ * @param {{silent?: boolean, allowFail?: boolean, timeout?: number, wholeTree?: boolean, env?: Object<string, string>}} options
  * @returns {{success: boolean, output: string, error?: string, timedOut?: boolean, outputTooLarge?: boolean, notStarted?: boolean}}
  */
 function runNpmTool(tool, args, options) {
@@ -369,7 +381,7 @@ function parseConfiguredCommand(cmd) {
  * the silent flag and the 300000 ms timeout unchanged.
  *
  * @param {string} cmd
- * @param {{silent?: boolean, allowFail?: boolean, timeout?: number, label?: string}} [options]
+ * @param {{silent?: boolean, allowFail?: boolean, timeout?: number, label?: string, wholeTree?: boolean, env?: Object<string, string>}} [options]
  * @returns {{success: boolean, output: string, error?: string, timedOut?: boolean, outputTooLarge?: boolean, notStarted?: boolean, refused?: boolean}}
  */
 function runConfiguredCommand(cmd, options = {}) {
@@ -411,7 +423,7 @@ function runConfiguredCommand(cmd, options = {}) {
  * answers a run that did not start (`notStarted`).
  *
  * @param {{test: string, testFromScript?: boolean}} langTools the detected tools for a language
- * @param {{silent?: boolean, allowFail?: boolean, timeout?: number, label?: string}} [options]
+ * @param {{silent?: boolean, allowFail?: boolean, timeout?: number, label?: string, wholeTree?: boolean, env?: Object<string, string>}} [options]
  * @returns {{success: boolean, output: string, error?: string, timedOut?: boolean, outputTooLarge?: boolean, notStarted?: boolean, refused?: boolean}}
  */
 function runProjectTestCommand(langTools, options = {}) {
@@ -579,15 +591,61 @@ function lastCap(text, re) {
  * @returns {number|null} The passing count, or null when no counter could be read.
  */
 function parsePassCount(out) {
+  const read = readPassCount(out);
+  return read ? read.count : null;
+}
+
+/**
+ * The passing count of {@link parsePassCount}, with whether it was read from an ANCHORED
+ * summary (node:test, jest or mocha) or only by the unanchored `N passed|passing` fallback,
+ * which can read a number out of a test's name or another runner's first summary (cargo's
+ * first test binary, pytest's `=== 3 passed in 0.12s ===`). The whole-suite check before a
+ * push reports a count only when it is anchored. Not exported.
+ * @param {string} out - Captured runner output (colour tolerated).
+ * @returns {{count: number, anchored: boolean}|null} null when no counter could be read.
+ */
+function readPassCount(out) {
   const text = stripAnsi(out);
   const node = lastCap(text, /^[ \t]*(?:#|ℹ)\s+pass\s+(\d+)/gim);
-  if (node) return parseInt(node[1], 10);
+  if (node) return { count: parseInt(node[1], 10), anchored: true };
   const jest = lastCap(text, /^[ \t]*Tests:\s.*?(?<!\d)(\d+)\s+passed/gim);
-  if (jest) return parseInt(jest[1], 10);
+  if (jest) return { count: parseInt(jest[1], 10), anchored: true };
   const mocha = lastCap(text, /^[ \t]*(\d+)\s+passing\b/gim);
-  if (mocha) return parseInt(mocha[1], 10);
+  if (mocha) return { count: parseInt(mocha[1], 10), anchored: true };
   const legacy = text.match(/(?<!\d)(\d+)\s*(passed|passing)/i);
-  return legacy ? parseInt(legacy[1], 10) : null;
+  return legacy ? { count: parseInt(legacy[1], 10), anchored: false } : null;
+}
+
+/**
+ * What the whole-suite check before a push reads from a passing run's output beyond the pass
+ * count: the SKIPPED count, only from a runner's summary line, and whether a jest summary
+ * shows a total but no pass (an all-skipped or todo-only run, which jest prints without a
+ * "0 passed" — believed from jest's habit of listing only categories above zero, not observed
+ * here). Unlike {@link parseSkippedCount}, which the hotfix check reads and which takes the
+ * first "N skipped" anywhere (so a test titled "handles 5 skipped items" counted as 5, and
+ * jest's "Test Suites: 1 skipped" line counted as the tests), every pattern is line-anchored
+ * and the last match wins. Order: node:test (`skipped` plus `todo`), else jest's `Tests:` line,
+ * else mocha's `N pending`, else 0. Not exported.
+ * @param {string} output - Captured runner output (colour tolerated).
+ * @returns {{skipped: number, jestZero: boolean}}
+ */
+function readSuiteSummary(output) {
+  const text = stripAnsi(output);
+  const testsLine = lastCap(text, /^[ \t]*Tests:.*$/gim);
+  const line = testsLine ? testsLine[0] : '';
+  const jestZero = /(?<!\d)\d+\s+total\b/.test(line) && !/(?<!\d)\d+\s+passed\b/.test(line);
+  const nodeSkipped = lastCap(text, /^[ \t]*(?:#|ℹ)\s+skipped\s+(\d+)/gim);
+  const nodeTodo = lastCap(text, /^[ \t]*(?:#|ℹ)\s+todo\s+(\d+)/gim);
+  if (nodeSkipped || nodeTodo) {
+    return { skipped: (nodeSkipped ? parseInt(nodeSkipped[1], 10) : 0) + (nodeTodo ? parseInt(nodeTodo[1], 10) : 0), jestZero };
+  }
+  if (line) {
+    const jestSkipped = line.match(/(?<!\d)(\d+)\s+skipped\b/i);
+    const jestTodo = line.match(/(?<!\d)(\d+)\s+todo\b/i);
+    return { skipped: (jestSkipped ? parseInt(jestSkipped[1], 10) : 0) + (jestTodo ? parseInt(jestTodo[1], 10) : 0), jestZero };
+  }
+  const mocha = lastCap(text, /^[ \t]*(\d+)\s+pending\b/gim);
+  return { skipped: mocha ? parseInt(mocha[1], 10) : 0, jestZero };
 }
 
 /**
@@ -709,14 +767,18 @@ function hasTestSummaryEvidence(out) {
  * PRESENT but illegible (see hasTestSummaryEvidence) — never merely because no counter
  * exists.
  *
+ * `passCountRead` is true only when the pass count came from an anchored node:test, jest or
+ * mocha summary ({@link readPassCount}); `passCount` stays 0 when nothing could be read.
+ *
  * @param {string} out - Captured runner output.
- * @returns {{passCount: number, failCount: (number|null), skipped: number, unreadable: boolean}}
+ * @returns {{passCount: number, passCountRead: boolean, failCount: (number|null), skipped: number, unreadable: boolean}}
  */
 function readRunnerCounters(out) {
   const failCount = parseFailCount(out);
-  const passCount = parsePassCount(out);
+  const read = readPassCount(out);
   return {
-    passCount: passCount === null ? 0 : passCount,
+    passCount: read ? read.count : 0,
+    passCountRead: read !== null && read.anchored,
     failCount,
     skipped: parseSkippedCount(out),
     unreadable: failCount === null && hasTestSummaryEvidence(out)
@@ -747,7 +809,7 @@ function counterText(result) {
  * Every line-start pattern read here matches spaces and tabs only, never a line break,
  * so a long blank stretch costs linear time.
  * @param {{output: string, stdout?: string, stderr?: string}} result
- * @returns {{passCount: number, failCount: (number|null), skipped: number, unreadable: boolean}}
+ * @returns {{passCount: number, passCountRead: boolean, failCount: (number|null), skipped: number, unreadable: boolean}}
  */
 function runCounters(result) {
   const read = readRunnerCounters(counterText(result));
@@ -1022,10 +1084,21 @@ function runSpecificTests(tools, testFiles) {
  * `undetermined` result ({@link undeterminedRunResult}), never a failure and never a pass.
  * Each distinct test command runs once ({@link distinctCommands}), so `passCount` is the
  * count of one run of each.
+ *
+ * A passing result carries `passCountRead`, an ADDITIVE field: true only when at least one
+ * command ran and every command's pass count was read from an anchored node:test, jest or
+ * mocha summary. A runner that printed no count, or only a number the unanchored fallback
+ * found, leaves `passCount` as it always was (0, or that number) and `passCountRead` false;
+ * the whole-suite check before a push ({@link runWholeSuiteBeforePush}) reads it. `passed`
+ * and every other field answer exactly as before for every input.
  * @param {Object} tools - detected tools per language
- * @param {{timeout?: number, wholeTree?: boolean}} [options] the time limit of each command
- *   (300000 ms by default), and whether the whole process tree is ended at it
- *   ({@link runCommandArgv}); the hotfix check asks for it
+ * @param {{timeout?: number, wholeTree?: boolean, omitTotalLine?: boolean, env?: Object<string, string>}} [options]
+ *   the time limit of each command (300000 ms by default), and whether the whole process tree
+ *   is ended at it ({@link runCommandArgv}; the hotfix check asks for it); `omitTotalLine`
+ *   skips only the closing 'Tests passed (N total)' line (the whole-suite check before a push
+ *   prints its own line); `env` is extra environment variables for the commands started,
+ *   merged over the process's own
+ * @returns {Promise<{passed: boolean, passCount: number, failed: number, skipped: number, flaky: number, output: string, passCountRead?: boolean, undetermined?: boolean, refused?: boolean}>}
  */
 async function runFullTests(tools, options = {}) {
   // Finding A: a detector-undetermined test command is NOT a silent pass.
@@ -1035,10 +1108,17 @@ async function runFullTests(tools, options = {}) {
   let totalPassed = 0;
   let totalFailed = 0;
   let totalSkipped = 0;
+  let countsRead = true;
+  let ran = 0;
   /** @type {string[]} the output of every command that ran, for a reader that reads more than the counters here */
   const outputs = [];
 
-  const limits = { ...(options.timeout !== undefined ? { timeout: options.timeout } : {}), ...(options.wholeTree ? { wholeTree: true } : {}) };
+  // `omitTotalLine` is deliberately NOT a limit: it only shapes this function's own console line.
+  const limits = {
+    ...(options.timeout !== undefined ? { timeout: options.timeout } : {}),
+    ...(options.wholeTree ? { wholeTree: true } : {}),
+    ...(options.env ? { env: options.env } : {})
+  };
   for (const [lang, langTools] of distinctCommands(tools, 'test')) {
     console.log(`   Running full ${lang} test suite...`);
     // A PACKAGE-SCRIPT-derived command (testFromScript) is launched via `npm test` (argv,
@@ -1103,12 +1183,16 @@ async function runFullTests(tools, options = {}) {
     outputs.push(String(result.output || ''));
     totalPassed += counters.passCount;
     totalSkipped += counters.skipped;
+    countsRead = countsRead && counters.passCountRead;
+    ran += 1;
   }
 
-  console.log(`   Tests passed (${totalPassed} total)`);
+  if (!options.omitTotalLine) console.log(`   Tests passed (${totalPassed} total)`);
   return {
     passed: true,
     passCount: totalPassed,
+    // No command ran (the loop never entered) is never a read count.
+    passCountRead: ran > 0 && countsRead,
     failed: 0,
     // X4: the REAL count, read from the output — never a hardcoded 0. Reporting is this
     // module's job; the "0 skipped" contract is enforced at Step 14 VERIFY, whose
@@ -1206,6 +1290,288 @@ async function runSmartTests(tools) {
   }
 
   return result;
+}
+
+/** The time limit of each test command in the whole-suite check before a push: 15 minutes, the completion check's owner-accepted figure. */
+const WHOLE_SUITE_TIMEOUT_MS = 900000;
+/** The environment variable that names the project root of a whole-suite run in progress, so a project's own suite cannot start another from inside itself. */
+const WHOLE_SUITE_ENV = 'CTOC_WHOLE_SUITE_ROOT';
+
+/**
+ * Write control characters visibly, so a file name or a configured command with a newline or an
+ * escape byte cannot rewrite the screen it is shown on: code points 0-31, 127-159, U+2028 and
+ * U+2029 become `\x0a` or `\u` plus four hex digits style escapes. Display text only; never applied to what runs.
+ * @param {string} text
+ * @returns {string}
+ */
+function escapeForDisplay(text) {
+  return String(text).replace(/[\p{Cc}\p{Zl}\p{Zp}]/gu, (c) => {
+    const code = c.charCodeAt(0);
+    return code < 256 ? `\\x${code.toString(16).padStart(2, '0')}` : `\\u${code.toString(16).padStart(4, '0')}`;
+  });
+}
+
+/**
+ * A configured test command as it may be shown: the password in a URL (`scheme://user:pass@`)
+ * and the value of a `NAME=value` token whose name holds token, secret, pass, key, auth or cred
+ * are replaced by `***`, then control characters are written out ({@link escapeForDisplay}).
+ * Display text only: the command that runs is untouched.
+ * @param {string} command
+ * @returns {string}
+ */
+function displayCommand(command) {
+  const masked = String(command)
+    .replace(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@]*@/gi, '$1***@')
+    .replace(/(?<!\w)([A-Za-z_][\w-]*)=("[^"]*"|'[^']*'|\S+)/g, (whole, name) => (/token|secret|pass|key|auth|cred/i.test(name) ? `${name}=***` : whole));
+  return escapeForDisplay(masked);
+}
+
+/**
+ * The text of a whole-suite run that did not pass ({@link runWholeSuiteBeforePush}). Names the
+ * command and the failing count read from the run's output; never copies the output itself,
+ * except for the one-line reason of a run that could not be certified.
+ * @param {{undetermined?: boolean, refused?: boolean, flaky: number, output: string}} run a non-passing {@link runFullTests} result
+ * @param {string} named the command as shown, in backticks
+ * @param {string} limitText the time limit of each command, as shown
+ * @returns {string}
+ */
+function blockedText(run, named, limitText) {
+  const output = String(run.output || '');
+  // A refusal echoes the configured command, and a start failure can name it: both are shown
+  // masked and escaped like `named` (the run's own `output` keeps the original for a reader that needs it).
+  if (run.undetermined) {
+    const limit = output.includes('the test run timed out') ? ` The time limit is ${limitText} per test command.` : '';
+    return `Tests: not verified (${named}) — ${displayCommand(output)}${limit}`;
+  }
+  if (run.refused) return `Tests: not run — ${displayCommand(output)}`;
+  // A readable failing count is the fact; "flaky" is only a guess from the word "flaky" or
+  // "retry" in the output (a test titled "retrying the upload fails"), so it never outranks it.
+  const failing = parseFailCount(output);
+  if (failing !== null && failing > 0) return `Tests: failed — ${named} reported ${failing} failing test${failing === 1 ? '' : 's'}.`;
+  if (run.flaky) return `Tests: failed — ${named} exited with a failure and its output mentions a flaky or retried test (zero tolerance).`;
+  return `Tests: failed — ${named} exited with a failure.`;
+}
+
+/**
+ * The test check before a push: the project's WHOLE declared test command, once per distinct
+ * command ({@link distinctCommands}), each judged on its own, with the zero-test rules that
+ * every push path shares. `runFullTests`' own `passed` is untouched (the hotfix check reads
+ * it); this function adds the verdict a push needs:
+ *
+ *  - exit 0 and a count read from an anchored node:test, jest or mocha summary above zero: pass;
+ *  - exit 0 and such a count of ZERO (a run whose only tests were skipped included), or a jest
+ *    summary with a total but no pass (an all-skipped or todo-only run): block;
+ *  - exit 0 and no count, or a number only the unanchored fallback found: pass, worded as
+ *    "test count unknown", never as a number and never as zero tests;
+ *  - no test command at all: block (pushing without tests is the human's choice, --skip-tests);
+ *  - a failure, flaky test, timeout, oversize output, a command that did not start, a refused
+ *    command or an unreadable summary: block, with the reason.
+ *
+ * Each command runs with a 15-minute limit by default ({@link WHOLE_SUITE_TIMEOUT_MS}) and
+ * with `CTOC_WHOLE_SUITE_ROOT` naming this project, so a whole-suite run started from inside
+ * one for the same project is refused. A passing result carries no `output`; a block does.
+ * A pass also lists, as `testsOff`, the languages whose test phase an explicit `test: null` in
+ * `.ctoc/quality-config.yaml` turned off; only the automatic push reads it (`/ctoc:push` reads none of it).
+ * Prints one line when it starts, and nothing else of its own; never throws beyond what
+ * {@link runFullTests} throws.
+ * @param {Object<string, Object>} tools detected tools per language
+ * @param {{timeout?: number, wholeTree?: boolean}} [options] `timeout`: the time limit of each
+ *   command (900000 ms by default). `wholeTree`: end the whole process tree of each command when
+ *   it ends — for the detached quality agent, which has no terminal whose interrupt would be
+ *   lost; `/ctoc:push` leaves it off.
+ * @returns {Promise<{passed: boolean, passCount: number, failed: number, skipped: number, flaky: number, commands: string[], countKnown?: boolean, testsOff?: string[], undetermined?: boolean, refused?: boolean, output?: string, text: string}>}
+ */
+async function runWholeSuiteBeforePush(tools, options = {}) {
+  const root = path.resolve(process.cwd());
+  if (process.env[WHOLE_SUITE_ENV] === root) {
+    return {
+      passed: false, refused: true, passCount: 0, failed: 0, skipped: 0, flaky: 0, commands: [],
+      text: 'Tests: not run — a whole-suite run is already in progress for this project.'
+    };
+  }
+
+  const limitMs = options.timeout !== undefined ? options.timeout : WHOLE_SUITE_TIMEOUT_MS;
+  const limitText = limitMs % 60000 === 0 ? `${limitMs / 60000} minute${limitMs === 60000 ? '' : 's'}` : `${limitMs} ms`;
+  console.log(`\n  Running the whole declared test suite before the push (time limit: ${limitText} per test command)...`);
+
+  const undetermined = undeterminedTestLanguages(tools);
+  if (undetermined.length) {
+    const r = undeterminedTestsResult(undetermined);
+    return { ...r, commands: [], text: `Tests: not verified — ${r.output}` };
+  }
+
+  const toRun = distinctCommands(tools, 'test');
+  if (toRun.length === 0) {
+    return {
+      passed: false, passCount: 0, failed: 0, skipped: 0, flaky: 0, commands: [],
+      text: "Tests: no test command was found, so nothing was tested. Pushing without tests is the human's choice: /ctoc:push --skip-tests."
+    };
+  }
+
+  /** @type {string[]} */
+  const commands = [];
+  /** @type {string[]} */
+  const parts = [];
+  let passCount = 0;
+  let skipped = 0;
+  let countKnown = true;
+  for (const [lang, langTools] of toRun) {
+    // The program actually started: `npm test` for a package.json script, the configured string otherwise.
+    // Shown with secrets masked and control characters written out; the command that runs is untouched.
+    const command = langTools.testFromScript ? 'npm test' : displayCommand(String(langTools.test));
+    commands.push(command);
+    const named = `\`${command}\`${langTools.testFromOverride ? " (test command set in .ctoc/quality-config.yaml, not by the project's own files)" : ''}`;
+    const run = await runFullTests({ [lang]: langTools }, {
+      omitTotalLine: true, timeout: limitMs, env: { [WHOLE_SUITE_ENV]: root }, ...(options.wholeTree ? { wholeTree: true } : {})
+    });
+    // What the earlier commands showed stays in front of a block on a later one.
+    const before = parts.length ? `Tests: ${parts.join('; ')}. ` : '';
+    if (!run.passed) return { ...run, commands, text: before + blockedText(run, named, limitText) };
+
+    // The skipped count comes only from a runner summary line (never from a test's title), and an
+    // all-skipped or todo-only jest run, which prints no pass count, is zero tests ran too.
+    const summary = readSuiteSummary(run.output);
+    const skippedText = summary.skipped > 0 ? `, ${summary.skipped} skipped` : '';
+    const zero = run.passCountRead ? run.passCount === 0 : summary.jestZero;
+    if (zero) {
+      return {
+        ...run, passed: false, passCount: 0, skipped: summary.skipped, commands, countKnown: true,
+        text: `${before}Tests: zero tests ran — ${named} reported 0 passing tests${skippedText}.`
+      };
+    }
+    if (run.passCountRead) {
+      parts.push(`${named}: ${run.passCount} passed${skippedText}`);
+      passCount += run.passCount;
+    } else {
+      // A number only the unanchored fallback found is never reported: nothing is added to the total.
+      parts.push(`${named}: exit 0, test count unknown (no node:test, jest or mocha pass count in its output)`);
+      countKnown = false;
+    }
+    skipped += summary.skipped;
+  }
+
+  /** @type {string[]} */
+  const testsOff = [];
+  for (const [lang, t] of Object.entries(tools)) {
+    if (t && !t.test) {
+      parts.push(`not tested: ${lang} (no test command)`);
+      // An explicit `test: null` in .ctoc/quality-config.yaml: the one kind of "no test command" a person wrote down.
+      if (t.testFromOverride) testsOff.push(lang);
+    }
+  }
+  // Built field by field, never by spreading `run`: a passing run's output (up to 10 MiB) is not carried.
+  return { passed: true, passCount, failed: 0, skipped, flaky: 0, commands, countKnown, testsOff, text: `Tests: passed — ${parts.join('; ')}.` };
+}
+
+/** Why the automatic push does not ship a pass whose test count is unknown (`/ctoc:push` shows it to the human). */
+const COUNT_UNKNOWN_REASON = 'test count unknown — ship with /ctoc:push, which shows it';
+/** What a push says when a commit arrived after the tests started. */
+const HEAD_MOVED_TEXT = 'a newer commit arrived during the checks and was not tested; not pushing — run /ctoc:push again';
+/** What a push says when the commit that was tested cannot be named, or the current one cannot be read. */
+const NO_HEAD_TEXT = 'the commit could not be read from git, so nothing shows that what would be pushed is what was tested; not pushing';
+
+/**
+ * Run a read-only git command with an argument list (no shell) in `cwd`.
+ * @param {string[]} args
+ * @param {string} cwd
+ * @returns {string|null} standard output, or null when git fails or cannot be started
+ */
+function readGit(args, cwd) {
+  try {
+    return execFileSync('git', args, {
+      cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10000, windowsHide: true, maxBuffer: 10 * 1024 * 1024
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The commit HEAD names, for the push to compare before and after its checks.
+ * @param {string} [cwd] the project root
+ * @returns {string|null} the full commit hash, or null when git cannot report it
+ */
+function readGitHead(cwd = process.cwd()) {
+  const out = readGit(['rev-parse', 'HEAD'], cwd);
+  return out && out.trim() ? out.trim() : null;
+}
+
+/**
+ * Whether `rev` is already on the branch's upstream (`git merge-base --is-ancestor`, read-only,
+ * 5-second limit). The opening screen asks it to stop telling the person about a refused
+ * automatic push whose commit has since reached the remote. Every failure — git missing, an
+ * unknown commit, no upstream, a timeout — answers false, so the screen keeps saying it.
+ * @param {string} rev a commit hash (the caller passes only hex or HEAD, so it cannot be an option)
+ * @param {string} [cwd] the project root
+ * @returns {boolean}
+ */
+function isOnUpstream(rev, cwd = process.cwd()) {
+  try {
+    execFileSync('git', ['merge-base', '--is-ancestor', rev, '@{upstream}'], { cwd, stdio: 'ignore', timeout: 5000, windowsHide: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Why a push must not go ahead on the commit that was tested, or null when it may. The one
+ * place the comparison lives: `/ctoc:push` calls it before it pushes, and so does the
+ * automatic push. The tested commit may be a full hash or the short hash the quality state
+ * records, so it is compared as a prefix, never with `===`.
+ * @param {string|null|undefined} testedHead the commit the checks started on
+ * @param {string} [cwd] the project root
+ * @param {(cwd: string) => (string|null)} [read] reads the current commit
+ * @returns {string|null} the reason, or null
+ */
+function untestedCommitReason(testedHead, cwd = process.cwd(), read = readGitHead) {
+  if (!testedHead) return noHeadText(cwd);
+  const now = read(cwd);
+  if (!now) return noHeadText(cwd);
+  return now.startsWith(testedHead) ? null : HEAD_MOVED_TEXT;
+}
+
+/**
+ * {@link NO_HEAD_TEXT}, with the first line of what git itself says when it is asked for the
+ * commit now ("fatal: not a git repository ..."), so the human sees why. Run only on the
+ * refusal path, so a push that goes ahead never pays for it.
+ * @param {string} cwd the project root
+ * @returns {string}
+ */
+function noHeadText(cwd) {
+  let said = '';
+  try {
+    execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000, windowsHide: true });
+  } catch (err) {
+    const first = String((err && /** @type {{stderr?: unknown}} */ (err).stderr) || '').split('\n').find((l) => l.trim());
+    said = first ? escapeForDisplay(first.trim()) : '';
+  }
+  return said ? `${NO_HEAD_TEXT} (git said: ${said})` : NO_HEAD_TEXT;
+}
+
+/**
+ * The tracked files that differ from the commit (staged or not): tested as they are, but not
+ * what a push sends. Informational only, never a block, because CTOC rewrites its own tracked
+ * state files. Reads `git status --porcelain -z`: the output is never trimmed (a record can
+ * start with a space), paths are never quoted, and a rename or copy (`new\0old`) gives the
+ * new path and skips the old one. `--no-optional-locks` keeps this read from taking git's index
+ * lock, which a commit made at the same moment would otherwise collide with.
+ * @param {string} [cwd] the project root
+ * @returns {string[]|null} repository paths; `[]` when the tree is clean; null when git cannot
+ *   list them ("I could not look" is not "nothing changed")
+ */
+function uncommittedTrackedPaths(cwd = process.cwd()) {
+  const out = readGit(['--no-optional-locks', 'status', '--porcelain', '-z', '--untracked-files=no'], cwd);
+  if (out === null) return null;
+  if (!out) return [];
+  const fields = out.split('\0').filter(Boolean);
+  const paths = [];
+  for (let i = 0; i < fields.length; i++) {
+    const record = fields[i];
+    paths.push(record.slice(3));
+    if ('RC'.includes(record[0]) || 'RC'.includes(record[1])) i++;
+  }
+  return paths;
 }
 
 /**
@@ -1771,13 +2137,23 @@ async function runSecurityScan(_tools, opts = {}) {
  * Run tiered quality checks
  * Tier 1: BLOCKING (must pass before push)
  * Tier 2: WARNING (should fix, does not block)
+ *
+ * The test check is one of two, never both: when the agent is going to push (`forPush`) it is
+ * the project's whole declared suite with the zero-test rules ({@link runWholeSuiteBeforePush}),
+ * ending the whole process tree of each command when it ends on macOS and Linux (the detached
+ * agent has no terminal whose interrupt would be lost; `/ctoc:push` keeps that off; the tree end
+ * is not verified on Windows ({@link endProcessTree}), so the push path asks for none there); otherwise the tests
+ * the change selects ({@link runSmartTests}), as always. Lint, type check and the security
+ * scan are the same either way.
+ * @param {Object<string, Object>} tools detected tools per language
+ * @param {{forPush?: boolean}} [options] `forPush`: true when the agent is going to push
  */
-async function runTieredChecks(tools) {
+async function runTieredChecks(tools, options = {}) {
   // Tier 1: BLOCKING
   const tier1 = {
     lint: await runLint(tools),
     typecheck: await runTypecheck(tools),
-    tests: await runSmartTests(tools),
+    tests: options.forPush ? await runWholeSuiteBeforePush(tools, { wholeTree: process.platform !== 'win32' }) : await runSmartTests(tools),
     security: await runSecurityScan()
   };
 
@@ -1849,11 +2225,31 @@ function pushToRemote() {
  * (`git.autoPushEnabled`, default false) and by nothing else: not argv, not an
  * environment variable, not an environment profile.
  *
+ * Once automatic pushing is on, three more refusals stand between the green checks and the
+ * push, in this order (each only removes a push, none adds one):
+ *  - the test count is unknown (`options.countKnown === false`): nobody reads this agent's
+ *    output, so a pass `/ctoc:push` would show the human is not shipped unseen;
+ *  - a language's tests are turned off (`options.testsOff` lists it): someone wrote
+ *    `test: null` for it in `.ctoc/quality-config.yaml`, so part of the project was not tested;
+ *  - the commit moved or cannot be read (`options.testedHead` given, {@link untestedCommitReason}):
+ *    only the commit the checks ran on is pushed.
+ * A caller that passes no options gets the answers it always got.
+ *
+ * Every answer given once automatic pushing is on carries `optedIn: true`, so `main()` records
+ * the result ({@link recordAutoPushResult}), and a refusal carries a fixed `code` for the
+ * record: 'count-unknown', 'tests-off', 'head-moved', 'no-head' or 'push-failed'. The code
+ * is chosen here, never taken from text git or a file printed. The answers for "not asked to
+ * push" and "automatic pushing is off" carry neither, and record nothing.
+ *
  * @param {{onSuccess?: string}} args - parsed CLI args (intent)
  * @param {string} [projectPath] - project root (authority is read from here)
- * @returns {{pushed: boolean, reason: string}}
+ * @param {{testedHead?: (string|null), countKnown?: boolean, testsOff?: string[]}} [options]
+ *   `testedHead`: the commit the checks started on (null when it could not be read);
+ *   `countKnown`: false when the passing test run reported no readable count; `testsOff`: the
+ *   languages whose tests an explicit `test: null` turned off
+ * @returns {{pushed: boolean, reason: string, optedIn?: boolean, code?: string}}
  */
-function maybePushOnSuccess(args, projectPath = process.cwd()) {
+function maybePushOnSuccess(args, projectPath = process.cwd(), options = {}) {
   if (!args || args.onSuccess !== 'push') {
     return { pushed: false, reason: 'on-success is not push' };
   }
@@ -1868,12 +2264,58 @@ function maybePushOnSuccess(args, projectPath = process.cwd()) {
     };
   }
 
+  if (options.countKnown === false) {
+    console.log(`\n  NOT pushing: ${COUNT_UNKNOWN_REASON}.`);
+    return { pushed: false, optedIn: true, code: 'count-unknown', reason: COUNT_UNKNOWN_REASON };
+  }
+
+  if (Array.isArray(options.testsOff) && options.testsOff.length > 0) {
+    const reason = `tests turned off in .ctoc/quality-config.yaml for ${options.testsOff.join(', ')} — ship with /ctoc:push, which shows it`;
+    console.log(`\n  NOT pushing: ${reason}.`);
+    return { pushed: false, optedIn: true, code: 'tests-off', reason };
+  }
+
+  if (options.testedHead !== undefined) {
+    const untested = untestedCommitReason(options.testedHead, projectPath);
+    if (untested) {
+      console.log(`\n  ${untested}.`);
+      return { pushed: false, optedIn: true, code: untested === HEAD_MOVED_TEXT ? 'head-moved' : 'no-head', reason: untested };
+    }
+  }
+
   const ok = pushToRemote();
-  return { pushed: ok, reason: ok ? 'auto-push enabled by the human' : 'push failed' };
+  return ok
+    ? { pushed: true, optedIn: true, reason: 'auto-push enabled by the human' }
+    : { pushed: false, optedIn: true, code: 'push-failed', reason: 'push failed' };
 }
 
 /**
- * Print summary
+ * Write the result of an automatic push (one that automatic pushing was on for) to the quality
+ * state, so the opening screen of `/ctoc:start` can say a push did not happen: the refusal
+ * (`{commit, code}`, `commit` null when git could not name it) after a refused or failed push,
+ * `null` after a successful one. Only the fixed `code` is stored, never the answer's `reason`
+ * or any text git printed: the screen says its own sentence for the code, because a file in
+ * the project is not text to show a person. `main()` calls it for the progress of a run too
+ * ('unconfirmed' before the checks, 'checks-failed', 'nothing-checked') and for an answer
+ * that carries `optedIn`, under the run lock it holds (`updateStatus` writes atomically).
+ * A write that fails throws: the run stops (`main().catch` releases the lock) rather than
+ * leave a record that says less than what happened.
+ * @param {{pushed: boolean, code?: string}} push the answer of {@link maybePushOnSuccess}, or `{pushed: false, code}`
+ * @param {string|null} testedHead the commit the checks ran on
+ * @returns {void}
+ */
+function recordAutoPushResult(push, testedHead) {
+  qualityState.updateStatus({ autoPushRefused: push.pushed ? null : { commit: testedHead || null, code: push.code } });
+}
+
+/**
+ * Print the summary of a run: the verdict, the duration, the tier-1 and tier-2 results. Under
+ * the tier-1 results it prints the test check's own text line when the result carries one (the
+ * whole-suite check's count and command, "zero tests ran", or "test count unknown"), else the
+ * old "Tests: N passed" line for the selected tests.
+ * @param {{allPassed: boolean, tier1?: any, tier2?: any}} results the answer of {@link runTieredChecks}
+ * @param {number} duration milliseconds the run took
+ * @returns {void}
  */
 function printSummary(results, duration) {
   console.log('\n' + '='.repeat(50));
@@ -1901,7 +2343,11 @@ function printSummary(results, duration) {
       ? ` (${securitySkips} scanner(s) skipped — see log)`
       : ''));
 
-    if (tier1.tests.passed && tier1.tests.passCount) {
+    // The whole-suite check's own line (count and command, zero, or count unknown) when it ran;
+    // the old count line for the selected tests.
+    if (tier1.tests.text) {
+      console.log(`\n  ${tier1.tests.text}`);
+    } else if (tier1.tests.passed && tier1.tests.passCount) {
       console.log(`\n  Tests: ${tier1.tests.passCount} passed`);
     }
   }
@@ -1917,7 +2363,16 @@ function printSummary(results, duration) {
 }
 
 /**
- * Main entry point
+ * Main entry point (the script path, run by the post-commit hook). Takes the run lock, then
+ * `setRunning` records the commit the checks run on: `testedHead`, read from its return value
+ * before detection and every check. When the person opted into automatic pushing
+ * (`--on-success=push` with `git.autoPushEnabled`), the record is written as the run's progress:
+ * 'unconfirmed' right after `setRunning`, replaced by 'nothing-checked' (no language),
+ * 'checks-failed' (the tiered checks did not pass), or the push answer of
+ * {@link maybePushOnSuccess}. A run that stops in between leaves 'unconfirmed' standing. A
+ * failed write of the record throws, which stops the run: `main().catch` and the `finally`
+ * release the lock, the process exits 1, and nothing is pushed.
+ * @returns {Promise<void>}
  */
 async function main() {
   const args = parseArgs();
@@ -1937,8 +2392,17 @@ async function main() {
   }
 
   try {
-    // Set running state (now includes gitHead tracking)
-    qualityState.setRunning(args.triggeredBy);
+    // Set running state (now includes gitHead tracking). The commit it records is the one the
+    // checks run on: read from the return value, before detection and every check, because the
+    // quality state caches its folder for the whole process.
+    const running = qualityState.setRunning(args.triggeredBy);
+    const testedHead = running && running.gitHead ? running.gitHead : null;
+
+    // A person who opted into automatic pushing is told when a push did not happen (nobody reads
+    // this agent's output). "Unconfirmed" is written FIRST, so a run that stops before it can say
+    // anything (killed, crashed, the machine off) leaves it standing; every later outcome replaces it.
+    const optedIn = args.onSuccess === 'push' && isAutoPushEnabled(process.cwd());
+    if (optedIn) recordAutoPushResult({ pushed: false, code: 'unconfirmed' }, testedHead);
 
     // Detect tools
     console.log('\n  Detecting tools...');
@@ -1947,6 +2411,7 @@ async function main() {
     if (detection.languages.length === 0) {
       console.log('   No supported languages detected');
       qualityState.setCompleted(true, {});
+      if (optedIn) recordAutoPushResult({ pushed: false, code: 'nothing-checked' }, testedHead);
       return;
     }
 
@@ -1961,7 +2426,7 @@ async function main() {
     }
 
     // Run tiered checks
-    const results = await runTieredChecks(detection.tools);
+    const results = await runTieredChecks(detection.tools, { forPush: args.onSuccess === 'push' });
 
     const duration = Date.now() - startTime;
 
@@ -1984,9 +2449,17 @@ async function main() {
 
     // Handle success/failure. The push decision is the ship gate's, not argv's.
     if (results.allPassed) {
-      maybePushOnSuccess(args, process.cwd());
+      const push = maybePushOnSuccess(args, process.cwd(), {
+        testedHead,
+        countKnown: tier1.tests?.countKnown !== false,
+        testsOff: (tier1.tests && tier1.tests.testsOff) || []
+      });
+      // Nobody reads this agent's output (the hook discards it), so a push that did not happen
+      // is recorded for the opening screen of /ctoc:start, and a successful one clears it.
+      if (push.optedIn) recordAutoPushResult(push, testedHead);
     } else {
       console.log('\n  Fix the issues above and commit again to retry.');
+      if (optedIn) recordAutoPushResult({ pushed: false, code: 'checks-failed' }, testedHead);
     }
 
   } finally {
@@ -2020,10 +2493,17 @@ module.exports = {
   runTypecheck,
   runSpecificTests,
   runSmartTests,
+  runWholeSuiteBeforePush,
+  readGitHead,
+  isOnUpstream,
+  untestedCommitReason,
+  uncommittedTrackedPaths,
+  escapeForDisplay,
   runFullTests,
   runSecurityScan,
   runTieredChecks,
   pushToRemote,
   maybePushOnSuccess,
+  recordAutoPushResult,
   printSummary
 };
