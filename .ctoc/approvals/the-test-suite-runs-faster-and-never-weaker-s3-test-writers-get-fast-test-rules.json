@@ -1,0 +1,10 @@
+{
+  "content_sha256": "3d8581a1edafc7f9021e854b0894950dad64a9e929f45aa3289cba1b62e0f558",
+  "hash_scope": "specification",
+  "stage_from": "review",
+  "stage_to": "done",
+  "approved_at": "2026-10-13T11:47:26.605Z",
+  "advanced_by": "pipeline",
+  "evidence": "evidence: review→done — checks passed, recorded 2026-10-13T11:18:21.785Z in .ctoc/state/verify/the-test-suite-runs-faster-and-never-weaker-s3-test-writers-get-fast-test-rules.json (VERIFY passed — ran: lint, typecheck, tests); coverage 99.88% against a floor of 99%, 0 skipped; every required step 8–16 is checked in the plan, including REVIEW, SECURE and FINAL-REVIEW (checked by the build itself); questions: none were stored; crossed on evidence, not approved by the human",
+  "plan_basename": "the-test-suite-runs-faster-and-never-weaker-s3-test-writers-get-fast-test-rules"
+}
