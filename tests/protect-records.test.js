@@ -48,9 +48,16 @@ function payload(toolName, toolInput, cwd = project) {
   };
 }
 
-function run(input, { cwd = project, entry = ENTRY } = {}) {
+function run(input, { cwd = project, entry = ENTRY, env } = {}) {
+  let childEnv;
+  if (env) {
+    childEnv = { ...process.env };       // keeps NODE_V8_COVERAGE, so these runs count toward coverage
+    for (const [k, v] of Object.entries(env)) {
+      if (v === null) delete childEnv[k]; else childEnv[k] = v;
+    }
+  }
   return spawnSync(process.execPath, [entry], {
-    cwd, input: typeof input === 'string' ? input : JSON.stringify(input), encoding: 'utf8',
+    cwd, env: childEnv, input: typeof input === 'string' ? input : JSON.stringify(input), encoding: 'utf8',
   });
 }
 
@@ -681,5 +688,392 @@ describe("the regulatory settings and profiles are protected like the records (o
     allowedBash('echo x > src/settings.yaml');
     assertAllowed(run(write(p('src', 'settings.yaml'))), 'a settings.yaml outside .ctoc');
     assertAllowed(run(write(p('.ctoc', 'settings.yaml.example'))), 'a different file name');
+  });
+});
+
+describe("a background agent may not change Claude Code's settings files or CTOC's .ctoc/settings.json (owner, 2026-10-15)", () => {
+  const REFUSAL_AGENT_SETTINGS = "CTOC refused this call because a background agent may not change Claude Code's "
+    + "settings files or CTOC's .ctoc/settings.json, which decide the hooks, environment and permissions every "
+    + 'later call runs with; report what you wanted to change and let the main session make the change.';
+  const REFUSAL_AGENT_SETTINGS_UNCHECKED = 'CTOC refused this call because it mentions a settings file and '
+    + "CTOC's protection for it failed to run; tell the human that this protection is broken.";
+  const REFUSAL_REGIME_SETTINGS = "CTOC refused this call because it writes, or could write, the project's settings "
+    + "file or its regulatory profiles, which only CTOC's menu writes; tell the human what you wanted to "
+    + 'change and let the menu change it.';
+  const LONG_S = 'ſ'; // U+017F, which NFKC folds to `s` and APFS opens as `s`
+  const MENU = 'node "${CLAUDE_PLUGIN_ROOT}/src/commands/start.js"';
+
+  let cfg;
+  const rm = (...dirs) => { for (const d of dirs) fs.rmSync(d, { recursive: true, force: true }); };
+  const put = (file, text = '{}') => {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, text);
+  };
+  const cfgEnv = () => ({ CLAUDE_CONFIG_DIR: cfg });
+  const asAgent = (input, id = 'a1b2c3') => ({ ...input, agent_id: id, agent_type: 'iron-loop-executor' });
+  // The background agent is refused with the new sentence; the same input is allowed without
+  // an agent id and with an empty one.
+  const agentOnly = (input, what, opts = {}) => {
+    const o = { env: cfgEnv(), ...opts };
+    assertRefused(run(asAgent(input), o), `${what} (background agent)`, REFUSAL_AGENT_SETTINGS);
+    assertAllowed(run(input, o), `${what} (main session)`);
+    assertAllowed(run(asAgent(input, ''), o), `${what} (empty agent id)`);
+  };
+  const agentAllowed = (input, what, opts = {}) => {
+    assertAllowed(run(asAgent(input), { env: cfgEnv(), ...opts }), `${what} (background agent)`);
+  };
+  const edit = (file, oldString = '{}', newString = '{"env":{}}') => payload('Edit', {
+    file_path: file, old_string: oldString, new_string: newString,
+  });
+
+  beforeEach(() => {
+    cfg = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pr-cfg-')));
+    put(p('.claude', 'settings.json'));
+    fs.mkdirSync(p('.claude', 'agents'), { recursive: true });
+    put(p('.ctoc', 'settings.json'));
+    put(p('src', 'e.js'), 'x');
+    put(path.join(cfg, 'settings.json'));
+  });
+  afterEach(() => { rm(cfg); cfg = null; });
+
+  test('112 · each protected file, editing tools', () => {
+    agentOnly(write(p('.claude', 'settings.json')), 'Write .claude/settings.json');
+    agentOnly(edit(p('.claude', 'settings.json')), 'Edit .claude/settings.json');
+    agentOnly(write(p('.claude', 'settings.local.json')), 'Write .claude/settings.local.json');
+    agentOnly(payload('MultiEdit', { file_path: '.claude/settings.local.json', edits: [{ old_string: 'a', new_string: 'b' }] }),
+      'MultiEdit .claude/settings.local.json');
+    agentOnly(payload('NotebookEdit', { notebook_path: p('.claude', 'settings.json'), new_source: 'x' }),
+      'NotebookEdit .claude/settings.json');
+    agentOnly(write(p('.ctoc', 'settings.json')), 'Write .ctoc/settings.json');
+    agentOnly(edit(p('.ctoc', 'settings.json')), 'Edit .ctoc/settings.json');
+    agentOnly(write(path.join(cfg, 'settings.json')), 'Write <config folder>/settings.json');
+  });
+
+  test('113 · spellings: letter case, separators, `..`, trailing dots and spaces, NTFS streams', () => {
+    const rows = {
+      'letter case .claude': write(p('.CLAUDE', 'Settings.JSON')),
+      'letter case .ctoc': write(p('.Ctoc', 'SETTINGS.json')),
+      'backslash .claude': write('.claude\\settings.json'),
+      'backslash .ctoc': write('.ctoc\\settings.json'),
+      'dot-dot': write(`${project}/src/../.claude/settings.local.json`),
+      'trailing dot': write(`${project}/.claude/settings.json.`),
+      'trailing space': write(`${project}/.claude/settings.json `),
+      'stream ::$DATA on the file': write(`${project}/.claude/settings.json::$DATA`),
+      'stream ::$DATA on the folder': write(`${project}/.claude::$DATA/settings.json`),
+      'stream ::$INDEX_ALLOCATION on the folder': write(`${project}/.claude::$INDEX_ALLOCATION/settings.json`),
+      'stream :$I30:$INDEX_ALLOCATION on the folder': write(`${project}/.claude:$I30:$INDEX_ALLOCATION/settings.json`),
+      'trailing dot on the folder': write(`${project}/.claude./settings.json`),
+      'config folder, upper case': write(path.join(cfg, 'SETTINGS.JSON')),
+    };
+    for (const [what, input] of Object.entries(rows)) agentOnly(input, what);
+  });
+
+  test('114 · spellings the file system folds, and hard links', () => {
+    fs.linkSync(p('.claude', 'settings.json'), p('src', 'h.json'));
+    fs.linkSync(p('.ctoc', 'settings.json'), p('src', 'hc.json'));
+    agentOnly(write(p('.claude', `${LONG_S}ettings.json`)), 'long s, existing project file');
+    agentOnly(write(p('.claude', `${LONG_S}ettings.local.json`)), 'long s, absent local file');
+    agentOnly(write(p('.ctoc', `${LONG_S}ettings.json`)), 'long s, .ctoc');
+    agentOnly(write(path.join(cfg, `${LONG_S}ettings.json`)), 'long s, config folder');
+    agentOnly(write(p('src', 'h.json')), 'hard link to .claude/settings.json');
+    agentOnly(write(p('src', 'hc.json')), 'hard link to .ctoc/settings.json');
+  });
+
+  test('115 · links (a): a file link to .claude/settings.json', () => {
+    fs.symlinkSync(p('.claude', 'settings.json'), p('src', 's.json'));
+    agentOnly(write(p('src', 's.json')), 'file link');
+  });
+
+  test('116 · links (b): a folder link to .claude', () => {
+    fs.symlinkSync(p('.claude'), p('src', 'cfgdir'), 'junction');
+    agentOnly(write(p('src', 'cfgdir', 'settings.local.json')), 'folder link');
+  });
+
+  test('117 · links (c): a settings name reached through `..` after a folder link', () => {
+    fs.symlinkSync(p('.claude', 'agents'), p('src', 'agents'), 'junction');
+    agentOnly(write(`${project}/src/agents/../settings.json`), 'link then dot-dot');
+  });
+
+  test('118 · links (d): the config folder is itself a link', () => {
+    fs.mkdirSync(path.join(cfg, 'real'));
+    put(path.join(cfg, 'real', 'settings.json'));
+    fs.symlinkSync(path.join(cfg, 'real'), path.join(cfg, 'link'), 'junction');
+    const opts = { env: { CLAUDE_CONFIG_DIR: path.join(cfg, 'link') } };
+    agentOnly(write(path.join(cfg, 'real', 'settings.json')), 'real side', opts);
+    agentOnly(write(path.join(cfg, 'link', 'settings.json')), 'link side', opts);
+  });
+
+  test('119 · links (e): a dangling link keeps the records sentence for every session', () => {
+    fs.symlinkSync(p('.claude', 'settings.local.json'), p('src', 'dl.json'));
+    const input = write(p('src', 'dl.json'));
+    assertRefused(run(asAgent(input), { env: cfgEnv() }), 'dangling link, background agent', REFUSAL);
+    assertRefused(run(input, { env: cfgEnv() }), 'dangling link, main session', REFUSAL);
+  });
+
+  describe('worktrees', () => {
+    let w;
+    beforeEach(() => {
+      w = p('.claude', 'worktrees', 'w');
+      put(path.join(w, '.git'), 'gitdir: x');
+      put(path.join(w, '.claude', 'settings.json'));
+    });
+
+    test('120 · from a worktree, the main checkout\'s files; from the main checkout, a worktree\'s', () => {
+      const inW = { cwd: w };
+      agentOnly(write('../../settings.json', w), 'Write ../../settings.json from the worktree', inW);
+      agentOnly(write(p('.claude', 'settings.local.json'), w), 'Write the main checkout\'s local settings', inW);
+      agentOnly(write(path.join(w, '.claude', 'settings.json'), w), 'Write the worktree\'s own settings', inW);
+      agentOnly(bash('echo x > ../../settings.json', w), 'shell redirect to ../../settings.json', inW);
+      agentOnly(bash('cd .. && echo x > ../settings.local.json', w), 'shell cd split to the local settings', inW);
+      fs.mkdirSync(path.join(w, 'src'), { recursive: true });
+      fs.symlinkSync(p('.ctoc'), path.join(w, 'src', 'm'), 'junction');
+      agentOnly(bash('echo x > src/m/settings.json', w), 'shell redirect through a link to the main .ctoc', inW);
+      agentOnly(bash(`echo x > src/m/${LONG_S}ettings.json`, w), 'the same with the long s (folded reading)', inW);
+      agentOnly(write(path.join(w, 'src', 'm', 'settings.json'), w), 'Write through the link', inW);
+      agentOnly(write(path.join(w, '.claude', 'settings.json')), 'Write a worktree\'s settings from the main checkout');
+      agentOnly(bash('echo x > .claude/worktrees/w/.claude/settings.json'), 'shell write to a worktree\'s settings from the main checkout');
+    });
+  });
+
+  describe('the config folder by the home folder', () => {
+    let home;
+    beforeEach(() => {
+      home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pr-home-')));
+      put(path.join(home, 'dot', 'claude', 'settings.json'));
+      fs.symlinkSync(path.join(home, 'dot', 'claude'), path.join(home, '.claude'), 'junction');
+    });
+    afterEach(() => rm(home));
+
+    for (const [id, label, configDirValue] of [['121a', 'unset', null], ['121b', 'empty', '']]) {
+      test(`${id} · CLAUDE_CONFIG_DIR ${label}: <home>/.claude is the config folder`, () => {
+        const opts = { env: { CLAUDE_CONFIG_DIR: configDirValue, HOME: home, USERPROFILE: home } };
+        agentOnly(write(path.join(home, '.claude', 'settings.json')), 'Write <home>/.claude/settings.json', opts);
+        agentOnly(write(path.join(home, 'dot', 'claude', 'settings.json')), 'Write <home>/dot/claude/settings.json', opts);
+        agentOnly(bash(`echo x > ${path.join(home, '.claude', 'settings.json')}`), 'shell to <home>/.claude/settings.json', opts);
+        agentOnly(bash(`echo x > ${path.join(home, 'dot', 'claude', 'settings.json')}`), 'shell to <home>/dot/claude/settings.json', opts);
+      });
+    }
+  });
+
+  describe('ordinary agent work stays allowed', () => {
+    const ordinaryWork = (opts) => {
+      agentAllowed(write(p('src', 'x.js')), 'Write src/x.js', opts);
+      agentAllowed(bash('echo x > src/x.js'), 'Bash echo x > src/x.js', opts);
+      agentAllowed(edit(p('src', 'e.js'), 'x', 'y'), 'Edit of the existing src/e.js', opts);
+      agentAllowed(write(p('src', 'e.js')), 'Write over the existing src/e.js', opts);
+    };
+
+    test('122 · base configuration', () => {
+      for (const file of [
+        p('.claude', 'settings.json.bak'), p('.claude', 'settings-old.json'), p('.claude', 'agents', 'x.md'),
+        p('src', 'settings.json'), p('.ctoc', 'settings.json.example'), p('src', 'x.js'),
+        path.join(cfg, 'settings.local.json'),
+      ]) agentAllowed(write(file), `Write ${path.basename(file)}`);
+      for (const command of [
+        'echo x > src/x.js', 'echo x > .claude/settings.json.bak', 'cp a.json src/settings.json',
+        `cd ${cfg} && echo x > settings.local.json`, 'npm test',
+      ]) agentAllowed(bash(command), command);
+      ordinaryWork();
+    });
+
+    test('123 · (a) the config folder does not exist', () => {
+      ordinaryWork({ env: { CLAUDE_CONFIG_DIR: path.join(cfg, 'nonexistent') } });
+    });
+
+    test('124 · (b) the user settings file is a dangling link', () => {
+      rm(path.join(cfg, 'settings.json'));
+      fs.symlinkSync(path.join(cfg, 'nowhere'), path.join(cfg, 'settings.json'));
+      ordinaryWork();
+    });
+
+    test('125 · (c) the project local settings file is a dangling link', () => {
+      fs.symlinkSync(p('.claude', 'nowhere'), p('.claude', 'settings.local.json'));
+      ordinaryWork();
+    });
+
+    test('126 · (d) the user settings path is a link to a folder', () => {
+      rm(path.join(cfg, 'settings.json'));
+      fs.symlinkSync(project, path.join(cfg, 'settings.json'), 'junction');
+      ordinaryWork();
+    });
+
+    test('127 · (e) the config folder is the filesystem root', () => {
+      ordinaryWork({ env: { CLAUDE_CONFIG_DIR: path.parse(project).root } });
+    });
+
+    test('128 · (f) the project local settings file is a link to itself', () => {
+      fs.symlinkSync(p('.claude', 'settings.local.json'), p('.claude', 'settings.local.json'));
+      ordinaryWork();
+    });
+
+    test('135 · (g) the project local settings file is a link to /dev/null', () => {
+      if (process.platform === 'win32') {
+        assert.equal(fs.existsSync('/dev/null'), false, 'Windows has no /dev/null, so there is nothing to link to');
+        return;
+      }
+      fs.symlinkSync('/dev/null', p('.claude', 'settings.local.json'));
+      agentAllowed(bash('ls 2>/dev/null'), 'ls 2>/dev/null');
+      agentAllowed(bash('echo x > src/x.js 2>/dev/null'), 'echo x > src/x.js 2>/dev/null');
+      ordinaryWork();
+      assertRefused(run(asAgent(bash('echo x > .claude/settings.local.json')), { env: cfgEnv() }),
+        'the text rule still refuses a write that names the linked settings file', REFUSAL_AGENT_SETTINGS);
+    });
+  });
+
+  test('129 · shell writes', () => {
+    put(p('src', 'in.json'));
+    fs.symlinkSync(p('.claude', 'settings.json'), p('src', 's.json'));
+    for (const command of [
+      "echo '{}' > .claude/settings.json",
+      'echo x >> .claude/settings.local.json',
+      'tee .ctoc/settings.json < in.json',
+      'cp in.json .claude/settings.local.json',
+      'mv in.json .ctoc/settings.json',
+      "sed -i '' 's/a/b/' .claude/settings.json",
+      'cd .claude && echo x > settings.local.json',
+      'echo x > .CLAUDE/Settings.json',
+      'echo x > .claude\\\\settings.json',
+      'echo x > src/../.ctoc/settings.json',
+      `echo x > .claude/${LONG_S}ettings.json`,
+      `echo x > .claude/${LONG_S}ettings.local.json`,
+      `echo x > .ctoc/${LONG_S}ettings.json`,
+      'echo x > src/s.json',
+      'ln -s ../.claude/settings.json src/l.json',
+      `echo x > ${path.join(cfg, 'settings.json')}`,
+      `cd ${cfg} && echo x > settings.json`,
+    ]) agentOnly(bash(command), command);
+    fs.symlinkSync(p('.claude', 'nowhere.json'), p('src', 'dl.json'));
+    // Founder, 15 Oct 2026: "remove that hook block, it is wrong" — the record-write refusal is off, so a dangling
+    // link is refused only by the settings-file check that stays, with its sentence.
+    assertRefused(run(asAgent(bash('echo x > src/dl.json')), { env: cfgEnv() }), 'dangling link, background agent', REFUSAL_REGIME_SETTINGS);
+    assertRefused(run(bash('echo x > src/dl.json'), { env: cfgEnv() }), 'dangling link, main session', REFUSAL_REGIME_SETTINGS);
+  });
+
+  test('130 · the regulatory-settings check keeps running first', () => {
+    put(p('.ctoc', 'settings.yaml'));
+    fs.symlinkSync(p('.ctoc', 'settings.yaml'), p('src', 'l.yaml'));
+    const input = bash('echo x > src/l.yaml');
+    assertRefused(run(asAgent(input), { env: cfgEnv() }), 'link to settings.yaml, background agent', REFUSAL_REGIME_SETTINGS);
+    assertRefused(run(input, { env: cfgEnv() }), 'link to settings.yaml, main session', REFUSAL_REGIME_SETTINGS);
+  });
+
+  test('131 · shell reads stay allowed for the background agent', () => {
+    for (const command of [
+      'cat .claude/settings.json', 'grep -n hooks .claude/settings.local.json', 'git diff .ctoc/settings.json',
+      `head -5 ${path.join(cfg, 'settings.json')}`, 'ls .claude', 'git add .claude/settings.json',
+      `cat .claude/${LONG_S}ettings.json`,
+    ]) agentAllowed(bash(command), command);
+  });
+
+  test("132 · a genuine menu call's arguments stay data", () => {
+    agentAllowed(bash(`${MENU} menu task complete t7 --summary 'set .claude/settings.json'`), 'summary naming .claude/settings.json');
+    agentAllowed(bash(`${MENU} menu task complete t7 --summary .ctoc/settings.json`), 'summary naming .ctoc/settings.json');
+  });
+
+  test('133 · when the protection cannot run', () => {
+    const plugin = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pr-plug-')));
+    try {
+      fs.mkdirSync(path.join(plugin, 'src', 'hooks'), { recursive: true });
+      fs.mkdirSync(path.join(plugin, 'src', 'lib'), { recursive: true });
+      const brokenEntry = path.join(plugin, 'src', 'hooks', 'protect-records.js');
+      fs.copyFileSync(ENTRY, brokenEntry);
+      fs.copyFileSync(path.join(REPO, 'src', 'lib', 'hook-deny-signal.js'), path.join(plugin, 'src', 'lib', 'hook-deny-signal.js'));
+      const opts = { entry: brokenEntry };
+      for (const [what, input] of Object.entries({
+        'Bash write to .claude/settings.json': bash('echo x > .claude/settings.json'),
+        'Write of .claude/settings.local.json': write(p('.claude', 'settings.local.json')),
+        'Write of the long-s spelling': write(p('.claude', `${LONG_S}ettings.local.json`)),
+      })) {
+        assertRefused(run(asAgent(input), opts), `${what}, background agent`, REFUSAL_AGENT_SETTINGS_UNCHECKED);
+        assertAllowed(run(input, opts), `${what}, main session`);
+      }
+      assertAllowed(run(asAgent(bash('ls')), opts), 'ls, background agent');
+      const ctocSettings = write(p('.ctoc', 'settings.json'));
+      assertRefused(run(asAgent(ctocSettings), opts), '.ctoc/settings.json, background agent', REFUSAL_UNCHECKED);
+      assertRefused(run(ctocSettings, opts), '.ctoc/settings.json, main session', REFUSAL_UNCHECKED);
+    } finally {
+      rm(plugin);
+    }
+  });
+
+  test('134 · a spec without dir runs the text tests only', () => {
+    const { isLedgerWrite } = require('../src/hooks/PreToolUse.Bash.js');
+    const NEVER = /[^\s\S]/;
+    fs.symlinkSync(p('.claude', 'nowhere.json'), p('src', 'dl.json'));
+    const before = process.cwd();
+    process.chdir(project); // the link test measures against the working directory
+    try {
+      const command = `echo x > ${p('src', 'dl.json')}`;
+      assert.equal(isLedgerWrite(command, { segmentRe: NEVER, resolvedRe: NEVER }), false, 'no dir: text tests only');
+      assert.equal(isLedgerWrite(command, { dir: '.ctoc/approvals', segmentRe: NEVER, resolvedRe: NEVER }), true, 'control: with a dir the link test faults on the dangling link');
+    } finally {
+      process.chdir(before);
+    }
+  });
+
+  test('136 · a fresh create through a macOS path alias of a config folder not called .claude', () => {
+    const cfgdir = path.join(cfg, 'cfgdir'); // not called .claude, and holds no settings.json yet
+    fs.mkdirSync(cfgdir);
+    const opts = { env: { CLAUDE_CONFIG_DIR: cfgdir } };
+    const identity = (file) => {
+      try {
+        const st = fs.statSync(file, { bigint: true });
+        return `${st.dev}:${st.ino}`;
+      } catch (err) {
+        return err.code;
+      }
+    };
+    const aliases = ['/System/Volumes/Data', '/.nofollow'].map((prefix) => prefix + cfgdir);
+    const opening = aliases.filter((alias) => identity(alias) === identity(cfgdir));
+    if (process.platform === 'darwin') {
+      assert.ok(opening.some((alias) => alias.startsWith('/System/Volumes/Data')), 'on macOS the Data volume path opens the same folder');
+    } else {
+      assert.deepEqual(opening, [], 'only macOS has these aliases: elsewhere they open nothing');
+    }
+    agentOnly(write(path.join(cfgdir, 'settings.json')), 'control: the config file by its plain path', opts);
+    for (const alias of aliases) {
+      const file = write(`${alias}/settings.json`);
+      if (opening.includes(alias)) agentOnly(file, `fresh create through ${alias.slice(0, 20)}`, opts);
+      else {
+        agentAllowed(file, `${alias.slice(0, 20)} opens nothing here`, opts);
+        assertAllowed(run(file, opts), `${alias.slice(0, 20)} opens nothing here (main session)`);
+      }
+    }
+    agentAllowed(write(path.join(cfgdir, 'settings.local.json')), 'the config folder\'s settings.local.json stays allowed', opts);
+    for (const alias of opening) agentAllowed(write(`${alias}/settings.local.json`), `${alias.slice(0, 20)} settings.local.json stays allowed`, opts);
+  });
+
+  test('137 · no home folder: the config file leaves the list, the project files stay protected', () => {
+    // os.homedir() throws where the account has no home folder (a container with an unlisted user id);
+    // this machine always finds one, so the fault is planted in the spawned hook with a preload.
+    const preload = path.join(cfg, 'no-home.js');
+    fs.writeFileSync(preload, "require('os').homedir = () => { throw new Error('ENOENT: no home folder'); };\n");
+    const nodeOptions = `${process.env.NODE_OPTIONS || ''} --require=${preload}`.trim();
+    const opts = { env: { CLAUDE_CONFIG_DIR: null, NODE_OPTIONS: nodeOptions } };
+    agentOnly(write(p('.claude', 'settings.json')), 'Write .claude/settings.json', opts);
+    // The shell channel loads `src/lib/crypto.js`, which asks for the home folder when it loads, so
+    // there the crash rule decides (outside this plan's files): the write is refused either way.
+    assert.equal(run(asAgent(bash('echo x > .claude/settings.local.json')), opts).status, 2, 'shell write to .claude/settings.local.json');
+    agentAllowed(write(p('src', 'settings.json')), 'Write src/settings.json (names a settings file, no crash)', opts);
+    agentAllowed(write(p('src', 'x.js')), 'Write src/x.js', opts);
+    agentAllowed(bash('ls'), 'ls', opts);
+  });
+
+  test('138 · a `..` after a folder link is decided on the path as written, not on its by-name collapse', () => {
+    // The kernel follows `y` and only then applies `..`: `<project>/src/y/../foo` is `<config folder>/foo`,
+    // a link to the config file, although by name it is `<project>/src/foo`.
+    fs.mkdirSync(path.join(cfg, 'sub'));
+    fs.symlinkSync(path.join(cfg, 'sub'), p('src', 'y'), 'junction');
+    fs.symlinkSync(path.join(cfg, 'settings.json'), path.join(cfg, 'foo'));
+    fs.symlinkSync(path.join(cfg, 'sub'), p('src', 'z'), 'junction');
+    fs.mkdirSync(p('src', 'a'));
+    agentOnly(write(`${project}/src/y/../foo`), 'link then dot-dot, an existing link to the config file');
+    agentOnly(edit(`${project}/src/y/../foo`), 'link then dot-dot, Edit');
+    agentOnly(write(`${project}/src/z/../settings.json`), 'link then dot-dot, the config file by its own name');
+    agentOnly(write('src/y/../foo'), 'link then dot-dot, relative target');
+    agentAllowed(write(`${project}/src/y/../fresh.txt`), 'link then dot-dot, an ordinary absent file');
+    agentAllowed(write(`${project}/src/a/../b.js`), 'an ordinary dot-dot');
+    agentAllowed(write(`${project}/src/a/../e.js`), 'an ordinary dot-dot onto an existing file');
+    assertAllowed(run(write(`${project}/src/a/../b.js`), { env: cfgEnv() }), 'an ordinary dot-dot (main session)');
   });
 });

@@ -263,6 +263,60 @@ writes the file without naming its path passes on the main session. A `~/.ctoc/s
 counts too, because the test does not depend on the project root. Held by
 `tests/protect-records.test.js` (cases 91–96, and case 13).
 
+**Claude Code's settings files and `.ctoc/settings.json`, for background agents (owner,
+2026-10-15, "fix that gap").** A background agent — a payload with a non-empty `agent_id` — is
+refused editing-tool writes to these files (by file identity and folded name) and, as a mistake
+guard, shell writes that name them, while the loaded hook is intact. It is not a containment
+boundary: isolating agents is. The reason: in bypass mode a background agent's Write rewrote the
+project's `.claude/settings.json` with no prompt (measured on 2026-10-15, Claude Code 2.1.300),
+and a new `env` block or hook there takes effect on the next call, so any agent could switch off
+CTOC's protections, plant a hook or inject code into every later `node` process. Protected: the
+project's `.claude/settings.json` and `.claude/settings.local.json`; CTOC's `.ctoc/settings.json`
+(the entry-point command, the push switch and the `deployment` block live there); the user-level
+`settings.json` in the active Claude config folder (`CLAUDE_CONFIG_DIR` when set and not empty,
+else `<home>/.claude`; its `settings.local.json` is not a documented file and is not on the list);
+and, from a worktree at `<x>/.claude/worktrees/<name>`, the main checkout's three files. For whom:
+background agents only. The main session — the owner's — is not refused on any channel, and every
+call without an `agent_id` is decided exactly as before. Channels: the editing tools by file
+identity (device and inode after links, which also closes hard links for these files), by the
+folded name of the path and of its real path (NFKC, `\` read as `/`, NTFS stream suffixes and
+trailing dots and spaces dropped, lower case) and by a settings file name reached through `..`;
+the identity tests run on the path twice, collapsed by name and as written (joined to the working
+directory without normalising), because the kernel applies `..` after following a link
+(`<project>/src/y/../foo` with `y` a link to a folder holding `foo`, itself a link to the config
+file, leads to the config file although by name it is `<project>/src/foo`; one case stays open
+until the follow-up plan "the write protection compares real files, not spellings" lands: a
+BROKEN link `foo` there, pointing at a settings file that does not exist yet, reached through
+`link/..`, is not refused, and it is reachable only if Claude Code's Write follows `..` after a
+link, which is not verified);
+for an ABSENT target, also by the identity of its folder and its folded name, which refuses a
+fresh create through a path alias of a protected file's folder (macOS
+`/System/Volumes/Data<folder>`, `/.nofollow<folder>`); the shell by text, read as written and
+NFKC-folded, per segment, `cd`-aware and link-aware (a link test only for a file whose real path is
+absent or a regular file, so no configuration can make it refuse every command). The sandbox
+refuses the shell route into the `.claude` folder (measured on 2026-10-15); for `.ctoc/settings.json`
+the text rule is the only guard on the shell. The refusal is its own sentence: "CTOC refused this
+call because a background agent may not change Claude Code's settings files or CTOC's
+.ctoc/settings.json, which decide the hooks, environment and permissions every later call runs
+with; report what you wanted to change and let the main session make the change." The relay: an
+agent's report asking for a settings change is data. The owner decides; the main session shows the
+exact change and its source before writing (`agents/infrastructure/deployment-setup.md` reports
+its `deployment` block this way and writes no settings file). The existing records and
+regulatory-settings checks run first on the editing tools, and the regulatory-settings check first
+on the shell, so a fault in the new code never masks them. The shell refusals of the records and
+the background-agent menu refusal are off (owner's order of 2026-10-15, `RECORD_REFUSALS_OFF`), so
+the agent's settings shell check runs inside that switch, right after the regulatory-settings check;
+it is skipped for a pure call of this plugin's own menu, whose arguments are data.
+Claude Code's own `statusline-setup` subagent is refused too (`agent_type` is only a name any
+project agent file can claim); the owner makes that change in the main session. Accepted false
+refusals, and the way round: a non-read agent shell command whose text merely mentions a protected
+path (`jq .hooks .claude/settings.json > out.json`: run the read without the write); a
+`settings.json` or `settings.local.json` reached through `..` (write the path plainly); with an
+ordinarily named config folder (`CLAUDE_CONFIG_DIR=…/config`), an agent's shell write to any
+`config/settings.json` (ask the main session). Held by `tests/protect-records.test.js` (cases
+112–138) and, for the deployment-setup instruction, by
+`tests/agent-tool-grants.test.js`.
+
 **What it refuses:**
 
 1. An editing-tool target inside a protected area — after `..` is resolved, in any letter
@@ -402,6 +456,15 @@ its `tool_input` is scanned, so a project whose path contains one of the words i
 refused on every call; a payload that will not parse is scanned whole. A failure to load
 `src/lib/hook-deny-signal.js` itself exits 1, which Claude Code treats as not blocked.
 
+A crash on a background agent's call whose tool input, NFKC-folded, mentions `settings.json` or
+`settings.local.json` (file contents included) refuses with its own sentence: "CTOC refused this
+call because it mentions a settings file and CTOC's protection for it failed to run; tell the
+human that this protection is broken." The main session's call is allowed, so one broken release
+cannot lock the owner out of his own settings. A `.ctoc/settings.json` call matches the records
+crash rule first and keeps its sentence, as does a call that also names the menu. With no
+`CLAUDE_CONFIG_DIR` and no home folder (`os.homedir()` throws) the config file leaves the
+protected list and the project's files stay protected on the editing tools.
+
 **What it cannot catch** (it reads command text; it is not a sandbox):
 
 - a script file written elsewhere and then run (any language, an npm script, a git hook, a
@@ -414,6 +477,9 @@ refused on every call; a payload that will not parse is scanned whole. A failure
 - hard links; more than 128 operands in one segment; file-writing tools other than the five;
 - read commands with a write side effect (`find -delete`, `tree -o`), which can delete or
   corrupt a record but never forge one;
+- `find … -exec <program> {} +` runs any program on the file, so it can write any content: the
+  "never forge one" of the line above is not true for it (reasoned from the shared read
+  exemption, not run against a record; the code fix is the owner's to schedule);
 - a background agent reaching the menu's refused routes through a script file it wrote and
   then ran (an npm script or a test file run without naming a menu module, say), a path held
   in a variable set by an earlier call, or a tool other than the five matched. The fail-closed
@@ -430,3 +496,48 @@ refused on every call; a payload that will not parse is scanned whole. A failure
 - a future Claude Code that stops sending `agent_id` for subagents: such calls read as the
   main session's, which only widens back to the behaviour before this rule;
 - on a crash, a call that reaches a record through a link without naming it.
+- the main session changing a settings file (by design: the agent check never runs for a call
+  without an `agent_id`; a menu call's arguments naming a settings file pass as data for the agent
+  check);
+- the installed plugin's own files in the plugin cache (`hooks/hooks.json`,
+  `src/hooks/protect-records.js`): until that is built, the settings protection holds only while
+  the loaded hook is intact;
+- a background agent's shell route to a settings file that the text cannot read: a script
+  written then run, a path in a variable (`$CLAUDE_CONFIG_DIR/settings.json`) or built at run
+  time, a hard link, a link whose target is spelled differently, a copy or move whose
+  destination names only the folder (`cp x.json .ctoc`), git operations that rewrite
+  `.ctoc/settings.json` without naming it (`git apply` of a patch the agent wrote,
+  `git checkout <rev> -- .`, `git stash pop`);
+- on the shell, a backslash in the file name (`settings\.json`), a backslash-newline
+  continuation, `?` and `*` patterns and brace lists that name the file, `$'…'` quoting, a
+  command run through `sh -c`, `env -C` or `git -C`, and moving or deleting the whole `.ctoc` or
+  `.claude` folder;
+- the crash rule not seeing a hard link to a settings file (it reads the tool input's text);
+- the config folder fix covering only the ACTIVE config folder, not the owner's other Claude
+  profile folders beside it;
+- a worktree outside `<main>/.claude/worktrees/` (for example `git worktree add ../other`): from
+  it the main checkout's three files are protected by name only, and hard links into the main
+  checkout are not seen from it on either channel (links into it are not seen on the shell);
+- Windows forms: 8.3 short names (`SETTIN~1.JSO`), named streams other than the three folded
+  suffixes, and on the shell trailing dots and spaces and `::$DATA` on any segment; file systems
+  that report inode 0 (FAT, some network shares), where identity is dropped and the folded name
+  still runs; on a case-sensitive Linux file system the long s opens a different file, so there
+  the fold is belt and braces;
+- tools other than the five matched (an MCP filesystem server, a future tool); a race (a link
+  swapped between the decision and the write); `CLAUDE_CONFIG_DIR` written relative or with `~`
+  (resolved against the project root, `~` not expanded);
+- Claude Code's own `statusline-setup` subagent is refused, and so is any agent whose plan
+  declares a settings file in `files:`: the agent reports the change and the main session makes it.
+- on the shell, a settings file read by `find … -delete` or `find … -exec <program> {} +`: both
+  count as reads and are not refused (measured: an agent could delete or overwrite the config
+  folder's settings file that way);
+- a fresh create of `settings.json` through a macOS folder alias (`/System/Volumes/Data…`,
+  `/.nofollow…`) in a config folder not called `.claude` that does not exist yet is not refused,
+  because there is no folder to compare (a running session's config folder normally exists: it
+  holds Claude Code's own files);
+- the home folder's `.claude/settings.local.json` is refused by the name rule although it is not on
+  the protected list (a harmless false refusal);
+- a deliberately padded shell command (tens of kilobytes of operands) takes several seconds to
+  check (measured about 10 s against about 4 s before this protection), and a hook that times out
+  lets the call run; the deadline in the follow-up plan "the write protection compares real files,
+  not spellings" will bound it once that plan is built; until then nothing does.

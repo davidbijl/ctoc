@@ -22,6 +22,13 @@
  *     `claude:set-compliance-regime`, which write through `src/lib/` and name no path.
  * Only CTOC's own menu code writes these (as Node file calls inside the menu process,
  * which never pass through a tool hook).
+ *   - for BACKGROUND AGENTS only (owner, 2026-10-15, "fix that gap"), Claude Code's settings
+ *     files and CTOC's own `.ctoc/settings.json`, which decide the hooks, environment and
+ *     permissions every later call runs with: the project's `.claude/settings.json` and
+ *     `.claude/settings.local.json`, `.ctoc/settings.json`, the user-level `settings.json` in
+ *     the active Claude config folder (`CLAUDE_CONFIG_DIR` when set and not empty, else
+ *     `<home>/.claude`), and, from a worktree at `<x>/.claude/worktrees/<name>`, the main
+ *     checkout's three. The main session writes these, not the menu, so it is not refused.
  *
  * WHAT IT REFUSES
  *   Editing tools: a target inside any of the three areas — after `..` is resolved, in
@@ -71,6 +78,25 @@
  *   without `agent_id` is unchanged. Limits: a script written and then run without naming a
  *   menu module, a path held in a variable; and a harmless compound command naming the menu
  *   is refused (fail closed).
+ *   A BACKGROUND AGENT AND THE SETTINGS FILES (owner, 2026-10-15). Only a payload with a
+ *   non-empty `agent_id` is checked; every call without one is decided exactly as before.
+ *   Editing tools: refused when the target is the same file (device and
+ *   inode, after links, so hard links and every spelling the file system folds) as a protected
+ *   file; or an ABSENT target in the same folder (device and inode) as a protected file with
+ *   that file's folded name, which closes a fresh create through a path alias such as macOS
+ *   `/System/Volumes/Data<folder>` (a fault reading either folder skips this test); or when the
+ *   folded name of its path or of its real path (`resolveExisting`: NFKC, `\` read as `/`,
+ *   NTFS stream suffixes and trailing dots and spaces dropped, lower case) is a protected
+ *   name; or a settings file name is reached through a `..`. Shell: `isLedgerWrite` with one
+ *   spec per protected file (text tests on the folder and file name, flags `iu`), read as
+ *   written and NFKC-folded; a spec carries a link test only when the file's real path is
+ *   absent or a regular file, so no configuration can refuse every command. Its own
+ *   sentence. It runs INSIDE the `RECORD_REFUSALS_OFF` switch (the shell refusals of the records
+ *   and the agent menu refusal are off, owner's order of 2026-10-15), right after the
+ *   project's settings file and regulatory-profiles check, which runs first; it is skipped for
+ *   a pure call of this plugin's own menu, whose arguments are data. This is a guard
+ *   against honest mistakes and a name-and-identity check on the editing tools, NOT a
+ *   containment boundary: isolating agents is.
  *   Nothing else is loaded or run: no plan coverage, no escape phrases, no enforcement
  *   mode, no Iron Loop step gates, no irreversible-command net, no plan-move gate.
  *
@@ -88,7 +114,26 @@
  *   segment; file-writing tools other than the five matched; a background agent reaching a
  *   refused menu route through a script file, a path built at run time or another tool; and
  *   the main session running the menu's answering routes without the human's reply (it
- *   carries no `agent_id`). The full list is in `docs/ENFORCEMENT.md`.
+ *   carries no `agent_id`).
+ *   For the settings files (a background agent's shell route is the text only): a script
+ *   written then run; a path held in a variable or built at run time; the file name spelled
+ *   with a backslash (`settings\.json`), a backslash-newline continuation, `?` and `*`
+ *   patterns or brace lists naming it, or `$'…'` quoting; a command run through `sh -c`,
+ *   `env -C` or `git -C`; a hard link on the shell; a link whose target is spelled
+ *   differently; a copy or move whose destination names only the folder; git operations that
+ *   rewrite `.ctoc/settings.json` without naming it; replacing, moving or deleting the whole
+ *   `.claude` or `.ctoc` folder (the sandbox refuses the shell route into `.claude`, measured
+ *   on 2026-10-15); the crash rule not seeing a hard link to a settings file; the config
+ *   folder fix covering only the active config folder; a worktree outside
+ *   `<main>/.claude/worktrees/`; 8.3 short names and file systems that report inode 0; the
+ *   plugin's own files in the plugin cache; tools other than the five; a race between the
+ *   decision and the write; `find … -delete` and `find … -exec <program> {} +` on a settings
+ *   file (reads to the shell rules; `-exec` can write any content, so a record's "never
+ *   forged" does not hold for it); a fresh create through a macOS folder alias in a config
+ *   folder not called `.claude` that does not exist yet (no folder to compare); a padded
+ *   command of tens of kilobytes (several seconds to check, and a hook that times out lets
+ *   the call run). The home folder's `.claude/settings.local.json` is refused by the name
+ *   rule although it is not on the list. The full list is in `docs/ENFORCEMENT.md`.
  *
  * FAIL RULE
  *   A crash fails CLOSED only for a call that mentions the records
@@ -99,8 +144,10 @@
  *   words (a `verify-project` folder) is not refused on every call; only a payload that
  *   will not parse is scanned whole. A crash on a background agent's call whose tool input
  *   mentions `start.js`, `menu-screens` or `streaming-gate` also fails closed; the main
- *   session's menu call does not. A failure to load `hook-deny-signal.js` itself
- *   exits 1, which Claude Code treats as "not blocked".
+ *   session's menu call does not. A crash on a background agent's call whose tool input,
+ *   NFKC-folded, mentions `settings.json` or `settings.local.json` also fails closed, with
+ *   its own sentence; the main session's call does not. A failure to load
+ *   `hook-deny-signal.js` itself exits 1, which Claude Code treats as "not blocked".
  *
  * Refusal = the refusal sentence as one line on stderr, then the deny decision JSON on
  * stdout and exit 2 (`emitDeny`). Claude Code ignores the JSON when a hook exits 2 and
@@ -110,6 +157,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { emitDeny } = require('../lib/hook-deny-signal');
 
 const REFUSAL = 'CTOC refused this call because it writes, or could write, the approval records, '
@@ -142,6 +190,23 @@ const REGIMES_SPEC = Object.freeze({
   resolvedRe: /(^|\/)\.ctoc\/+regulatory-regimes(\/|$)/i,
 });
 
+const REFUSAL_AGENT_SETTINGS = "CTOC refused this call because a background agent may not change Claude Code's "
+  + "settings files or CTOC's .ctoc/settings.json, which decide the hooks, environment and permissions every "
+  + 'later call runs with; report what you wanted to change and let the main session make the change.';
+const REFUSAL_AGENT_SETTINGS_UNCHECKED = 'CTOC refused this call because it mentions a settings file and '
+  + "CTOC's protection for it failed to run; tell the human that this protection is broken.";
+
+/** Claude Code's two settings files in a `.claude` folder, or `.ctoc/settings.json`, at the end of a folded path. */
+const AGENT_SETTINGS_PATH_RE = /(^|\/)(\.claude\/+settings(\.local)?\.json|\.ctoc\/+settings\.json)$/iu;
+/** A settings file name as the last segment of a folded path. */
+const SETTINGS_NAME_RE = /(^|\/)settings(\.local)?\.json$/iu;
+/** A `..` segment in a raw target, either separator, trailing spaces allowed. */
+const PARENT_SEGMENT_RE = /(^|[\\/])\.\.[ ]*([\\/]|$)/u;
+/** A tool input that mentions a settings file (the crash rule for background agents), tested on NFKC text. */
+const SETTINGS_MENTION_RE = /settings(\.local)?\.json/iu;
+/** An NTFS stream suffix that still names the file or folder itself: `::$DATA`, `::$INDEX_ALLOCATION`, `:$I30:$INDEX_ALLOCATION`. */
+const STREAM_SUFFIX_RE = /:(\$i30)?:\$(data|index_allocation)$/iu;
+
 /**
  * Is an editing tool's absolute target the settings file or inside the profile folder — by
  * name in any letter case with `\` read as `/`, or through a symbolic link? The real-path
@@ -153,6 +218,236 @@ function isRegimeFile(abs) {
   if (REGIME_SEGMENT_RE.test(abs.replace(/\\/g, '/'))) return true;
   const confinement = require('../lib/real-path-confinement');
   return REGIME_TARGETS.some((rel) => confinement.resolvesUnder(abs, rel, process.cwd()));
+}
+
+/** `s` without its trailing dots and spaces; a linear scan (a `/[. ]+$/` replace is quadratic on a long run). */
+function trimDotsAndSpaces(s) {
+  let end = s.length;
+  while (end > 0 && (s[end - 1] === '.' || s[end - 1] === ' ')) end -= 1;
+  return s.slice(0, end);
+}
+
+/**
+ * A path as Windows would open it, for name tests: `\` read as `/`; on every segment an NTFS
+ * stream suffix that names the item itself dropped (`STREAM_SUFFIX_RE`), then trailing dots and
+ * spaces dropped (a segment of dots and spaces only is trimmed of spaces, so `..` keeps its
+ * meaning); then `.` and `..` resolved.
+ * @param {string} p
+ * @returns {string}
+ */
+function nameForm(p) {
+  const segments = String(p).replace(/\\/g, '/').split('/')
+    .map((s) => s.replace(STREAM_SUFFIX_RE, ''))
+    .map((s) => (/^[. ]+$/.test(s) ? s.trim() : trimDotsAndSpaces(s)));
+  return path.posix.normalize(segments.join('/'));
+}
+
+/**
+ * A path folded for the name tests: NFKC first (the long s becomes `s`, full-width forms become
+ * plain), then `nameForm`, then lower case. It runs on paths already resolved, so a character
+ * NFKC turns into path structure (a full-width `／` or `．`) can only add a refusal.
+ * @param {string} p
+ * @returns {string}
+ */
+function foldedName(p) {
+  return nameForm(String(p).normalize('NFKC')).toLowerCase();
+}
+
+/**
+ * The Claude config folder: `CLAUDE_CONFIG_DIR` when set and not empty, else `<home>/.claude`;
+ * null when there is neither (`os.homedir()` throws where the account has no home folder), so
+ * the config file leaves the protected list and the project's files stay protected.
+ * @returns {string|null}
+ */
+function configDir() {
+  const fromEnv = process.env.CLAUDE_CONFIG_DIR;
+  if (typeof fromEnv === 'string' && fromEnv.trim() !== '') return path.resolve(fromEnv);
+  try {
+    return path.join(os.homedir(), '.claude');
+  } catch {
+    return null;
+  }
+}
+
+/** A path segment folded for a name compare. */
+const foldSegment = (s) => s.normalize('NFKC').toLowerCase();
+
+/**
+ * The files a background agent may not change, absolute — one list for both channels: the
+ * project's `.claude/settings.json`, `.claude/settings.local.json` and `.ctoc/settings.json`;
+ * the config folder's `settings.json`; and, when the root is a worktree at
+ * `<x>/.claude/worktrees/<name>`, `<x>/.claude/settings.json`, `<x>/.claude/settings.local.json`
+ * and `<x>/.ctoc/settings.json`.
+ * @param {string} root - the project root (`process.cwd()` after the hook's `chdir`)
+ * @returns {string[]}
+ */
+function protectedSettingsFiles(root) {
+  const files = [
+    path.join(root, '.claude', 'settings.json'),
+    path.join(root, '.claude', 'settings.local.json'),
+    path.join(root, '.ctoc', 'settings.json'),
+  ];
+  const config = configDir();
+  if (config) files.push(path.join(config, 'settings.json'));
+  const worktrees = path.dirname(root);
+  const claudeFolder = path.dirname(worktrees);
+  if (foldSegment(path.basename(worktrees)) === 'worktrees' && foldSegment(path.basename(claudeFolder)) === '.claude') {
+    files.push(path.join(claudeFolder, 'settings.json'), path.join(claudeFolder, 'settings.local.json'),
+      path.join(path.dirname(claudeFolder), '.ctoc', 'settings.json'));
+  }
+  return files;
+}
+
+/**
+ * What `p` names after links, as `'<dev>:<ino>'` from a `bigint` stat (Windows file IDs can pass
+ * 2^53); null when nothing is there (ENOENT, ENOTDIR) or the file system reports inode 0 (FAT
+ * and some network shares, where every file would compare equal); undefined on any other
+ * fault. Never throws.
+ * @param {string} p
+ * @returns {string|null|undefined}
+ */
+function fileIdentity(p) {
+  try {
+    const st = require('../lib/safe-fs').statSync(p, { bigint: true });
+    return String(st.ino) === '0' ? null : `${st.dev}:${st.ino}`;
+  } catch (err) {
+    const code = err && /** @type {NodeJS.ErrnoException} */ (err).code;
+    return code === 'ENOENT' || code === 'ENOTDIR' ? null : undefined;
+  }
+}
+
+/**
+ * Is `p` absent or a regular file? A device (a link to `/dev/null`), a folder, a socket or a
+ * stat fault is neither, so it gets no link test. Never throws.
+ * @param {string} p
+ * @returns {boolean}
+ */
+function isAbsentOrRegularFile(p) {
+  try {
+    return require('../lib/safe-fs').statSync(p).isFile();
+  } catch (err) {
+    const code = err && /** @type {NodeJS.ErrnoException} */ (err).code;
+    return code === 'ENOENT' || code === 'ENOTDIR';
+  }
+}
+
+/**
+ * Does `p` lead to a protected file, by identity? True when it exists and is the same file (device
+ * and inode) as a protected file that exists, or its stat faults other than "does not exist"; for
+ * an absent `p`, when its folder is the same folder as a protected file's and its folded name is
+ * that file's name — a path alias of a folder (macOS `/System/Volumes/Data<folder>`,
+ * `/.nofollow<folder>`) cannot make a fresh create. A fault reading either folder skips that test.
+ * @param {string} p
+ * @param {string[]} protectedFiles - from `protectedSettingsFiles`
+ * @returns {boolean}
+ */
+function sameFileAsSettings(p, protectedFiles) {
+  const id = fileIdentity(p);
+  if (id === undefined) return true;
+  if (id !== null) return protectedFiles.some((file) => fileIdentity(file) === id);
+  const parent = fileIdentity(path.dirname(p));
+  const name = foldedName(path.basename(p));
+  return Boolean(parent) && protectedFiles.some((file) => name === foldedName(path.basename(file))
+    && fileIdentity(path.dirname(file)) === parent);
+}
+
+/**
+ * Is an editing tool's target a file a background agent may not change? Any one of: the target
+ * exists and is the same file (device and inode) as a protected file that exists — every
+ * spelling the file system folds, every link, every hard link; the folded name of its lexical
+ * path or of its real path is a protected name (`.claude/settings(.local).json`,
+ * `.ctoc/settings.json`, or the config folder's `settings.json`, lexical or real); or a settings
+ * file name reached through a `..` (Claude Code may resolve `link/..` physically, not by name).
+ * A stat fault on the target other than "does not exist", or a fault of its real path, refuses;
+ * a protected file whose stat faults is dropped from the identity test (it never refuses every
+ * Write), and a config file whose real path faults keeps only its lexical form. An absent target
+ * is also refused when its folder is the same folder (device and inode) as a protected file's and
+ * its folded name is that file's name — a path alias of a folder (macOS) cannot make a fresh create.
+ * With no home folder and no `CLAUDE_CONFIG_DIR` the config file is left out of the list.
+ * @param {string} target - the tool input's path, as given
+ * @param {string} abs - the same, resolved against the session's working directory (`..` collapsed by name)
+ * @param {string} [raw] - the same, joined to the working directory without normalising, which the
+ *   identity tests read physically (the kernel applies `..` after following a link, not by name)
+ * @returns {boolean}
+ */
+function isAgentSettingsTarget(target, abs, raw = abs) {
+  const protectedFiles = protectedSettingsFiles(process.cwd());
+  if (sameFileAsSettings(abs, protectedFiles) || (raw !== abs && sameFileAsSettings(raw, protectedFiles))) return true;
+  const confinement = require('../lib/real-path-confinement');
+  const configFolder = configDir();
+  const config = [];
+  if (configFolder) {
+    const configFile = path.join(configFolder, 'settings.json');
+    config.push(foldedName(configFile));
+    const configReal = confinement.resolveExisting(configFile);
+    if (configReal.ok) config.push(foldedName(configReal.real));
+  }
+  const names = (p) => {
+    const n = foldedName(p);
+    return AGENT_SETTINGS_PATH_RE.test(n) || config.includes(n);
+  };
+  if (names(abs)) return true;
+  if (PARENT_SEGMENT_RE.test(String(target).normalize('NFKC')) && SETTINGS_NAME_RE.test(foldedName(target))) return true;
+  const real = confinement.resolveExisting(abs);
+  return !real.ok || names(real.real);
+}
+
+/**
+ * `s`, NFKC-folded, as a literal for a pattern with the `u` flag: `escapeRegExp` writes `-` as
+ * `\-`, a syntax error under `u` outside a character class, so each becomes `\x2d`. (Every `-`
+ * is escaped and so preceded by its own `\`; an escaped backslash `\\` is never followed by a
+ * bare `-`, so the replace touches only the escapes of `-`.)
+ * @param {string} s
+ * @param {{escapeRegExp: function(string): string}} rx
+ * @returns {string}
+ */
+function unicodeLiteral(s, rx) {
+  return rx.escapeRegExp(s.normalize('NFKC')).replace(/\\-/g, '\\x2d');
+}
+
+/**
+ * One `isLedgerWrite` spec for one protected file: text tests on its folder name and file name
+ * (both NFKC-folded, escaped, flags `iu`), and a `dir` for the link test only when the file's
+ * path relative to the root is a relative path whose real path resolves — mirroring what
+ * `resolvesUnder` resolves — and is absent or a regular file (never a folder or a device such as
+ * `/dev/null`), so no configuration can make the link test fault on, or contain, every operand. A file in a folder with no name (a filesystem
+ * root) gets no spec.
+ * @param {string} file - the protected file, absolute
+ * @param {string} root - the project root (the working directory after `chdir`)
+ * @param {{ok: boolean, real: (string|null)}} base - `resolveExisting(root)`
+ * @param {{resolveExisting: function(string): {ok: boolean, real: (string|null)}}} confinement
+ * @param {{escapeRegExp: function(string): string, safeRegExp: function(string, string): RegExp}} rx
+ * @returns {Readonly<{dir?: string, segmentRe: RegExp, resolvedRe: RegExp}>|null}
+ */
+function fileSpec(file, root, base, confinement, rx) {
+  const folder = path.basename(path.dirname(file));
+  if (!folder) return null;
+  const f = unicodeLiteral(folder, rx);
+  const n = unicodeLiteral(path.basename(file), rx);
+  /** @type {{dir?: string, segmentRe: RegExp, resolvedRe: RegExp}} */
+  const spec = {
+    segmentRe: rx.safeRegExp(`(^|[^a-z0-9._-])${f}\\/+${n}([^a-z0-9._-]|$)`, 'iu'),
+    resolvedRe: rx.safeRegExp(`(^|\\/)${f}\\/+${n}$`, 'iu'),
+  };
+  const rel = path.relative(root, file);
+  if (base.ok && rel !== '' && !path.isAbsolute(rel)) {
+    const real = confinement.resolveExisting(path.join(base.real, rel));
+    if (real.ok && isAbsentOrRegularFile(real.real)) spec.dir = rel;
+  }
+  return Object.freeze(spec);
+}
+
+/**
+ * The shell specs for a background agent, one per file of `protectedSettingsFiles`. Called
+ * after `process.chdir(root)`.
+ * @returns {Array<Readonly<{dir?: string, segmentRe: RegExp, resolvedRe: RegExp}>>}
+ */
+function agentSettingsSpecs() {
+  const confinement = require('../lib/real-path-confinement');
+  const rx = require('../lib/regex-utils');
+  const root = process.cwd();
+  const base = confinement.resolveExisting(root);
+  return protectedSettingsFiles(root).map((file) => fileSpec(file, root, base, confinement, rx)).filter(Boolean);
 }
 
 /** A record area as a path segment anywhere in an absolute path; the waiting folder is excluded. */
@@ -601,8 +896,19 @@ function bashRefuses(command, cwdRel, base, bash, subagent = false) {
   // the background-agent refusal are off; the settings-file refusal below stays.
   if (RECORD_REFUSALS_OFF) {
     const cwdCommand = cwdRel ? `cd ./${cwdRel} && ${command}` : command;
-    return bash.isLedgerWrite(cwdCommand, SETTINGS_SPEC) || bash.isLedgerWrite(cwdCommand, REGIMES_SPEC)
-      ? REFUSAL_SETTINGS : null;
+    if (bash.isLedgerWrite(cwdCommand, SETTINGS_SPEC) || bash.isLedgerWrite(cwdCommand, REGIMES_SPEC)) return REFUSAL_SETTINGS;
+    // A background agent and Claude Code's settings files (owner, 2026-10-15, "fix that gap"). A
+    // genuine pure call of this plugin's own menu keeps its arguments as data here too (a
+    // `--summary` may name a settings file), so the agent check is skipped for it.
+    if (subagent && !menuCallArgs(command, base)) {
+      // Read twice: as written, and NFKC-folded (long-s and full-width forms); the link test sees a
+      // long-s operand as spelled, because realpath keeps it, so only the folded reading resolves it.
+      const folded = cwdCommand.normalize('NFKC');
+      const writes = (spec) => bash.isLedgerWrite(cwdCommand, spec)
+        || (folded !== cwdCommand && bash.isLedgerWrite(folded, spec));
+      if (agentSettingsSpecs().some(writes)) return REFUSAL_AGENT_SETTINGS;
+    }
+    return null;
   }
   if (subagent) {
     const refused = subagentMenuRefusal(command, base);
@@ -619,8 +925,8 @@ function bashRefuses(command, cwdRel, base, bash, subagent = false) {
     || (bash.isInlineEval(command) && CHECK_RECORD_EVAL_TOKENS.some((re) => re.test(command)))
     || runsBackfillBeyondVision(command, bash);
   if (refused) return REFUSAL;
-  return bash.isLedgerWrite(analysed, SETTINGS_SPEC) || bash.isLedgerWrite(analysed, REGIMES_SPEC)
-    ? REFUSAL_SETTINGS : null;
+  if (bash.isLedgerWrite(analysed, SETTINGS_SPEC) || bash.isLedgerWrite(analysed, REGIMES_SPEC)) return REFUSAL_SETTINGS;
+  return null;
 }
 
 /**
@@ -641,7 +947,10 @@ function decide(payload) {
     const abs = path.resolve(payload.cwd || root, target);
     if (edit.isProtectedLedgerPath(abs) || edit.isProtectedVerifyPath(abs)
       || edit.targetsStreamingLive(abs) || RECORD_SEGMENT_RE.test(abs.replace(/\\/g, '/'))) return REFUSAL;
-    return isRegimeFile(abs) ? REFUSAL_SETTINGS : null;
+    if (isRegimeFile(abs)) return REFUSAL_SETTINGS;
+    const raw = path.isAbsolute(target) ? target : `${payload.cwd || root}${path.sep}${target}`;
+    if (isSubagent(payload) && isAgentSettingsTarget(target, abs, raw)) return REFUSAL_AGENT_SETTINGS;
+    return null;
   }
   if (tool === 'Bash') {
     const command = payload.tool_input && payload.tool_input.command;
@@ -687,6 +996,7 @@ function main() {
     if (UNCHECKED_SUSPECT_RE.test(scanned) || (parsed && isSubagent(payload) && MENU_MENTION_RE.test(scanned))) {
       refuse(REFUSAL_UNCHECKED);
     }
+    if (parsed && isSubagent(payload) && SETTINGS_MENTION_RE.test(scanned.normalize('NFKC'))) refuse(REFUSAL_AGENT_SETTINGS_UNCHECKED);
     process.exit(0);
   }
   if (refused) refuse(refused);

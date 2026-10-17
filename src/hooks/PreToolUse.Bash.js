@@ -334,7 +334,7 @@ function operandResolvesIntoLedger(prefix, token, dir = LEDGER_DIR_RELATIVE) {
  * `spec` names the protected folder (`LEDGER_SPEC` by default, `VERIFY_SPEC` for the
  * check records): the same test, a different folder.
  * @param {string} command
- * @param {{dir: string, segmentRe: RegExp, resolvedRe: RegExp}} [spec]
+ * @param {{dir?: string, segmentRe: RegExp, resolvedRe: RegExp}} [spec]
  * @returns {boolean}
  */
 function isLedgerWrite(command, spec = LEDGER_SPEC) {
@@ -406,7 +406,7 @@ function isLedgerWrite(command, spec = LEDGER_SPEC) {
     if (!touches) {
       touches = operands.some((t) => spec.resolvedRe.test(resolveTokenPath(prefix, t)));
     }
-    if (!touches) {
+    if (!touches && spec.dir) {
       // (c) The filesystem-aware test — the link-through-the-ledger close. Candidates
       // are the shell operands PLUS the segment's quoted string literals, so a path
       // embedded in `node -e "…'link/approvals/x'…"` is resolved as well. Bounded by

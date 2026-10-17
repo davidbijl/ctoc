@@ -109,7 +109,7 @@ const MAX_ANCESTOR_WALK = 4096;
  * fixed vocabulary (`'resolve-failed'` | `'loop'` | `'denied'` | `'dangling'`), so a
  * caller can report WHY without leaking an errno object, a stack trace or an
  * absolute path. No caller branches on a reason for a DECISION — `plan-coverage`
- * discards it and `resolvesUnder` returns a bare boolean — so the vocabulary exists
+ * discards it and `resolvesUnder` returns a bare boolean, `protect-records.js` reads only `ok` and `real` — so the vocabulary exists
  * so that a security report can name which fault fired, and for nothing else.
  *
  * @param {string} p - an absolute or relative path
@@ -309,4 +309,5 @@ function resolvesUnder(targetFile, protectedDirRelative, root) {
 module.exports = {
   escapesRoot,
   resolvesUnder,
+  resolveExisting,
 };
