@@ -3,14 +3,18 @@
  *
  * The human decided: push is a human ship gate. A gate a machine can cross is
  * not a gate. This suite is the fence: with DEFAULT settings, NO CTOC code path
- * reaches `git push`. Every automatic push path (the quality agent's on-success
- * hook, the post-commit hook's argv, the sync timer, the plan-operation
- * auto-push, the dashboard's full sync) is driven here with a spy on the git
- * executor and asserted to produce ZERO push invocations.
+ * reaches `git push`. Every automatic path that could push (the quality agent's
+ * on-success hook, the post-commit hook's argv, the sync timer, the plan-operation
+ * hook, the dashboard's full sync) is driven here with a spy on the git executor and
+ * asserted to produce ZERO push invocations; the plan sync paths hold that with the
+ * opt-in set too, because the plan sync never pushes.
  *
  * The ONLY sanctioned pushes are the human's own: `/ctoc:push` (src/commands/push.js
- * calls pushToRemote directly — the human's keypress IS the gate decision), and any
- * path after the human explicitly sets the canonical opt-in `git.autoPushEnabled`.
+ * calls pushToRemote directly — the human's keypress IS the gate decision), and, after
+ * the human explicitly sets the canonical opt-in `git.autoPushEnabled`, the quality
+ * agent's after-commit check. The plan sync (its timer, the plan-operation auto-push,
+ * the dashboard's full sync) never pushes, opted in or not: it commits and says that
+ * /ctoc:push ships, so no test suite ever runs inside the menu process.
  *
  * Canonical setting: `git.autoPushEnabled` (default FALSE). It is the ONLY key
  * that gates a push. `sync.auto_push` and `git.commitAndPush` are DEAD (placebos:
@@ -285,9 +289,12 @@ test('ship-gate: sync auto_push defaults to FALSE and follows the canonical key'
     assert.strictEqual(r.pushed, false);
     assert.deepStrictEqual(spy.pushes(), []);
 
+    // Opted in: the sync still never pushes (a push follows /ctoc:push's whole-suite check).
     spy.calls.length = 0;
-    assert.strictEqual(spy.mod.autoPush(on).pushed, true);
-    assert.strictEqual(spy.pushes().length, 1);
+    const onResult = spy.mod.autoPush(on);
+    assert.strictEqual(onResult.pushed, false);
+    assert.match(onResult.reason, /never pushes/);
+    assert.strictEqual(spy.pushes().length, 0);
   } finally { spy.restore(); rm(off); rm(on); }
 });
 
@@ -310,14 +317,81 @@ test('ship-gate: fullPlansSync commits but does NOT push with the gate closed', 
   } finally { spy.restore(); rm(dir); }
 });
 
-test('ship-gate: fullPlansSync pushes when the human opted in', () => {
+test('ship-gate: fullPlansSync never pushes, even when the human opted in', () => {
   const dir = mkProject({ git: { autoPushEnabled: true } });
   const spy = withGitSpy(path.join(ROOT, 'src/lib/sync.js'), dirtyGit);
   try {
     const res = spy.mod.fullPlansSync(dir);
-    assert.strictEqual(res.pushed, true);
-    assert.strictEqual(spy.pushes().length, 1);
+    assert.strictEqual(res.pushed, false);
+    assert.deepStrictEqual(spy.pushes(), []);
+    assert.match(res.pushSkipped, /never pushes/);
   } finally { spy.restore(); rm(dir); }
+});
+
+// G1-G3 — with the opt-in set and a git that always shows a dirty plans/, every sync
+// path goes as far toward a push as it can and still makes zero push invocations.
+test('ship-gate: G1 syncPlans (the timer path) never pushes when the human opted in', () => {
+  const dir = mkProject({ git: { autoPushEnabled: true } });
+  const spy = withGitSpy(path.join(ROOT, 'src/lib/sync.js'), dirtyGit);
+  try {
+    const res = spy.mod.syncPlans(dir);
+    assert.strictEqual(res.pushRefused, true);
+    assert.deepStrictEqual(spy.pushes(), [], 'the timer path must make zero push invocations');
+  } finally { spy.restore(); rm(dir); }
+});
+
+test('ship-gate: G2 startAutoSync (menu open) never pushes when the human opted in', () => {
+  const dir = mkProject({ git: { autoPushEnabled: true } });
+  const spy = withGitSpy(path.join(ROOT, 'src/lib/sync.js'), dirtyGit);
+  try {
+    spy.mod.startAutoSync(dir);   // runs an immediate sync, then arms the timer
+    spy.mod.stopAutoSync();
+    assert.ok(spy.calls.some(c => /git commit/.test(c)), 'the immediate sync did commit');
+    assert.deepStrictEqual(spy.pushes(), [], 'opening the menu must make zero push invocations');
+  } finally { spy.restore(); rm(dir); }
+});
+
+test('ship-gate: G3 onPlanOperation (every plan move) never pushes when the human opted in', () => {
+  // A fresh project has no .ctoc/last-sync, so the call is not rate-limited; the spied
+  // `git fetch` returns, so the remote check reports online; dirtyGit shows a plan
+  // change, so autoCommitPlan commits; and onPlanOperation then asks autoPush.
+  const dir = mkProject({ git: { autoPushEnabled: true } });
+  const spy = withGitSpy(path.join(ROOT, 'src/lib/sync.js'), dirtyGit);
+  try {
+    const res = spy.mod.onPlanOperation('approve', 'some-plan', dir, { from: 'todo', to: 'in-progress' });
+    assert.strictEqual(res.committed, true, 'the path went as far as the commit');
+    assert.strictEqual(res.pushed, false);
+    assert.deepStrictEqual(spy.pushes(), [], 'a plan move must make zero push invocations');
+  } finally { spy.restore(); rm(dir); }
+});
+
+// G5 — the words a human reads (push.md, the Commands menu, the README row) say what
+// the code does: the plan sync pulls and commits, never pushes, and /ctoc:push ships.
+test('ship-gate: G5 push.md, the Commands menu and the README say the plan sync never pushes', () => {
+  const pushMd = fs.readFileSync(path.join(ROOT, 'src/commands/push.md'), 'utf8').replace(/\s+/g, ' ');
+  assert.doesNotMatch(pushMd, /sync timer, dashboard sync\) may push/);
+  assert.match(
+    pushMd,
+    /The plan sync \(its timer, the Doctor's Sync now and the dashboard sync\) commits plan state but never pushes/
+  );
+
+  const dir = mkProject();
+  for (const stage of ['vision', 'functional', 'implementation', 'todo', 'in-progress', 'review', 'done']) {
+    fs.mkdirSync(path.join(dir, 'plans', stage), { recursive: true });
+  }
+  try {
+    const screens = require(path.join(ROOT, 'src/lib/menu-screens.js'));
+    const sync = screens.dashboardCommands(dir).ask.questions[0].options.find(o => o.label === 'Sync plans');
+    assert.ok(sync, 'the Sync plans option exists');
+    assert.strictEqual(sync.description, 'Pull and commit plan changes; never pushes — /ctoc:push ships');
+  } finally { rm(dir); }
+
+  const row = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8')
+    .split('\n').find(l => l.startsWith('| **Sync plans** |'));
+  assert.ok(row, 'the README has a Sync plans row');
+  assert.match(row, /never pushes/);
+  assert.match(row, /\/ctoc:push/);
+  assert.doesNotMatch(row, /push plan changes/);
 });
 
 // ── 5. NO ENVIRONMENT VARIABLE MAY OPEN THE GATE (Step 13 SECURE) ────────────

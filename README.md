@@ -6,7 +6,7 @@
 <p align="center">
   <a href="https://github.com/robotijn/ctoc"><img alt="GitHub" src="https://img.shields.io/badge/GitHub-robotijn%2Fctoc-blue"></a>
   <a href="LICENSE"><img alt="License: PolyForm Shield" src="https://img.shields.io/badge/License-PolyForm%20Shield-brightgreen.svg"></a>
-  <img alt="Version" src="https://img.shields.io/badge/version-6.14.129-blue">
+  <img alt="Version" src="https://img.shields.io/badge/version-6.14.130-blue">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Claude%20Code-purple">
   <img alt="Agents" src="https://img.shields.io/badge/agents-125-orange">
   <img alt="Skills" src="https://img.shields.io/badge/skills-430-blue">
@@ -135,7 +135,7 @@ Answer them once; both choices are remembered. "Keep defaults, stop asking" and 
 **Worked example.** The classic pipeline overview (`Open the dashboard` on the first screen) of a busy project — this is a real capture of the CTO Chief repository itself:
 
 ```
-CTOC v6.14.129
+CTOC v6.14.130
 ────────────────────────────────────────────────────────────
 
 ▼ Business (2)
@@ -380,7 +380,7 @@ When validation **fails**, the failures are listed and "Approve anyway" is burie
 |---|---|
 | **Vision** | Explore new ideas before formal planning |
 | **Start agent** | Execute the next plan from the todo queue |
-| **Sync plans** | Pull, commit, and push plan changes |
+| **Sync plans** | Pull and commit plan changes; never pushes — `/ctoc:push` ships |
 | **◀ Pipeline** | Return to the pipeline view |
 
 **What happens.** Each `todo` plan is built by the Iron Loop executor as a **background** task, following Steps 8–16 without interruption:
@@ -886,7 +886,7 @@ Escape phrases (typed by you): `hotfix`, `trivial fix`, `trivial change`, `quick
 
 ## Smart Quality Gates
 
-A background quality agent runs on every commit without blocking your workflow; `/ctoc:push` runs the same checks in the foreground.
+A background quality agent runs on every commit without blocking your workflow; `/ctoc:push` runs the same checks in the foreground, except that its test check is always the project's whole declared test suite, never only the affected tests.
 
 | Tier | When | Checks | Blocking? |
 |------|------|--------|-----------|
@@ -1107,7 +1107,7 @@ node --test tests/*.test.js   # fast pass only — does NOT enforce the floor
 ```javascript
 const { release, getVersion, syncAll, checkForUpdates } = require('./src/lib/version');
 
-getVersion()       // → '6.14.129'
+getVersion()       // → '6.14.130'
 release()          // → bumps patch, syncs all files
 release('minor')   // → bumps minor
 release('major')   // → bumps major
@@ -1142,7 +1142,7 @@ ctoc/
 │                    61 quality configs, 6 agent-fragments/ — the cross-cutting
 │                    rules every agent carries: ancestry-read, async-choice-protocol,
 │                    honest-status, no-stub-rule, plain-gate-words, warnings-are-critical)
-├── tests/           575 test files (run with `npm test`)
+├── tests/           582 test files (run with `npm test`)
 ├── .ctoc/           Config, templates, operations, audit, loop journals, baselines
 │   ├── templates/   CLAUDE.md.template, canvas templates, SaaS templates,
 │   │                questions.yaml, product-kpis.yaml
@@ -1178,6 +1178,6 @@ Use CTO Chief freely for any project. You may not offer CTO Chief itself or a de
 
 ---
 
-**6.14.129** · Built by [@robotijn](https://github.com/robotijn)
+**6.14.130** · Built by [@robotijn](https://github.com/robotijn)
 
 <p align="center"><i>"Excellence is not an act, but a habit."</i></p>

@@ -43,6 +43,7 @@ const cp = require('node:child_process');
 const { execFileSync } = cp;
 
 const qualityAgent = require('../src/lib/quality-agent');
+const { withClosedNpmRegistry } = require('./helpers/security-scan-fixtures');
 
 // The scanner classes the orchestrator constructs — same module instances it uses,
 // so a prototype stub here reaches the live runSecurityScan path.
@@ -669,8 +670,12 @@ describe('runSecurityScan — framework client-exposed secret', () => {
       fs.writeFileSync(path.join(dir, 'next.config.js'), 'module.exports = {};\n');
       fs.writeFileSync(path.join(dir, '.env'), 'NEXT_PUBLIC_API_SECRET=abc123def456ghi789\n');
 
-      const { res } = await captureLog(() =>
-        qualityAgent.runSecurityScan(null, { projectRoot: dir, allFiles: true }));
+      // npm stays real but reaches no registry (a closed loopback port): the package.json makes
+      // the real scan start npm, yarn and pnpm probes, `npm audit` (dependency step) and SCA's
+      // `npm --version` and `npm audit`, all with the inherited environment, which would otherwise
+      // reach the registry (plan the-test-suite-runs-faster-and-never-weaker-s2).
+      const { res } = await withClosedNpmRegistry(() => captureLog(() =>
+        qualityAgent.runSecurityScan(null, { projectRoot: dir, allFiles: true })));
       assert.match(res.details, /framework-security\[/, 'the client-exposed secret must appear in details');
       assert.equal(res.passed, false, 'a shipped client-exposed secret must fail the gate');
     } finally {
@@ -1327,6 +1332,10 @@ describe('the test run: one run per command, a failure counted on a summary line
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qa-tree-'));
     const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
     let pid = 0;
+    // This test starts the real npm (`npm test`). npm's own update check asks the npm registry, so it
+    // is switched off for this test and put back after (plan the-test-suite-runs-faster-and-never-weaker-s2, criterion 21).
+    const priorNotifier = process.env.npm_config_update_notifier;
+    process.env.npm_config_update_notifier = 'false';
     try {
       fs.writeFileSync(path.join(dir, 'slow.js'), "require('fs').writeFileSync('slow.pid', String(process.pid));\nsetTimeout(() => {}, 60000);\n");
       fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'slow', version: '1.0.0', private: true, scripts: { test: 'node slow.js && echo done' } }));
@@ -1342,6 +1351,8 @@ describe('the test run: one run per command, a failure counted on a summary line
       for (let waited = 0; alive(pid) && waited < 5000; waited += 50) await new Promise((resolve) => setTimeout(resolve, 50));
       assert.equal(alive(pid), false, `the test script (process ${pid}) is left behind`);
     } finally {
+      if (priorNotifier === undefined) delete process.env.npm_config_update_notifier;
+      else process.env.npm_config_update_notifier = priorNotifier;
       if (pid > 0 && alive(pid)) process.kill(pid, 'SIGKILL');
       fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
     }

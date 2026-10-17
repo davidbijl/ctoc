@@ -1,0 +1,9 @@
+{
+  "content_sha256": "6a9b432457446c46a43ab6a561e0fd3872c1e738070c7c39f54818e9bb62ded3",
+  "hash_scope": "specification",
+  "stage_from": "functional",
+  "stage_to": "implementation",
+  "approved_at": "2026-10-14T14:22:02.764Z",
+  "approved_by": "human",
+  "plan_basename": "a-push-never-reaches-github-on-a-zero-or-partial-test-run"
+}

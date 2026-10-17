@@ -81,11 +81,13 @@ const SETTINGS_SCHEMA = {
       { key: 'autoSync', label: 'Auto-sync git', type: 'toggle', default: true },
       { key: 'forceWithLease', label: 'Safe force push', type: 'toggle', default: true },
       // R3-C — THE PUSH SHIP GATE. Push is one of the two human ship gates (the
-      // other is deploy). This is the ONE canonical key that gates EVERY machine
-      // push path in CTOC: the quality agent's on-success push, the post-commit
-      // hook's argv, the sync timer, the plan-operation auto-push and the
-      // dashboard's full pipeline sync. It defaults to FALSE — with it closed, CTOC
-      // may commit but NEVER pushes; the human ships via /ctoc:push.
+      // other is deploy). This is the ONE canonical key that gates every machine
+      // push in CTOC: the quality agent's on-success push and the post-commit
+      // hook's argv. The plan sync (syncPlans on its timer and the Doctor key,
+      // onPlanOperation, and the dashboard's fullPlansSync) never pushes; it reads
+      // this key only to decide whether syncPlans runs its `git pull --rebase` and
+      // which "not pushed" wording a result carries. It defaults to FALSE — with it
+      // closed, CTOC may commit but NEVER pushes; the human ships via /ctoc:push.
       // It replaces two placebos: `git.commitAndPush` (a toggle nothing read) and
       // the `sync.auto_push` / init's `push.auto_push` mismatch (a visible switch
       // wired to a key no code consulted). Read it ONLY via isAutoPushEnabled().
@@ -289,13 +291,14 @@ function setSetting(category, key, value, projectPath = process.cwd()) {
 /**
  * THE PUSH SHIP GATE (R3-C). The single source of truth for "may a machine push?".
  *
- * Every automatic push path in CTOC asks this and only this — the quality agent's
- * on-success push, the post-commit hook's argv, the sync timer, the plan-operation
- * auto-push, and the dashboard's full pipeline sync. It is TRUE only when the human
- * explicitly set `git.autoPushEnabled: true`; it is FALSE for a fresh project, for
- * every environment profile (no profile may open a ship gate), and on any read
- * error. No environment variable can flip it: CTOC_SKIP_QUALITY is a SKIP, never
- * an enable.
+ * Every automatic push in CTOC asks this and only this — the quality agent's
+ * on-success push and the post-commit hook's argv. The plan sync (syncPlans,
+ * onPlanOperation, fullPlansSync) never pushes; it asks this only to decide whether
+ * syncPlans pulls first and which "not pushed" wording to return. It
+ * is TRUE only when the human explicitly set `git.autoPushEnabled: true`; it is
+ * FALSE for a fresh project, for every environment profile (no profile may open a
+ * ship gate), and on any read error. No environment variable can flip it:
+ * CTOC_SKIP_QUALITY is a SKIP, never an enable.
  *
  * The human's own `/ctoc:push` is NOT gated by this — the keypress IS the gate.
  *

@@ -31,6 +31,9 @@ const { spawnSync } = require('node:child_process');
 const actions = require('../src/lib/actions');
 const taskRegistry = require('../src/lib/task-registry');
 const { initProject } = require('../src/lib/init-project');
+// npm's own update check asks the npm registry; it is switched off for the npm this file starts
+// (plan the-test-suite-runs-faster-and-never-weaker-s2, criterion 21: tests never reach the registry).
+process.env.npm_config_update_notifier = 'false';
 
 // ── harness ──────────────────────────────────────────────────────────────────────
 

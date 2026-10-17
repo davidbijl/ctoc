@@ -14,6 +14,16 @@ Manually trigger quality checks and push to remote:
 node "${CLAUDE_PLUGIN_ROOT}/src/commands/push.js" [options]
 ```
 
+Before every push this runs the project's whole declared test command, which takes minutes
+on a large suite; each test command may run for up to 15 minutes. Run the command with the
+Bash tool's longest time limit, 10 minutes (`timeout: 600000`); when the suite can take
+longer, start it in the background (`run_in_background: true`) and wait for it to finish:
+end the turn and be woken when it finishes, never a loop that sleeps and checks. A shorter
+limit stops the run before the tests finish, and then nothing is pushed.
+
+Pass `--skip-tests` only when the human's own message asks for it; never add it to retry a
+blocked or timed-out push.
+
 ---
 
 ## Overview
@@ -33,7 +43,7 @@ The `/ctoc:push` command manually triggers the background quality agent. Use thi
 |--------|-------------|
 | (none) | Run quality checks, push on success |
 | `--force` | Push even with Tier 2 warnings |
-| `--skip-tests` | Skip test execution (lint + typecheck only) |
+| `--skip-tests` | Run no test: lint, type check and the security scan still run, and the output says no test ran before this push |
 | `--dry-run` | Run checks but don't push |
 
 ---
@@ -48,7 +58,7 @@ The `/ctoc:push` command manually triggers the background quality agent. Use thi
 │  Running quality checks...           │
 │  • lint ✓                            │
 │  • typecheck ✓                       │
-│  • tests (47 affected)...            │
+│  • tests (whole declared suite)...   │
 │  • security scan ✓                   │
 └─────────────────────────────────────┘
     │
@@ -64,6 +74,30 @@ The `/ctoc:push` command manually triggers the background quality agent. Use thi
 git push   Show errors
 "Pushed!"  "Fix X, Y, Z"
 ```
+
+The test check runs the project's whole declared test command before every push, never a
+subset picked from the changed files and never a cached earlier result. A run in which zero
+tests ran, or a project with no test command, blocks the push. A runner that exits 0 without
+printing a count passes, and the output says the test count is unknown. The output always
+names each test command that ran and says how many tests passed, that the test count is
+unknown, or why the push was blocked; with `--skip-tests` it says that no test ran before this
+push.
+
+Limits. "Whole suite" means the project's declared test command: a declared command that runs
+only part of the tests, or a focused test (`it.only` and the like), passes with a real count.
+A count is read only from a node:test, jest or mocha summary; for cargo, go, pytest, vitest
+and the like the output says the count is unknown, and a zero from them is not recognised. Only one summary
+is read (the last node:test one, else jest, else mocha), so for an npm script that chains
+runners the count shown can be one runner's alone. The push is a bare `git push`, so
+git's own settings choose what is pushed: with `push.default=matching`, other branches whose
+names match the remote's are pushed too, untested. If a newer commit arrives while the checks
+run, nothing is pushed. A commit made during the checks, by the menu's plan sync (it commits
+plan changes every 5 minutes while `/ctoc:start` is open in a terminal) or by a background
+bookkeeping commit, moves the commit and the push is refused; run `/ctoc:push` again once
+nothing is committing. Uncommitted changes to tracked files are tested but not pushed; the
+output names them (new untracked files are not named), or says that git could not list them. A configured test command is shown with secrets masked
+(the password in a URL, the value of a `NAME=value` whose name holds token, secret, pass, key,
+auth or cred) and with control characters written out as escapes.
 
 ---
 
@@ -184,8 +218,9 @@ explicitly open the gate. There is exactly ONE key that controls it, read only v
 
 - **`git.autoPushEnabled: false` (default)** — CTOC commits plan state locally
   (reversible) but NEVER pushes. You ship with `/ctoc:push`.
-- **`git.autoPushEnabled: true`** — you have opted in; the machine push paths
-  (post-commit hook, sync timer, dashboard sync) may push.
+- **`git.autoPushEnabled: true`** — you have opted in; the after-commit check (when its git hook
+  is installed) may push once its checks pass. The plan sync (its timer, the Doctor's Sync now and
+  the dashboard sync) commits plan state but never pushes; it says so and points to `/ctoc:push`.
 
 No environment profile (`dev`/`staging`/`prod`) may set this to `true` — opening a
 ship gate is the human's act alone. There is no `push.autoPush` key: earlier docs
@@ -238,7 +273,7 @@ Or manually: git push origin main
 
 ## Integration with the quality checks
 
-`/ctoc:push` runs the same quality checks that gate a commit, then pushes on success.
+`/ctoc:push` runs lint, the type check, the project's whole declared test command (never only the affected tests) and the security scan, and pushes only when every one passes.
 CTOC ships no `ctoc` command-line executable, so there is no command-line quality
 subcommand to run on its own — the checks that such a subcommand would "report" run
 through `npm test` and the Step 14 verification path, and no installed command surfaces
@@ -273,7 +308,7 @@ node "${CLAUDE_PLUGIN_ROOT}/src/commands/push.js" --force
 ### Quick push (skip tests)
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/src/commands/push.js" --skip-tests
-# Only runs lint + typecheck
+# Runs lint, type check and the security scan; no test runs, and the output says so
 ```
 
 ### Dry run to check status

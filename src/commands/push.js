@@ -6,15 +6,25 @@
  * Reuses the check/push building blocks exported by src/lib/quality-agent.js
  * (this file owns the documented flag semantics; the engine owns the runners).
  *
+ * The test check is the project's WHOLE declared suite, through the shared
+ * `runWholeSuiteBeforePush`: never a subset picked from the changed files, never a cached
+ * earlier result, never a pass on zero tests ran or on no test command. The commit the
+ * checks started on is the commit that is pushed: a commit that arrives during the checks,
+ * or one git cannot report, stops the push. Paths and commands shown are escaped or masked
+ * (control characters written out; secrets in a configured command hidden).
+ *
  * Documented flags (mirrors src/commands/push.md):
  *   (none)        run quality checks, push on success
  *   --force       push even with Tier-2 warnings (NEVER overrides a Tier-1 fail)
- *   --skip-tests  omit ONLY the test runner (lint + typecheck + security still run)
+ *   --skip-tests  omit ONLY the test runner (lint + typecheck + security still run);
+ *                 the output says no test ran before this push
  *   --dry-run     run checks but do not push ("Would push to <remote/branch>")
  *
  * Testability: `run(opts, deps)` is a dependency-injection seam. The test injects
  * fake check runners and a fake pusher so no real suite runs and no network push
- * happens. Each dep defaults to the real quality-agent / tool-detector function.
+ * happens. Each dep defaults to the real quality-agent / tool-detector function; the
+ * dep keys are detect, runLint, runTypecheck, runWholeSuite, runSecurityScan,
+ * pushToRemote, readHead, uncommittedPaths and logger.
  *
  * Cross-platform: no bash. The only process spawn lives in the reused
  * pushToRemote() (`git push`), which interpolates no flag. The silent
@@ -63,7 +73,11 @@ function parsePushArgs(argv = []) {
  *   projectRoot?: string }} opts - `projectRoot` scopes the security scan to the
  *   right tree (defaults to process.cwd() in main()); without it the scan ran
  *   against whatever cwd happened to be, not the repo being pushed.
- * @param {object} deps injectable seam; each defaults to the real function.
+ * @param {object} deps injectable seam; each defaults to the real function. The test check
+ *   is `runWholeSuite` (the project's whole declared suite); `readHead` reads the commit
+ *   before the checks and `uncommittedPaths` names uncommitted tracked paths afterwards
+ *   (null when git cannot list them; the push then says so and goes on). The commit check is
+ *   the last step before the push itself.
  * @returns {Promise<{ ok: boolean, pushed: boolean, blockedBy: string[],
  *   tier: (1|2|null), dryRun: boolean, text: string }>}
  */
@@ -72,9 +86,11 @@ async function run(opts = {}, deps = {}) {
     detect: deps.detect || (() => toolDetector.detectTools()),
     runLint: deps.runLint || qualityAgent.runLint,
     runTypecheck: deps.runTypecheck || qualityAgent.runTypecheck,
-    runSmartTests: deps.runSmartTests || qualityAgent.runSmartTests,
+    runWholeSuite: deps.runWholeSuite || qualityAgent.runWholeSuiteBeforePush,
     runSecurityScan: deps.runSecurityScan || qualityAgent.runSecurityScan,
     pushToRemote: deps.pushToRemote || qualityAgent.pushToRemote,
+    readHead: deps.readHead || qualityAgent.readGitHead,
+    uncommittedPaths: deps.uncommittedPaths || qualityAgent.uncommittedTrackedPaths,
     logger: deps.logger || console
   };
 
@@ -83,6 +99,10 @@ async function run(opts = {}, deps = {}) {
     lines.push(s);
     d.logger.log(s);
   };
+
+  // The commit the checks run on: the commit that may be pushed.
+  const root = opts.projectRoot || process.cwd();
+  const testedHead = d.readHead(root);
 
   const detection = d.detect() || {};
   const tools = detection.tools || {};
@@ -97,9 +117,14 @@ async function run(opts = {}, deps = {}) {
   const typecheck = await d.runTypecheck(tools);
   if (!typecheck.passed) blockedBy.push('typecheck');
 
-  if (!opts.skipTests) {
-    const tests = await d.runSmartTests(tools);
+  // The whole declared suite, with no options: no `wholeTree` on /ctoc:push, whose
+  // interrupt a process group of its own would not receive.
+  if (opts.skipTests) {
+    say('Tests: skipped (--skip-tests) — no test ran before this push.');
+  } else {
+    const tests = await d.runWholeSuite(tools);
     if (!tests.passed) blockedBy.push('tests');
+    say(tests.text);
   }
 
   // Scope the security scan to the repo being pushed (its LIVE default delta path).
@@ -129,6 +154,36 @@ async function run(opts = {}, deps = {}) {
       pushed: false,
       blockedBy,
       tier: 1,
+      dryRun: !!opts.dryRun,
+      text: lines.join('\n')
+    };
+  }
+
+  // Tracked changes that are not committed were tested but are not what `git push` sends.
+  // Informational only: CTOC rewrites its own tracked state files, so a block would block every
+  // push. Read BEFORE the commit check below, so that check is the last step before the push and
+  // a commit made while the tree is read is still caught. Paths are shown escaped (a file name
+  // can hold a newline or an escape byte); null means git could not list them, which is said.
+  const dirty = d.uncommittedPaths(root);
+  if (dirty === null) {
+    say('Note: git could not list uncommitted changes, so whether the tested tree is what gets pushed is unknown.');
+  } else if (dirty.length > 0) {
+    const more = dirty.length > 5 ? `, +${dirty.length - 5} more` : '';
+    const shown = dirty.slice(0, 5).map(qualityAgent.escapeForDisplay).join(', ');
+    say(`Note: tested with uncommitted changes that are not pushed: ${shown}${more}.`);
+  }
+
+  // The checks passed on `testedHead`. A commit that arrived meanwhile was not tested, and a
+  // commit git cannot report cannot be shown to be the tested one: nothing is pushed, and a
+  // dry run does not claim it would push. The last check before the push itself.
+  const untested = qualityAgent.untestedCommitReason(testedHead, root, d.readHead);
+  if (untested !== null) {
+    say(untested);
+    return {
+      ok: false,
+      pushed: false,
+      blockedBy: [],
+      tier: null,
       dryRun: !!opts.dryRun,
       text: lines.join('\n')
     };

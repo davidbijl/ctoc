@@ -502,7 +502,7 @@ describe('push.js entry point — a rejection is reported, never a silent succes
     const preload = writeThrowingPreload(dir, 'tool-detector',
       require.resolve('../src/lib/tool-detector'));
 
-    // The fault fires at the FIRST thing run() does (tool detection), so no lint,
+    // The fault fires before any check runs, so no lint,
     // no typecheck, no test run and above all no `git push` can happen here.
     const res = spawnSync(process.execPath, ['--require', preload, PUSH_CMD, '--dry-run'],
       { cwd: dir, encoding: 'utf8', env: { ...process.env } });

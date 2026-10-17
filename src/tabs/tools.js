@@ -429,7 +429,9 @@ function handleKey(key, app) {
     if (key.sequence === '3') {
       // Sync now
       const result = manualSync(app.projectPath);
-      app.message = result.synced ? '✓ Synced successfully' : `Sync: ${result.reason || result.error}`;
+      app.message = !result.synced
+        ? `Sync: ${result.reason || result.error}`
+        : result.pushRefused ? `Sync: plans committed, ${result.reason}` : '✓ Synced successfully';
       return true;
     }
     if (key.sequence === '4') {

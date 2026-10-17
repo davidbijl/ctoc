@@ -1,0 +1,10 @@
+{
+  "content_sha256": "862ac7359d00c3af1add86bf67bf5abe95d1ae5c6d84359f2df479a9b1f89ac3",
+  "hash_scope": "specification",
+  "stage_from": "review",
+  "stage_to": "done",
+  "approved_at": "2026-10-16T15:56:25.812Z",
+  "advanced_by": "pipeline",
+  "evidence": "evidence: review→done — checks passed, recorded 2026-10-16T15:56:25.808Z in .ctoc/state/verify/a-push-never-reaches-github-on-a-zero-or-partial-test-run-s3-plan-sync-never-pushes.json (VERIFY passed — ran: lint, typecheck, tests); coverage 99.86% against a floor of 99%, 0 skipped; every required step 8–16 is checked in the plan, including REVIEW, SECURE and FINAL-REVIEW (checked by the build itself); questions: none were stored; crossed on evidence, not approved by the human",
+  "plan_basename": "a-push-never-reaches-github-on-a-zero-or-partial-test-run-s3-plan-sync-never-pushes"
+}

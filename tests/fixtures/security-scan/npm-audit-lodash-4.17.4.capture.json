@@ -1,0 +1,10 @@
+{
+  "command": "npm audit --json",
+  "npm": "11.11.0",
+  "node": "v24.14.1",
+  "captured": "2026-10-12",
+  "exitCode": 1,
+  "registry": "https://registry.npmjs.org/",
+  "fixture": "the lodash 4.17.4 project of tests/quality-fleet-wiring.test.js, describe DEPENDENCIES",
+  "recapture": "Redo this when npm's major version changes. Steps: (1) in a new empty folder, write the package.json and package-lock.json of the lodash 4.17.4 project exactly as tests/quality-fleet-wiring.test.js writes them in its DEPENDENCIES describe (JSON with two-space indent); (2) check that `npm config get registry` prints https://registry.npmjs.org/, then run `npm audit --json` in that folder and save its standard output, byte for byte, over npm-audit-lodash-4.17.4.json (npm exits with code 1 because it finds vulnerabilities); (3) check the saved file holds no local path, user name or host name, and that its metadata.vulnerabilities counts at least one critical or high; (4) update the npm, node, captured and exitCode fields of this file. The LIVE test in tests/quality-fleet-wiring.test.js prints a diagnostic naming both npm majors when the installed npm's major differs from the one in this file."
+}
