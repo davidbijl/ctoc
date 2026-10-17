@@ -451,7 +451,7 @@ describe('the gate-side caller runs the SAME binding matrix', () => {
     // A third recorded answer that belongs to an older question set.
     appendAnswer(root, { ts: iso(T0 + 3000), ref: s.ref, questionId: 'q12-c', optionKey: '1', planMtimeMs: stamp - 99999 });
 
-    streamingGate.pendingGateDecisions(root); // sufficiency crosses the plan and writes the entry
+    streamingGate.pendingGateDecisions(root, { crossed: [] }); // sufficiency crosses the plan and writes the entry (four-defects s23: only the continuation's pass crosses)
     const entry = JSON.parse(fs.readFileSync(path.join(root, '.ctoc', 'approvals', 'c18.json'), 'utf8'));
     // The evidence contract now records the DENOMINATOR (how many questions existed)
     // alongside the numerator (how many bound) — plan 00184 replaced the old

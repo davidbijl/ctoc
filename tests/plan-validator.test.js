@@ -341,6 +341,182 @@ describe('Plan Validator Tests', () => {
     );
   });
 
+  // === contradiction parser: a placeholder FILE NAME is not a claim — four-defects s17 ===
+  //
+  // Slice 7 of the four-defects round was refused at completion for its approved line 134,
+  // whose claimed path is a placeholder folder and a placeholder file name. A capture is
+  // passed over only when its file name holds a placeholder as a whole part of the name; a
+  // placeholder in a folder part, an HTML tag glued in front of a path, a line-break tag
+  // joining two paths, a lone sign, a reversed pair, an empty pair and a pair glued inside
+  // a word change nothing. Each guard (Pattern 1, Pattern 2) has a case that turns red when
+  // the guard is removed, widened to any less-than sign, or turned into a break.
+
+  /** A word between a less-than and a greater-than sign, the way plans write a placeholder. */
+  const placeholder = (word) => ['<', word, '>'].join('');
+  /** Slice 7's line 134, byte for byte, with `claimPath` as its claimed path. */
+  const slice7Line = (claimPath) =>
+    "  5. The claim: create `" + claimPath + "` with `JSON.stringify(entry)`, `flag: 'wx'` (folder made with";
+  /** Plan 00225's line 230 (plans/done), byte for byte, with `claimPath` as its claimed path. */
+  const plan00225Line = (claimPath) =>
+    'Helper: create `' + claimPath + '`, then approve it for real via';
+  /** The creation-claim errors of one scan. */
+  const claimErrorsOf = (result) => result.errors.filter(e => /claimed as created/i.test(e));
+  /** The checklist keys of one scan that hold a less-than sign. */
+  const signKeysOf = (result) => Object.keys(result.checklist).filter(k => k.includes('<'));
+
+  test('four-defects s17: slice 7 line 134, a placeholder folder and a placeholder file name, is not a claim', () => {
+    const claimed = `${placeholder('claims')}/${placeholder('id')}.json`;
+    const result = validator.validateNoContradictions(`# Plan\n\n${slice7Line(claimed)}\n`, testDir);
+
+    assert.deepStrictEqual(claimErrorsOf(result), [], `a placeholder file name names no file, got: ${JSON.stringify(result.errors)}`);
+    assert.deepStrictEqual(signKeysOf(result), [], 'a placeholder file name is not recorded as a claim');
+  });
+
+  test('four-defects s17: plan 00225 line 230, a real folder and a placeholder file name, is not a claim with either separator', () => {
+    // The backslash form pins `path.win32.basename`: the POSIX basename keeps a
+    // backslash-separated folder in the name, and the claim would still error on macOS and Linux.
+    // The other boundaries (a hyphen, an underscore or a dot in front of the sign pair; a hyphen or
+    // an underscore behind it) are pinned too: a guard anchored at the start of the name that
+    // needs a dot after the pair turns this red.
+    for (const claimed of [
+      `plans/todo/${placeholder('f')}.md`,
+      `plans\\todo\\${placeholder('f')}.md`,
+      `plans/todo/answer-${placeholder('id')}.md`,
+      `plans/todo/q_${placeholder('id')}.md`,
+      `plans/todo/step.${placeholder('n')}.md`,
+      `plans/todo/${placeholder('id')}-x.md`,
+      `plans/todo/${placeholder('id')}_x.md`,
+    ]) {
+      const result = validator.validateNoContradictions(`# Plan\n\n${plan00225Line(claimed)}\n`, testDir);
+
+      assert.deepStrictEqual(claimErrorsOf(result), [], `${claimed} names no file, got: ${JSON.stringify(result.errors)}`);
+      assert.deepStrictEqual(signKeysOf(result), [], `${claimed} is not recorded as a claim`);
+    }
+  });
+
+  test('four-defects s17 teeth: a placeholder folder in front of a declared real file that was never built still errors', () => {
+    // The file name is real, so the claim is real: neither the placeholder folder nor the
+    // declaration of a file that does not exist may silence it.
+    const content = [
+      '---',
+      'files:',
+      '  - src/lib/gone-s17-declared.js',
+      '---',
+      '# Plan',
+      '',
+      slice7Line(`${placeholder('module-dir')}/gone-s17-declared.js`),
+      '',
+    ].join('\n');
+    const result = validator.validateNoContradictions(content, testDir);
+
+    assert.ok(
+      claimErrorsOf(result).some(e => e.includes('gone-s17-declared.js')),
+      `a placeholder folder leaves a real file name, so the claim must still error, got: ${JSON.stringify(result.errors)}`
+    );
+  });
+
+  test('four-defects s17 teeth: an HTML code tag glued in front of a missing real path still errors', () => {
+    const content = '# Plan\n\nCreated <code>src/lib/gone-s17-tag.js</code> for the feature.\n';
+    const result = validator.validateNoContradictions(content, testDir);
+
+    assert.ok(
+      claimErrorsOf(result).some(e => e.includes('src/lib/gone-s17-tag.js')),
+      `the tag lands in the capture but the file name is real, got: ${JSON.stringify(result.errors)}`
+    );
+  });
+
+  test('four-defects s17 teeth: an inline HTML tag glued in front of a root-level dotted, underscored or hyphenated file name still errors', () => {
+    // The tag lands in the capture and looks like a placeholder at the start of the name.
+    // A tag name is not a placeholder; the file name behind it is the claim.
+    const tag = (name, inner) => ['<', name, '>'].join('') + inner + ['</', name, '>'].join('');
+    for (const [sentence, file] of [
+      ['Created ' + tag('code', '.eslintrc.json') + ' for the lint rules.', '.eslintrc.json'],
+      ['Created ' + tag('b', '__init__.py') + ' for the package.', '__init__.py'],
+      ['Created ' + tag('kbd', '-setup.sh') + ' for the setup.', '-setup.sh'],
+      ['Created ' + tag('CODE', '.eslintrc.json') + ' in capitals.', '.eslintrc.json'],
+    ]) {
+      const result = validator.validateNoContradictions('# Plan\n\n' + sentence + '\n', testDir);
+      assert.ok(
+        claimErrorsOf(result).some(e => e.includes(file)),
+        `${sentence}: a tag is not a placeholder, so the missing file must error, got: ${JSON.stringify(result.errors)}`
+      );
+    }
+  });
+
+  test('four-defects s17: a word that is not a tag between the signs in front of a root-level file name is still a placeholder', () => {
+    const claimed = [placeholder('name'), '.json'].join('');
+    const result = validator.validateNoContradictions('# Plan\n\nCreated ' + claimed + ' for each answer.\n', testDir);
+    assert.deepStrictEqual(claimErrorsOf(result), [], `a placeholder file name is not a claim, got: ${JSON.stringify(result.errors)}`);
+  });
+
+  test('four-defects s17 teeth: two missing real paths joined by a line-break tag still error', () => {
+    const content = '# Plan\n\nCreated src/lib/gone-s17-first.js<br>src/lib/gone-s17-second.js in one pass.\n';
+    const result = validator.validateNoContradictions(content, testDir);
+
+    assert.ok(
+      claimErrorsOf(result).some(e => e.includes('gone-s17-second.js')),
+      `the joined capture ends in a real file name, got: ${JSON.stringify(result.errors)}`
+    );
+  });
+
+  test('four-defects s17 teeth: a lone sign, a reversed pair, an empty pair or a pair glued inside a word is not a placeholder', () => {
+    // Every sign sits in the file name, where a placeholder would count, so a guard that
+    // tests for any less-than sign, accepts an empty pair, or drops either part boundary
+    // turns this red.
+    for (const claimed of [
+      'src/lib/<gone-s17-lone.json',
+      'src/lib/>gone-s17-reversed<.json',
+      'src/lib/<>-gone-s17-empty.json',
+      'src/lib/gone<s17>-glued-left.json',
+      'src/lib/<s17>glued-right.json',
+      // A second less-than sign or a second greater-than sign inside the pair: the run between
+      // the signs may hold neither, so a class that drops one of them turns this red.
+      'src/lib/' + ['<', 'a', '<', 'b', '>'].join('') + '.json',
+      'src/lib/' + ['<', 'a', '>', 'b', '>'].join('') + '.json',
+    ]) {
+      const result = validator.validateNoContradictions(`# Plan\n\n${slice7Line(claimed)}\n`, testDir);
+      assert.ok(
+        claimErrorsOf(result).some(e => e.includes(claimed)),
+        `${claimed} holds no whole-part placeholder, so its claim must still error, got: ${JSON.stringify(result.errors)}`
+      );
+    }
+  });
+
+  test('four-defects s17 teeth: a real missing claim on the line after a placeholder claim still errors', () => {
+    // Kills a Pattern 1 guard that ends the scan (`break`) instead of passing over one match.
+    const content = [
+      '# Plan',
+      '',
+      slice7Line(`${placeholder('claims')}/${placeholder('id')}.json`),
+      slice7Line('src/lib/gone-s17-next.json'),
+      '',
+    ].join('\n');
+    const errors = claimErrorsOf(validator.validateNoContradictions(content, testDir));
+
+    assert.strictEqual(errors.length, 1, `exactly the real claim errors, got: ${JSON.stringify(errors)}`);
+    assert.ok(errors[0].includes('src/lib/gone-s17-next.json'), `the error names the real path, got: ${errors[0]}`);
+  });
+
+  test('four-defects s17: one script sentence warns for exactly its two real missing scripts', () => {
+    // A placeholder script, a real missing script, then a missing script with a lone
+    // less-than sign in its folder. Without the Pattern 2 guard there are three warnings;
+    // a guard widened to any less-than sign leaves one; a guard that breaks leaves none.
+    const content = '# Plan\n\nRun `scripts/' + placeholder('variant') + '.js`, run `scripts/gone-s17-real/load.js`,'
+      + ' then run `scripts/gone<s17/load.js` once.\n';
+    const result = validator.validateNoContradictions(content, testDir);
+    const notFound = result.warnings.filter(w => /referenced but not found/i.test(w));
+
+    assert.strictEqual(notFound.length, 2, `exactly the two real scripts warn, got: ${JSON.stringify(notFound)}`);
+    assert.ok(notFound.some(w => w.includes('"scripts/gone-s17-real/load.js"')), `got: ${JSON.stringify(notFound)}`);
+    assert.ok(notFound.some(w => w.includes('"scripts/gone<s17/load.js"')), `got: ${JSON.stringify(notFound)}`);
+    assert.deepStrictEqual(
+      Object.keys(result.checklist).filter(k => k.startsWith('script_')).sort(),
+      ['script_scripts/gone-s17-real/load.js', 'script_scripts/gone<s17/load.js'].sort(),
+      'the placeholder script is not recorded'
+    );
+    assert.deepStrictEqual(result.errors, [], `no error, got: ${JSON.stringify(result.errors)}`);
+  });
+
   // === contradiction parser: files:-declaration basename fallback — VP1 ===
 
   test('VP1 #1: bare-basename claim resolved via files: declaration (OM2/PI0 shape) → no error', () => {

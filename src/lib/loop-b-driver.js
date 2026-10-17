@@ -7,13 +7,13 @@
  * This is a PURE COMPOSITION. It reimplements nothing: it calls three functions that
  * already exist and phrases what they return in the human's own words.
  *
- *   (a) `streaming-gate.pendingGateDecisions(root)` — its DOCUMENTED side effect is the
- *       sanctioned sufficiency auto-cross: a pre-build plan with enough answered context
- *       advances itself (`advanced_by: 'sufficiency'`, no human approval). We add NO
- *       crossing logic and NEVER cross a human gate; we only NAME what the side effect
- *       just moved, detected as the difference between the pre-build stages before and
- *       after the call. Its return value lists what STAYED pending, so it cannot tell us
- *       what crossed — the before/after diff is the honest, reuse-only way to see it.
+ *   (a) `streaming-gate.pendingGateDecisions(root)` — a PURE READ as of four-defects s23:
+ *       called without `opts.crossed` it crosses nothing, so opening the menu or reading
+ *       the session status moves no plan. The sufficiency auto-cross (`advanced_by:
+ *       'sufficiency'`, no human approval) happens only on the continuation's pass, which
+ *       hands its crossings in via `opts.crossed`; `namedCrossedLines` names them. We add NO
+ *       crossing logic and NEVER cross a human gate; the pending list the read returns is
+ *       kept for the held line.
  *   (b) `streaming-precompute.plansNeedingQuestions(root)` — the plans whose questions
  *       have not been generated (missing or stale). The line gives their count and the
  *       human's one way to ask — "Generate its questions" on a plan's decision in
@@ -35,14 +35,6 @@ const path = require('node:path');
 const safeFs = require('./safe-fs');
 
 /**
- * The pre-build stages a sufficiency cross can move a plan OUT of. `pendingGateDecisions`
- * only crosses from `functional` (→ implementation) and `implementation` (→ todo); the
- * `review → done` gate is never crossed by sufficiency. A plan that disappears from one
- * of these between the before and after snapshots was auto-crossed by the call.
- */
-const SUFFICIENCY_SOURCE_STAGES = ['functional', 'implementation'];
-
-/**
  * At most this many plan titles are named in any one summary line before it collapses
  * to "and K more". Mirrors increment-feed's cap-and-summarize so a large backlog reads
  * as a legible directive, not a wall. 5, tighter than increment-feed's 10, because this
@@ -59,7 +51,6 @@ function buildDeps() {
   const gateWords = require('./gate-words');
   return {
     getPlansDir: state.getPlansDir,
-    readPlans: state.readPlans,
     parseMetadata: state.parseMetadata,
     humanPlanName,
     moment: gateWords.moment,
@@ -138,22 +129,6 @@ function readPlanContent(root, stage, file, deps) {
   }
 }
 
-/**
- * Map every plan resident in a sufficiency source stage to its human name. state.readPlans
- * is itself fail-soft (missing stage dir → [], per-file faults skipped).
- * @returns {Map<string, string>} ref ("stage/file.md") -> human name
- */
-function preBuildSnapshot(root, deps) {
-  const map = new Map();
-  const plansDir = deps.getPlansDir(root);
-  for (const stage of SUFFICIENCY_SOURCE_STAGES) {
-    for (const p of deps.readPlans(path.join(plansDir, stage))) {
-      map.set(`${stage}/${p.name}.md`, deps.humanPlanName(titleOf(p.content, p.name, deps.parseMetadata), p.name));
-    }
-  }
-  return map;
-}
-
 /** The human name for a "stage/file.md" ref — read the plan for its title, fall back to slug. */
 function nameForRef(root, ref, deps) {
   const slash = String(ref).indexOf('/');
@@ -167,22 +142,18 @@ function nameForRef(root, ref, deps) {
 const MOVED_FORWARD = 'Moved forward on their own — enough was known to proceed without your OK';
 
 /**
- * (a) plans the sufficiency side effect just moved out of a pre-build stage, and the pending
- * list that same call returned (kept for the held line, never a second pass).
- * @returns {{lines: string[], pending: (Array<object>|null)}}
+ * (a) the pending list a bare read returns (kept for the held line, never a second pass).
+ * A bare pendingGateDecisions crosses nothing (four-defects s23), so there is no before/after
+ * difference to detect: the on-open banner reports no crossing. The continuation names its own
+ * crossings through `opts.crossed` (namedCrossedLines).
+ * @returns {(Array<object>|null)} the list, or null when it could not be read
  */
-function crossedLines(root, deps) {
+function readPending(root, deps) {
   try {
-    const before = preBuildSnapshot(root, deps);
-    const pending = deps.pendingGateDecisions(root); // sanctioned side effect: sufficiency auto-cross
-    const after = preBuildSnapshot(root, deps);
-    const crossed = [];
-    for (const [ref, name] of before) {
-      if (!after.has(ref)) crossed.push(name);
-    }
-    return { lines: crossed.length ? [`${MOVED_FORWARD}: ${summarize(crossed)}.`] : [], pending: Array.isArray(pending) ? pending : null };
+    const pending = deps.pendingGateDecisions(root);
+    return Array.isArray(pending) ? pending : null;
   } catch {
-    return { lines: [], pending: null };
+    return null;
   }
 }
 
@@ -275,7 +246,7 @@ function nextBuildLines(root, deps) {
  * With `opts.crossed` (the continuation's crossings, from `stream answer`) the crossed lines
  * name those plans and no crossing pass runs here; the held line then reads `opts.pending`
  * (none given, no held line). Without it — the on-open banner and the session-start status —
- * the directive runs its own pass as before and keeps the pending list that pass returns.
+ * the directive makes its own read (which crosses nothing) and keeps the pending list it returns.
  * @param {string} root - project root
  * @param {{crossed?: Array<object>, pending?: Array<object>}} [opts]
  * @returns {string} a leading-newline directive, or '' when there is nothing to report
@@ -287,10 +258,9 @@ function loopBDirective(root, opts = {}) {
   // of the three source helpers below is independently try/caught for fault isolation.
   const deps = buildDeps();
   const given = opts && Array.isArray(opts.crossed);
-  const own = given ? null : crossedLines(root, deps);
-  const pending = given ? (Array.isArray(opts.pending) ? opts.pending : null) : own.pending;
+  const pending = given ? (Array.isArray(opts.pending) ? opts.pending : null) : readPending(root, deps);
   const lines = [
-    ...(given ? namedCrossedLines(opts.crossed) : own.lines),
+    ...(given ? namedCrossedLines(opts.crossed) : []),
     ...heldLines(pending, deps),
     ...needQuestionLines(root, deps),
     ...nextBuildLines(root, deps),

@@ -19,6 +19,7 @@ const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const Module = require('node:module');
+const { spawnSync } = require('node:child_process');
 
 const menuScreens = require('../src/lib/menu-screens.js');
 const streamingGate = require('../src/lib/streaming-gate.js');
@@ -290,7 +291,7 @@ describe('crossings on evidence and the continuation (cases 1–13)', () => {
     assert.ok(Array.isArray(answered.promote) && answered.promote.some((t) => t.id === planTask.id));
   });
 
-  it('case 4 — a finished planner task with --continue moves a classified slice to todo and starts it', () => {
+  it('case 4 — a finished planner task with --continue moves a classified slice to todo and offers its build', () => {
     const root = makeSandbox();
     const ref = 'implementation/c4.md';
     writePlan(root, ref, implBody('Session store', ['src/c4.js']));
@@ -301,15 +302,22 @@ describe('crossings on evidence and the continuation (cases 1–13)', () => {
     const res = route(['menu', 'task', 'complete', add.taskId, '--continue'], root);
 
     assert.equal(res.ok, true);
-    assert.equal(exists(root, 'in-progress/c4.md'), true, 'the slice moved to todo and on into building');
+    assert.equal(exists(root, 'todo/c4.md'), true, 'the slice moved to todo');
+    assert.equal(exists(root, 'in-progress/c4.md'), false, 'and the continuation did not move it into the build');
     const impl = res.promote.find((t) => t.kind === 'implement' && t.plan === 'c4');
-    assert.ok(impl, 'the claimed build task is returned for the session to launch');
+    assert.ok(impl, 'the queued build task is returned for the session to launch');
+    assert.equal(tasks(root).find((t) => t.id === impl.id).status, 'queued', 'queued, not claimed');
     assert.deepEqual(impl.touches, ['src/c4.js', 'plans/todo/c4.md'], 'its files, plus the plan itself as every build task carries');
     assert.equal(tasks(root).some((t) => t.kind === 'classify'), false, 'a classified file needs no classification');
     assert.match(res.text, /· moved on: Session store/);
-    assert.match(res.text, /· started building: Session store/);
+    assert.doesNotMatch(res.text, /started building/);
 
-    // The session launches the claimed build and stamps it with the harness agent id.
+    // The session claims the build with its task start, which moves the plan into the build,
+    // and stamps it with the harness agent id.
+    const claim = route(['menu', 'task', 'start', impl.id], root);
+    assert.equal(claim.ok, true, JSON.stringify(claim));
+    assert.equal(exists(root, 'in-progress/c4.md'), true, 'the task start moved the plan into the build');
+    assert.equal(exists(root, 'todo/c4.md'), false);
     const stamped = route(['menu', 'task', 'start', impl.id, '--agent-id', 'agent-c4'], root);
     assert.equal(stamped.ok, true, JSON.stringify(stamped));
     const claimed = () => tasks(root).find((t) => t.id === impl.id);
@@ -470,6 +478,10 @@ describe('crossings on evidence and the continuation (cases 1–13)', () => {
     writePlan(root, ref, implBody('Webhooks', ['src/c12.js']));
     dropPending(root, ref, []);
     menuScreens.continueAfterCrossing(root);
+    assert.equal(exists(root, 'todo/c12.md'), true, 'the continuation left the slice in todo');
+    const queued = tasks(root).find((t) => t.kind === 'implement' && t.plan === 'c12');
+    assert.ok(queued && queued.status === 'queued', 'with a queued build in the registry');
+    assert.equal(route(['menu', 'task', 'start', queued.id], root).ok, true, 'the session claims it');
     const building = planPathOf(root, 'in-progress/c12.md');
     assert.equal(fs.existsSync(building), true);
 
@@ -1242,6 +1254,11 @@ describe('what the end-to-end run showed (cases 41–45)', () => {
     const screen = streamingGate.streamingGateScreen(root);
     assert.match(screen.text, /^ {2}Its questions are being checked by the gate critic; it moves on by itself once they are, or when you approve it\.$/m);
     assert.equal(Object.prototype.hasOwnProperty.call(screen.actions, 'Check its questions'), false);
+    // four-defects s23 (ruling 4): the crossing pass runs, so it is the unchecked file — not a
+    // missing `crossed` flag — that keeps the plan where it is.
+    const crossedByPass = [];
+    streamingGate.pendingGateDecisions(root, { crossed: crossedByPass });
+    assert.deepEqual(crossedByPass, [], 'the crossing pass crossed nothing');
     assert.equal(exists(root, ref), true, 'nothing moved');
   });
 
@@ -1336,7 +1353,7 @@ describe('the session continues after a build agent completed its own task (case
     assert.equal(ledger.readEntry('c46', root).advanced_by, 'pipeline');
     assert.match(res.text, /finished on their checks/);
     assert.ok(res.promote.some((t) => t.kind === 'implement' && t.plan === 'c46-next'),
-      'the next approved slice is claimed for building and returned to launch');
+      'the next approved slice is queued for building and returned to launch');
     assert.deepEqual(taskOf(root, id), before, 'nothing was written to the completed task');
   });
 
@@ -1594,11 +1611,15 @@ describe('a regulated project: the plan waits where the regime has no record (ca
     writePlan(root, 'functional/c52a.md', functionalBody('No regime idea'));
     writeQuestions(root, 'functional/c52a.md', []);
     seedBuilt(root, 'c52b');
+    // four-defects s23: the descriptors are read BARE first (a read moves nothing; the built plan's
+    // descriptor is read BEFORE the continuation finishes it); the continuation then crosses both.
     let ds = streamingGate.pendingGateDecisions(root);
-    assert.equal(exists(root, 'implementation/c52a.md'), true, 'no regime: the functional plan moves on');
+    assert.equal(exists(root, 'functional/c52a.md'), true, 'a bare read moves nothing');
+    assert.equal(exists(root, 'review/c52b.md'), true, 'a bare read finishes nothing');
     assert.equal(descriptorOf(root, 'review/c52b.md').regimeHold, null);
     assert.ok(ds.every((d) => d.regimeHold === null));
     menuScreens.continueAfterCrossing(root);
+    assert.equal(exists(root, 'implementation/c52a.md'), true, 'no regime: the functional plan moves on');
     assert.equal(exists(root, 'done/c52b.md'), true, 'no regime: the built plan finishes on its checks');
 
     // GDPR: implementation → todo and review → done are not its crossings.
@@ -1608,9 +1629,10 @@ describe('a regulated project: the plan waits where the regime has no record (ca
     writeQuestions(root, 'implementation/c52c.md', []);
     seedBuilt(root, 'c52d');
     ds = streamingGate.pendingGateDecisions(root);
-    assert.equal(exists(root, 'todo/c52c.md'), true, 'gdpr: the slice moves into the build queue');
+    assert.equal(exists(root, 'implementation/c52c.md'), true, 'a bare read moves nothing');
     assert.ok(ds.every((d) => d.regimeHold === null));
     menuScreens.continueAfterCrossing(root);
+    assert.equal(exists(root, 'todo/c52c.md'), true, 'gdpr: the slice moves into the build queue');
     assert.equal(exists(root, 'done/c52d.md'), true, 'gdpr: the built plan finishes on its checks');
 
     // Independent verification: functional → implementation is not its crossing.
@@ -1619,6 +1641,8 @@ describe('a regulated project: the plan waits where the regime has no record (ca
     writePlan(root, 'functional/c52e.md', functionalBody('Verified idea'));
     writeQuestions(root, 'functional/c52e.md', []);
     streamingGate.pendingGateDecisions(root);
+    assert.equal(exists(root, 'functional/c52e.md'), true, 'a bare read moves nothing');
+    menuScreens.continueAfterCrossing(root);
     assert.equal(exists(root, 'implementation/c52e.md'), true, 'do-178c-level-a: the functional plan moves on');
   });
 
@@ -1685,6 +1709,11 @@ describe('a real project has no profile folder: the shipped profiles are read (c
     assert.match(text, /Its questions are being checked by the gate critic/);
     assert.ok(text.includes(REGIME_SENTENCES['compliance-review']), text);
     assert.doesNotMatch(text, /moves on by itself/);
+    // four-defects s23 (ruling 4): the crossing pass runs, so the plan stays because of what it names, not
+    // because a bare read no longer crosses.
+    const crossedByPass = [];
+    streamingGate.pendingGateDecisions(root, { crossed: crossedByPass });
+    assert.deepEqual(crossedByPass, [], 'the crossing pass crossed nothing');
     assert.equal(exists(root, ref), true);
   });
 
@@ -1754,9 +1783,12 @@ describe('a real project has no profile folder: the shipped profiles are read (c
       const root = makeSandbox();
       writeSettingsText(root, text);
       const fref = readyPair(root);
+      // four-defects s23: a bare read of the descriptors moves nothing; the continuation crosses both.
       assert.equal(descriptorOf(root, 'review/c56r.md').regimeHold, null);
-      assert.equal(exists(root, 'implementation/c56f.md'), true, 'the functional plan moved on');
+      assert.equal(exists(root, fref), true, 'a bare read moves nothing');
+      assert.equal(exists(root, 'review/c56r.md'), true, 'a bare read finishes nothing');
       menuScreens.continueAfterCrossing(root);
+      assert.equal(exists(root, 'implementation/c56f.md'), true, 'the functional plan moved on');
       assert.equal(exists(root, 'done/c56r.md'), true, 'the built plan finished on its checks');
       assert.equal(exists(root, fref), false);
     });
@@ -1834,6 +1866,9 @@ describe('a real project has no profile folder: the shipped profiles are read (c
     assert.equal(d.regimeHold, 'compliance-review');
     assert.equal(exists(root, fref), true);
     menuScreens.continueAfterCrossing(root);
+    // four-defects s23 (ruling 4): after the continuation, so the compliance review — not a bare read —
+    // is what keeps the functional plan where it is.
+    assert.equal(exists(root, fref), true, 'the continuation leaves the functional plan for the compliance review');
     assert.equal(exists(root, 'done/c56r.md'), true, 'a GDPR project still finishes a built plan on its checks');
   });
 
@@ -1842,5 +1877,523 @@ describe('a real project has no profile folder: the shipped profiles are read (c
     setRegime(root, { profiles: ['do-178c-levl-a'], copy: false });
     seedBuilt(root, 'c54m');
     assertBuiltHeld(root, 'c54m', 'regime-unreadable');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// four-defects s23 — opening a screen never crosses a gate
+// ─────────────────────────────────────────────────────────────────────────────
+describe('opening a screen crosses no gate (four-defects s23, block A)', () => {
+  /** A ready functional plan and a built review plan: both would cross on the continuation's pass. */
+  function seedReady(root) {
+    writePlan(root, 'functional/s1.md', functionalBody('Saved searches'));
+    writeQuestions(root, 'functional/s1.md', []);
+    seedBuilt(root, 's1b');
+  }
+  function assertNothingCrossed(root, label) {
+    assert.equal(exists(root, 'functional/s1.md'), true, `${label}: the ready plan is still in functional`);
+    assert.equal(exists(root, 'implementation/s1.md'), false, `${label}: nothing landed in implementation`);
+    assert.equal(ledger.readEntry('s1', root), null, `${label}: no approval entry was written for the ready plan`);
+    assert.equal(exists(root, 'review/s1b.md'), true, `${label}: the built plan is still in review`);
+    assert.equal(exists(root, 'done/s1b.md'), false, `${label}: nothing finished`);
+    assert.equal(ledger.readEntry('s1b', root).stage_to, 'todo', `${label}: the built plan's entry is as it was seeded`);
+  }
+
+  const fref = 'functional/s1.md';
+  const reads = {
+    'stream skip': (root) => route(['stream', 'skip', fref], root),
+    'stream comment': (root) => route(['stream', 'comment', fref, 'note'], root),
+    'stream check': (root) => route(['stream', 'check', fref], root),
+    'stream (bare)': (root) => route(['stream'], root),
+    'plan (no reference)': (root) => route(['plan'], root),
+    'streamingGateScreen': (root) => streamingGate.streamingGateScreen(root),
+    'pendingGateDecisions (bare)': (root) => streamingGate.pendingGateDecisions(root),
+    'loopBDirective': (root) => loopBDirective(root),
+    'plansNeedingQuestions': (root) => precompute.plansNeedingQuestions(root),
+    'plan <ref> (the ready plan\'s own screen)': (root) => route(['plan', fref], root),
+  };
+  for (const [label, read] of Object.entries(reads)) {
+    it(`S23-1 — ${label} crosses nothing`, () => {
+      const root = makeSandbox();
+      seedReady(root);
+      read(root);
+      assertNothingCrossed(root, label);
+    });
+  }
+
+  it('S23-2 — the continuation, and the crossing pass, still cross', () => {
+    const root = makeSandbox();
+    seedReady(root);
+    const cont = menuScreens.continueAfterCrossing(root);
+    assert.equal(exists(root, 'implementation/s1.md'), true, 'the continuation crosses the ready plan');
+    assert.equal(ledger.readEntry('s1', root).advanced_by, 'sufficiency');
+    assert.equal(exists(root, 'done/s1b.md'), true, 'and finishes the built plan');
+    assert.ok(cont.crossed.some((c) => c.ref === 'implementation/s1.md'));
+
+    const other = makeSandbox();
+    seedReady(other);
+    const crossed = [];
+    streamingGate.pendingGateDecisions(other, { crossed });
+    assert.equal(exists(other, 'implementation/s1.md'), true, 'an empty crossing list is a crossing pass');
+    assert.equal(ledger.readEntry('s1', other).advanced_by, 'sufficiency');
+    assert.ok(crossed.some((c) => c.ref === 'implementation/s1.md'));
+  });
+
+  describe('S23-3 — starting the menu with no arguments, through each launcher, crosses nothing', () => {
+    const startJs = path.join(__dirname, '..', 'src', 'commands', 'start.js');
+    const node = process.execPath;
+    function scrubbedEnv() {
+      const env = { ...process.env };
+      delete env.CLAUDE_PROJECT_DIR;
+      delete env.CTOC_ROOT;
+      delete env.CTOC_PROJECT_ROOT;
+      return env;
+    }
+    const TIMEOUT = 120000;
+    const launchers = {
+      'a Node child process': (root) => spawnSync(node, [startJs], { cwd: root, env: scrubbedEnv(), encoding: 'utf8', timeout: TIMEOUT }),
+      // sh -c: the two paths travel as $0 and $1, never spliced into the script text.
+      'sh -c': (root) => spawnSync('sh', ['-c', '"$0" "$1"', node, startJs], { cwd: root, env: scrubbedEnv(), encoding: 'utf8', timeout: TIMEOUT }),
+      'env': (root) => spawnSync('env', [node, startJs], { cwd: root, env: scrubbedEnv(), encoding: 'utf8', timeout: TIMEOUT }),
+      'xargs': (root) => spawnSync('xargs', ['-I', '{}', node, startJs], { cwd: root, env: scrubbedEnv(), encoding: 'utf8', input: 'x\n', timeout: TIMEOUT }),
+      'find -exec': (root) => spawnSync('find', ['.', '-maxdepth', '0', '-exec', node, startJs, ';'], { cwd: root, env: scrubbedEnv(), encoding: 'utf8', timeout: TIMEOUT }),
+    };
+
+    /** Seed the beacon plan (always asked: it holds an open fork) and the target plan (ready to cross). */
+    function seedLauncher(root) {
+      const beacon = `Launcher beacon ${crypto.randomBytes(6).toString('hex')}`;
+      // The beacon sits in review: the default screen lists review before implementation before functional,
+      // so an open-fork plan there is the decision asked on EVERY version of the code. (In functional it
+      // would be asked second before the fix, once the crossed target lands in implementation ahead of it.)
+      writePlan(root, 'review/beacon.md', reviewBody(beacon));
+      writeQuestions(root, 'review/beacon.md', [fork('q10-db')]);
+      writePlan(root, 'functional/target.md', functionalBody('Launcher target'));
+      writeQuestions(root, 'functional/target.md', []);
+      return beacon;
+    }
+    /** Run the launcher; assert it reached THIS sandbox's menu, then that nothing crossed. */
+    function proveLauncher(root, beacon, res) {
+      assert.ok(res.stdout && res.stdout.includes(beacon),
+        `beacon missing: the launcher did not render this sandbox's menu (status ${res.status}, error ${res.error ? res.error.code || res.error.message : 'none'}, stderr ${String(res.stderr).slice(0, 500)})`);
+      assert.equal(exists(root, 'functional/target.md'), true,
+        'crossing: starting the menu moved the ready plan across a gate');
+      assert.equal(ledger.readEntry('target', root), null,
+        'crossing: starting the menu recorded an approval entry for the ready plan');
+    }
+
+    it('S23-3 — a Node child process starts the menu and crosses nothing', () => {
+      const root = makeSandbox();
+      const beacon = seedLauncher(root);
+      proveLauncher(root, beacon, launchers['a Node child process'](root));
+    });
+
+    if (process.platform !== 'win32') {
+      for (const label of ['sh -c', 'env', 'xargs', 'find -exec']) {
+        it(`S23-3 — ${label} starts the menu and crosses nothing`, () => {
+          const root = makeSandbox();
+          const beacon = seedLauncher(root);
+          proveLauncher(root, beacon, launchers[label](root));
+        });
+      }
+
+      const rgRuns = spawnSync('rg', ['--version'], { encoding: 'utf8' }).status === 0; // a missing rg returns status null
+      if (rgRuns) {
+        it('S23-3 — rg --pre starts the menu and crosses nothing', () => {
+          const root = makeSandbox();
+          const beacon = seedLauncher(root);
+          // --no-config first, so a personal ripgrep config cannot change the case; ripgrep runs
+          // `node start.js` (no arguments) as the preprocessor of the one file it searches.
+          const res = spawnSync('rg', ['--no-config', '--pre', node, '--pre-glob', '*start.js', beacon, startJs],
+            { cwd: root, env: scrubbedEnv(), encoding: 'utf8', timeout: TIMEOUT });
+          proveLauncher(root, beacon, res);
+        });
+      } else if (process.env.CI) {
+        it('S23-3 — rg --pre: ripgrep must run on continuous integration', () => {
+          assert.fail('ripgrep (rg) is required on continuous integration for the launcher reproduction and did not run');
+        });
+      }
+      // A developer machine without ripgrep registers no rg case; the other launchers prove the class there.
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('a plan that needs nothing from the owner is not put to him (four-defects s23, block B)', () => {
+  const idleLine = (text, name) => {
+    assert.match(text, /Ready, but nothing is running that would move it on: /);
+    assert.ok(text.includes(name), `the ready line names ${name}:\n${text}`);
+    assert.match(text, /approving records it as your approval\./);
+    assert.doesNotMatch(text, /moving on by itself/);
+  };
+  const busyLine = (text, name) => {
+    assert.match(text, /Ready, moving on by itself at the next step: /);
+    assert.ok(text.includes(name), `the ready line names ${name}:\n${text}`);
+    assert.match(text, /to approve one now yourself, say which\./);
+    assert.doesNotMatch(text, /nothing is running/);
+  };
+  const noReadyLine = (screen) => {
+    assert.doesNotMatch(screen.text, /Ready, (but nothing is running|moving on by itself)/);
+    assert.equal(screen.ready, undefined);
+  };
+  const allOptions = (screen) => screen.ask.questions.flatMap((q) => q.options);
+  const NOTHING = 'Nothing waiting at a gate — what next?';
+
+  it('B1 — a ready plan whose file holds only details is not asked; the owner can approve it now', () => {
+    const root = makeSandbox();
+    writePlan(root, 'functional/r1.md', functionalBody('Search by title'));
+    writeQuestions(root, 'functional/r1.md', [
+      { ...detail('q10-name', 'What is the button called?', ['Short name', 'Long name']), important: true },
+      detail('q11-color', 'Which colour?', ['Blue', 'Red']),
+    ]);
+    writePlan(root, 'functional/n1.md', functionalBody('Billing export'));
+    writeQuestions(root, 'functional/n1.md', [fork('q10-db')]);
+
+    const screen = streamingGate.streamingGateScreen(root);
+
+    assert.equal(promptOf(screen), 'Which database engine?');
+    assert.match(screen.text, /^Topic: Billing export/m);
+    for (const gone of ['What is the button called?', 'Which colour?']) {
+      assert.equal(screen.text.includes(gone), false, `${gone} is not in the text`);
+      assert.equal(screen.ask.questions.some((q) => q.question === gone), false, `${gone} is not asked`);
+    }
+    assert.equal(allOptions(screen).some((o) => ['Short name', 'Long name', 'Blue', 'Red'].includes(o.label)), false);
+    idleLine(screen.text, 'Search by title');
+    assert.deepEqual(screen.ready, [{ name: 'Search by title', approve: 'stream approve functional/r1.md' }]);
+    assert.equal(exists(root, 'functional/r1.md'), true);
+    assert.equal(ledger.readEntry('r1', root), null);
+
+    runAction(root, screen.ready[0].approve);
+    assert.equal(exists(root, 'implementation/r1.md'), true, "the owner's approve crosses it");
+    assert.equal(ledger.readEntry('r1', root).approved_by, 'human');
+  });
+
+  it('B2 — only a ready plan: the nothing-pending screen with the ready line; the continuation crosses exactly it', () => {
+    const root = makeSandbox();
+    writePlan(root, 'functional/r2.md', functionalBody('Saved searches'));
+    writeQuestions(root, 'functional/r2.md', []);
+
+    const screen = streamingGate.streamingGateScreen(root);
+
+    assert.equal(promptOf(screen), NOTHING);
+    idleLine(screen.text, 'Saved searches');
+    assert.deepEqual(screen.ready, [{ name: 'Saved searches', approve: 'stream approve functional/r2.md' }]);
+    assert.equal(exists(root, 'functional/r2.md'), true);
+
+    const other = makeSandbox();
+    writePlan(other, 'functional/r2.md', functionalBody('Saved searches'));
+    writeQuestions(other, 'functional/r2.md', []);
+    menuScreens.continueAfterCrossing(other);
+    assert.equal(exists(other, 'implementation/r2.md'), true);
+    const entry = ledger.readEntry('r2', other);
+    assert.equal(entry.advanced_by, 'sufficiency');
+    assert.equal(Object.prototype.hasOwnProperty.call(entry, 'approved_by'), false);
+  });
+
+  it('B2b — the nothing-pending screen with a ready line does not say every plan has been decided', () => {
+    const root = makeSandbox();
+    writePlan(root, 'functional/r2b.md', functionalBody('Saved searches'));
+    writeQuestions(root, 'functional/r2b.md', []);
+
+    const screen = streamingGate.streamingGateScreen(root);
+
+    assert.equal(promptOf(screen), NOTHING);
+    idleLine(screen.text, 'Saved searches');
+    assert.doesNotMatch(screen.text, /has been decided/);
+    assert.match(screen.text, /Nothing at a human gate needs a decision from you\./);
+  });
+
+  it('B2c — screen.ready caps a long plan name the way the ready line does', () => {
+    const root = makeSandbox();
+    const long = `Saved searches ${'x'.repeat(200)}`;
+    writePlan(root, 'functional/r2c.md', functionalBody(long));
+    writeQuestions(root, 'functional/r2c.md', []);
+
+    const screen = streamingGate.streamingGateScreen(root);
+
+    assert.equal(screen.ready.length, 1);
+    assert.equal(screen.ready[0].name.length <= 80, true, `the name is capped (${screen.ready[0].name.length} characters)`);
+    assert.match(screen.ready[0].name, /…$/);
+    assert.equal(screen.text.includes(screen.ready[0].name), true, 'the ready line carries the same capped name');
+    assert.equal(screen.text.includes(long), false);
+    assert.equal(screen.ready[0].approve, 'stream approve functional/r2c.md');
+  });
+
+  describe('B3 — the screens after skip, comment and a refused approve leave the ready plan out and name it', () => {
+    const n3 = 'functional/n3.md';
+    function seed() {
+      const root = makeSandbox();
+      writePlan(root, n3, functionalBody('Broken idea').replace('## Acceptance Criteria\n- [ ] the thing works\n\n', ''));
+      writePlan(root, 'functional/r3.md', functionalBody('Ready idea'));
+      writeQuestions(root, 'functional/r3.md', []);
+      const d = streamingGate.pendingGateDecisions(root).find((x) => x.ref === n3);
+      assert.equal(d.passesValidation, false, 'fixture: n3 fails validation');
+      return root;
+    }
+    const assertReadyOnly = (root, screen) => {
+      assert.equal(promptOf(screen), NOTHING);
+      idleLine(screen.text, 'Ready idea');
+      assert.deepEqual(screen.ready, [{ name: 'Ready idea', approve: 'stream approve functional/r3.md' }]);
+      assert.equal(exists(root, 'functional/r3.md'), true, 'r3 did not move');
+    };
+    it('after skip', () => {
+      const root = seed();
+      assertReadyOnly(root, route(['stream', 'skip', n3], root));
+    });
+    it('after comment', () => {
+      const root = seed();
+      assertReadyOnly(root, route(['stream', 'comment', n3, 'note'], root));
+    });
+    it('after a refused approve', () => {
+      const root = seed();
+      const screen = route(['stream', 'approve', n3], root);
+      assert.match(screen.text, /^Refused n3\.md/);
+      assertReadyOnly(root, screen);
+      assert.equal(exists(root, n3), true);
+    });
+  });
+
+  it("B9b — the plan's own screen says when the waiting folder could not be taken in, and then shows no ready line", () => {
+    const root = makeSandbox();
+    writePlan(root, 'functional/r9c.md', functionalBody('Tag shapes'));
+    dropPending(root, 'functional/r9c.md', []); // the gate critic's file waits; only the sweep would take it in
+    const sweeperPath = require.resolve('../src/lib/streaming-questions-sweeper.js');
+    const origLoad = Module._load;
+    Module._load = function patched(request, parent, isMain) {
+      let resolved = null;
+      try { resolved = Module._resolveFilename(request, parent, isMain); } catch { /* not resolvable */ }
+      if (resolved === sweeperPath) throw new Error('SIMULATED sweeper load failure');
+      return origLoad.apply(this, arguments);
+    };
+    let screen;
+    try { screen = route(['plan', 'functional/r9c.md'], root); } finally { Module._load = origLoad; }
+
+    assert.match(screen.text, /^New questions could not be taken in \(SIMULATED sweeper load failure\)\./);
+    assert.doesNotMatch(screen.text, /Ready, (but nothing is running|moving on by itself)/);
+    assert.equal(exists(root, 'functional/r9c.md'), true);
+  });
+
+  it('B3b — a plan that fails validation is not ready even with enough information: it is asked, and the continuation leaves it', () => {
+    const root = makeSandbox();
+    writePlan(root, 'functional/n3b.md', functionalBody('Broken but answered').replace('## Acceptance Criteria\n- [ ] the thing works\n\n', ''));
+    writeQuestions(root, 'functional/n3b.md', []);
+    const d = streamingGate.pendingGateDecisions(root).find((x) => x.ref === 'functional/n3b.md');
+    assert.equal(d.enough === true && d.passesValidation === false, true, 'fixture: enough information, failing validation');
+
+    const screen = streamingGate.streamingGateScreen(root);
+    assert.match(screen.text, /^Topic: Broken but answered/m);
+    noReadyLine(screen);
+    menuScreens.continueAfterCrossing(root);
+    assert.equal(exists(root, 'functional/n3b.md'), true, 'the crossing refuses a failing validation, as the predicate does');
+  });
+
+  it('B3c — a built plan in review is never on the ready line, however much information it has', () => {
+    const root = makeSandbox();
+    const built = seedBuilt(root, 'b3c');
+    writeQuestions(root, built.ref, []);
+    const d = streamingGate.pendingGateDecisions(root).find((x) => x.ref === built.ref);
+    assert.equal(d.enough === true && d.passesValidation === true, true, 'fixture: the built plan could cross on its checks');
+
+    const screen = streamingGate.streamingGateScreen(root);
+    assert.match(screen.text, /^Topic: b3c built feature/m, 'it is a decision at the final sign-off, not a ready line');
+    noReadyLine(screen);
+    assert.equal(exists(root, built.ref), true);
+  });
+
+  it('B4 — an approval entry already recorded for the destination: NOT ready, asked with Approve Recommended', () => {
+    const root = makeSandbox();
+    const p = writePlan(root, 'functional/r4.md', functionalBody('Export to CSV'));
+    writeQuestions(root, 'functional/r4.md', []);
+    ledger.writeEntry('r4', { content: fs.readFileSync(p, 'utf8'), stage_from: 'functional', stage_to: 'implementation' }, root);
+    const d = streamingGate.pendingGateDecisions(root).find((x) => x.ref === 'functional/r4.md');
+    assert.equal(d.enough === true && d.passesValidation === true, true, 'fixture: only the entry makes it not ready');
+
+    const screen = streamingGate.streamingGateScreen(root);
+    assert.match(screen.text, /^Topic: Export to CSV/m);
+    const first = screen.ask.questions[0].options[0];
+    assert.equal(first.label, d.approveLabel);
+    assert.match(first.description, /^Recommended/);
+    assert.equal(screen.actions[first.label], 'stream approve functional/r4.md');
+    noReadyLine(screen);
+
+    const plan = route(['plan', 'functional/r4.md'], root);
+    noReadyLine(plan);
+    assert.equal(plan.ask.questions[0].options[0].label, d.approveLabel);
+    assert.match(plan.ask.questions[0].options[0].description, /^Recommended/);
+
+    menuScreens.continueAfterCrossing(root);
+    assert.equal(exists(root, 'functional/r4.md'), true, "the crossing's own refusal agrees with the predicate");
+  });
+
+  it('B5 — a plan file of the same name already at the destination: NOT ready, asked with Approve Recommended', () => {
+    const root = makeSandbox();
+    writePlan(root, 'functional/r5.md', functionalBody('Import from CSV'));
+    writeQuestions(root, 'functional/r5.md', []);
+    const other = writePlan(root, 'implementation/r5.md', implBody('Other work'));
+    const otherBytes = fs.readFileSync(other);
+    const d = streamingGate.pendingGateDecisions(root).find((x) => x.ref === 'functional/r5.md');
+    assert.equal(d.enough === true && d.passesValidation === true, true, 'fixture: only the clash makes it not ready');
+
+    const screen = streamingGate.streamingGateScreen(root);
+    noReadyLine(screen);
+    assert.match(screen.text, /^Topic: Other work/m, 'the implementation stage is listed before functional');
+
+    const next = route(['stream', 'skip', 'implementation/r5.md'], root);
+    assert.match(next.text, /^Topic: Import from CSV/m);
+    assert.match(next.ask.questions[0].options[0].description, /^Recommended/);
+    noReadyLine(next);
+
+    menuScreens.continueAfterCrossing(root);
+    assert.equal(exists(root, 'functional/r5.md'), true);
+    assert.deepEqual(fs.readFileSync(other), otherBytes, 'the plan at the destination is untouched');
+    assert.equal(ledger.readEntry('r5', root), null);
+  });
+
+  it('B6 — a file name the approval record cannot key: NOT ready, asked (the fault path)', () => {
+    const root = makeSandbox();
+    writePlan(root, 'functional/r_6.md', functionalBody('Bulk rename'));
+    writeQuestions(root, 'functional/r_6.md', []);
+    const d = streamingGate.pendingGateDecisions(root).find((x) => x.ref === 'functional/r_6.md');
+    assert.equal(d.enough === true && d.passesValidation === true, true, 'fixture: the name alone makes it not ready');
+
+    const screen = streamingGate.streamingGateScreen(root);
+    assert.match(screen.text, /^Topic: Bulk rename/m);
+    noReadyLine(screen);
+    menuScreens.continueAfterCrossing(root);
+    assert.equal(exists(root, 'functional/r_6.md'), true);
+  });
+
+  it('B6b — a foreign approval entry on the same canonical key (a mixed-case twin): NOT ready, asked, and the continuation leaves it', () => {
+    const root = makeSandbox();
+    const p = writePlan(root, 'functional/Twin-Plan.md', functionalBody('Twin plan'));
+    writeQuestions(root, 'functional/Twin-Plan.md', []);
+    // The twin's entry: key `twin-plan`, original basename in lower case, a different edge
+    // (so the "already crossed this edge" refusal is not the one that holds).
+    const foreign = ledger.writeEntry('twin-plan', {
+      content: fs.readFileSync(p, 'utf8'), stage_from: 'implementation', stage_to: 'todo', plan_basename: 'twin-plan',
+    }, root);
+    const d = streamingGate.pendingGateDecisions(root).find((x) => x.ref === 'functional/Twin-Plan.md');
+    assert.equal(d.enough === true && d.passesValidation === true, true, 'fixture: only the foreign entry makes it not ready');
+
+    const screen = streamingGate.streamingGateScreen(root);
+    assert.match(screen.text, /^Topic: Twin plan/m, 'it is asked');
+    noReadyLine(screen);
+    assert.match(screen.ask.questions[0].options[0].description, /^Recommended/);
+    const own = route(['plan', 'functional/Twin-Plan.md'], root);
+    noReadyLine(own);
+    assert.match(own.ask.questions[0].options[0].description, /^Recommended/, "Approve is Recommended on the plan's own screen");
+
+    menuScreens.continueAfterCrossing(root);
+    assert.equal(exists(root, 'functional/Twin-Plan.md'), true, "the crossing's own case-collision refusal agrees with the predicate");
+    assert.deepEqual(ledger.readEntry('twin-plan', root), foreign, "the twin's record is untouched");
+  });
+
+  it('B6c — a specification that cannot be bound (no frontmatter): NOT ready, asked, and the continuation leaves it', () => {
+    const root = makeSandbox();
+    const bare = '# No front matter\n\n## Problem Statement\nThe thing is broken.\n\n## Acceptance Criteria\n- [ ] the thing works\n\n## Scope\nThe module.\n';
+    writePlan(root, 'functional/nofm.md', bare);
+    writeQuestions(root, 'functional/nofm.md', []);
+    assert.equal(ledger.computeSpecHash(bare).ok, false, 'fixture: the record cannot bind this text');
+    const d = streamingGate.pendingGateDecisions(root).find((x) => x.ref === 'functional/nofm.md');
+    assert.equal(d.enough === true && d.passesValidation === true, true, 'fixture: only the unbindable text makes it not ready');
+
+    const screen = streamingGate.streamingGateScreen(root);
+    assert.match(screen.text, /^Topic: No front matter/m, 'it is asked');
+    noReadyLine(screen);
+    assert.match(screen.ask.questions[0].options[0].description, /^Recommended/, 'Approve is Recommended on the queue');
+    const own = route(['plan', 'functional/nofm.md'], root);
+    noReadyLine(own);
+    assert.match(own.ask.questions[0].options[0].description, /^Recommended/, "Approve is Recommended on the plan's own screen");
+
+    menuScreens.continueAfterCrossing(root);
+    assert.equal(exists(root, 'functional/nofm.md'), true);
+    assert.equal(ledger.readEntry('nofm', root), null);
+  });
+
+  it('B7 — the ready line still renders when the name cap cannot load (fail-soft)', () => {
+    const root = makeSandbox();
+    writePlan(root, 'functional/r7.md', functionalBody('Saved searches'));
+    writeQuestions(root, 'functional/r7.md', []);
+    const driverPath = require.resolve('../src/lib/loop-b-driver.js');
+    const origLoad = Module._load;
+    Module._load = function patched(request, parent, isMain) {
+      let resolved = null;
+      try { resolved = Module._resolveFilename(request, parent, isMain); } catch { /* not resolvable */ }
+      if (resolved === driverPath) throw new Error('SIMULATED loop-b-driver load failure');
+      return origLoad.apply(this, arguments);
+    };
+    let screen;
+    try { screen = streamingGate.streamingGateScreen(root); } finally { Module._load = origLoad; }
+
+    assert.equal(promptOf(screen), NOTHING);
+    idleLine(screen.text, 'Saved searches');
+    assert.equal(exists(root, 'functional/r7.md'), true);
+  });
+
+  it('B8 — the line says whether anything will move the plan', () => {
+    const root = makeSandbox();
+    writePlan(root, 'functional/r8.md', functionalBody('Saved filters'));
+    writeQuestions(root, 'functional/r8.md', []);
+    const textNow = () => streamingGate.streamingGateScreen(root).text;
+    const unmoved = () => {
+      assert.equal(exists(root, 'functional/r8.md'), true);
+      assert.equal(ledger.readEntry('r8', root), null);
+    };
+
+    idleLine(textNow(), 'Saved filters');
+    unmoved();
+
+    const add = route(['menu', 'task', 'add', 'plan', 'b8-other'], root);
+    assert.equal(tasks(root).find((t) => t.id === add.taskId).status, 'queued');
+    busyLine(textNow(), 'Saved filters');
+    unmoved();
+
+    route(['menu', 'task', 'start', add.taskId], root);
+    assert.equal(tasks(root).find((t) => t.id === add.taskId).status, 'running');
+    busyLine(textNow(), 'Saved filters');
+    unmoved();
+
+    route(['menu', 'task', 'complete', add.taskId], root); // without --continue: no continuation runs
+    assert.equal(tasks(root).find((t) => t.id === add.taskId).status, 'done');
+    idleLine(textNow(), 'Saved filters');
+    unmoved();
+
+    fs.writeFileSync(registryFile(root), '{');
+    idleLine(textNow(), 'Saved filters');
+    unmoved();
+  });
+
+  it("B9 — the plan's own screen puts a ready plan to him as no question", () => {
+    const root = makeSandbox();
+    writePlan(root, 'functional/r9.md', functionalBody('Search by tag'));
+    writeQuestions(root, 'functional/r9.md', [
+      { ...detail('q10-name', 'What is the button called?', ['Short name', 'Long name']), important: true },
+      detail('q11-color', 'Which colour?', ['Blue', 'Red']),
+    ]);
+
+    const s = route(['plan', 'functional/r9.md'], root);
+
+    idleLine(s.text, 'Search by tag');
+    for (const gone of ['What is the button called?', 'Which colour?']) {
+      assert.equal(s.ask.questions.some((q) => q.question === gone), false, `${gone} is not asked`);
+      assert.equal(s.text.includes(gone), false, `${gone} is not in the text`);
+    }
+    assert.equal(allOptions(s).some((o) => ['Short name', 'Long name', 'Blue', 'Red'].includes(o.label)), false);
+    const approveLabel = Object.keys(s.actions).find((k) => s.actions[k] === 'stream approve functional/r9.md');
+    assert.ok(approveLabel && s.ask.questions[0].options.some((o) => o.label === approveLabel), 'Approve is offered on the first question');
+    assert.equal(allOptions(s).some((o) => /Recommended/.test(o.description)), false, 'no option is marked Recommended');
+    assert.equal(exists(root, 'functional/r9.md'), true);
+    assert.equal(ledger.readEntry('r9', root), null);
+
+    route(['menu', 'task', 'add', 'plan', 'b9-other'], root);
+    busyLine(route(['plan', 'functional/r9.md'], root).text, 'Search by tag');
+
+    // The gate critic's file has only just arrived: the plan screen takes it in before it decides.
+    const second = makeSandbox();
+    writePlan(second, 'functional/r9b.md', functionalBody('Tag colours'));
+    dropPending(second, 'functional/r9b.md', []);
+    const t = route(['plan', 'functional/r9b.md'], second);
+    idleLine(t.text, 'Tag colours');
+    assert.equal(allOptions(t).some((o) => /Recommended/.test(o.description)), false);
+    assert.equal(exists(second, 'functional/r9b.md'), true);
   });
 });

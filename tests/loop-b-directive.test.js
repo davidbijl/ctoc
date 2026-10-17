@@ -3,14 +3,14 @@
 /**
  * Loop-B tick (slice 2) — `loopBDirective(root)` composes three EXISTING functions
  * into ONE human-readable line describing the state of CTOC's build loop:
- *   (a) what just auto-crossed on sufficiency  (pendingGateDecisions' sanctioned side effect)
+ *   (a) what the continuation just crossed on sufficiency  (handed in via opts.crossed; a bare read crosses nothing)
  *   (b) which plans still need their questions generated  (plansNeedingQuestions)
  *   (c) the next plan to build  (nextBuildable)
  * and '' when all three are empty.
  *
  * Real temp-dir state + real Gate-2 ledger entries (mirrors tests/continuation-queue.test.js).
- * NOTHING mocked except, in the two isolation tests, the ONE composed function whose
- * behaviour we are deliberately provoking (a throw, and its documented cross side effect).
+ * NOTHING mocked except, in the isolation test, the ONE composed function whose
+ * behaviour we are deliberately provoking (a throw).
  *
  * LANGUAGE RULE pinned here: no gate number, no raw stage name reaches the returned
  * string (src/lib/gate-words.js phrasing only; plan named by human title).
@@ -303,29 +303,46 @@ test('the cap names EXACTLY the default of 5 when the group is larger', () => {
   } finally { cleanup(dir); }
 });
 
-// ── (a) real cross detection: a plan that LEAVES its pre-build stage is named ────
+// ── (a) the on-open read crosses nothing (four-defects s23) ───────────────────────
 
-test('a sufficiency auto-cross (plan leaves its pre-build stage) is named in plain moment language', () => {
+/** A functional plan that passes the functional-to-implementation validation. */
+function makeFunctional(root, slug, title) {
+  const p = path.join(root, 'plans', 'functional', `${slug}.md`);
+  fs.writeFileSync(p, `---\ntitle: ${title}\n---\n\n# ${title}\n\n## Problem Statement\nThe thing is broken.\n\n`
+    + '## Acceptance Criteria\n- [ ] the thing works\n\n## Scope\nThe module.\n');
+  return p;
+}
+
+test('a plan with enough information is NOT crossed or named by the on-open read (a read crosses nothing)', () => {
   const dir = mkProject();
-  const orig = streamingGate.pendingGateDecisions;
   try {
-    const crossing = makePlan(dir, 'implementation', '00080-quick-filters', { title: 'Quick filters' });
-    makePlan(dir, 'implementation', '00081-saved-views', { title: 'Saved views' }); // stays
-    // Emulate pendingGateDecisions' DOCUMENTED side effect: the sufficiency cross moves
-    // the plan out of its pre-build stage. loopBDirective adds no crossing logic of its
-    // own; it only reports the before/after difference the side effect produced.
-    streamingGate.pendingGateDecisions = () => {
-      if (fs.existsSync(crossing)) fs.rmSync(crossing);
-      return [];
-    };
+    const ready = makeFunctional(dir, 'ready-plan', 'Quick filters');
+    // The gate critic ran and found nothing to ask: the plan has enough information, so the
+    // continuation's pass WOULD cross it. The on-open read must not.
+    const res = streamingPrecompute.writePlanQuestions(dir, 'functional/ready-plan.md', [], fs.statSync(ready).mtimeMs,
+      undefined, { by: 'gate-critic', at: 1786000000000 });
+    assert.strictEqual(res.ok, true, `fixture: questions written (${(res.errors || []).join('; ')})`);
     const out = driver.loopBDirective(dir);
-    assert.ok(out.includes('Quick filters'), `expected the crossed plan named, got: ${JSON.stringify(out)}`);
-    assert.ok(!out.includes('Saved views'), `the plan that stayed must not be reported as crossed: ${JSON.stringify(out)}`);
+
+    assert.ok(fs.existsSync(ready), 'the plan stays in its stage — opening the menu moved nothing');
+    assert.ok(!fs.existsSync(path.join(dir, 'plans', 'implementation', 'ready-plan.md')), 'nothing landed in the next stage');
+    assert.strictEqual(ledger.readEntry('ready-plan', dir), null, 'no approval entry was written');
+    assert.ok(!out.includes('Moved forward on their own'), `a read names no crossing: ${JSON.stringify(out)}`);
+    assert.ok(!out.includes('Quick filters'), `the plan is not named as crossed: ${JSON.stringify(out)}`);
+    // Positive control: the same plan IS crossable — the continuation's pass crosses it.
+    streamingGate.pendingGateDecisions(dir, { crossed: [] });
+    assert.ok(fs.existsSync(path.join(dir, 'plans', 'implementation', 'ready-plan.md')), 'fixture: the continuation crosses this plan');
+  } finally { cleanup(dir); }
+});
+
+test('the continuation hands its crossings in via opts.crossed and they are named (the opts.crossed path)', () => {
+  const dir = mkProject();
+  try {
+    const out = driver.loopBDirective(dir, { crossed: [{ ref: 'implementation/x.md', toStage: 'implementation', name: 'Quick filters' }] });
+    assert.ok(out.includes('Moved forward on their own'), JSON.stringify(out));
+    assert.ok(out.includes('Quick filters'), JSON.stringify(out));
     assertPlainLanguage(out);
-  } finally {
-    streamingGate.pendingGateDecisions = orig;
-    cleanup(dir);
-  }
+  } finally { cleanup(dir); }
 });
 
 // ── the questions line names the human's way to ask, and orders nothing ─────────

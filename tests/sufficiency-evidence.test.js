@@ -243,7 +243,7 @@ describe('crossBySufficiency — the crossing records the enriched evidence and 
     precompute.writePlanQuestions(root, ref, [forkQuestion('q10-db')], fs.statSync(p).mtimeMs, undefined, CLASSIFIED);
     recordAnswer(root, ref, 'q10-db', '1');
 
-    streamingGate.pendingGateDecisions(root); // crosses
+    streamingGate.pendingGateDecisions(root, { crossed: [] }); // crosses (four-defects s23: only the continuation's pass crosses)
 
     const entry = JSON.parse(fs.readFileSync(ledgerFile(root, 'suff-nine'), 'utf8'));
     assert.equal(ledger.entryKind(entry), 'sufficiency', 'entryKind classifies it as a sufficiency crossing');
@@ -254,15 +254,53 @@ describe('crossBySufficiency — the crossing records the enriched evidence and 
     assert.match(entry.evidence, /attested by: not recorded/, 'the attestation slot is present');
   });
 
-  it('case 10 — entry-and-moved, or NEITHER: a failed move rolls the entry back', () => {
-    // Driven directly: a DIFFERENT same-basename plan already at the destination
-    // makes movePlan throw, so the crossing cannot complete. (Going through
-    // pendingGateDecisions would also process the resident as an implementation-stage
-    // decision, confounding the invariant this case isolates.)
+  it('case 10 — entry-and-moved, or NEITHER: a move that fails while writing rolls the entry back', () => {
+    // A write fault inside the move: renameSync throws only for a destination under
+    // plans/implementation/. persistEntry also renames a temporary file under
+    // .ctoc/approvals/, and that call must pass, so the entry IS written before the
+    // move fails and only the rollback can remove it. (A same-name clash is refused
+    // before any entry is written; the next case covers that.)
     const root = makeSandbox();
     const p = writePlan(root, 'functional', 'suff-ten', validFunctionalBody('suff-ten'));
     const ref = 'functional/suff-ten.md';
-    writePlan(root, 'implementation', 'suff-ten', '# a different resident\n\nreal body\n');
+    const v = {
+      enough: true, reason: 'enough', computed: 1,
+      answeredQuestionIds: ['q10-db'], unansweredQuestionIds: [], blockingQuestionIds: [], unboundAnswers: 0,
+    };
+    const safeFs = require('../src/lib/safe-fs.js');
+    const realRename = safeFs.renameSync;
+    const guarded = path.join(root, 'plans', 'implementation') + path.sep;
+    let entryWritten = false;
+    safeFs.renameSync = (from, to) => {
+      if (String(to).startsWith(guarded)) {
+        entryWritten = fs.existsSync(ledgerFile(root, 'suff-ten'));
+        throw new Error('EACCES: simulated write fault');
+      }
+      return realRename(from, to);
+    };
+    let crossed;
+    try {
+      crossed = streamingGate.crossBySufficiency(root, p, ref, 'functional', 'implementation', v);
+    } finally {
+      safeFs.renameSync = realRename;
+    }
+
+    assert.equal(entryWritten, true, 'fixture: the entry existed when the move failed, so the rollback is what removes it');
+    assert.equal(crossed, false, 'the cross could not complete (move threw)');
+    assert.ok(fs.existsSync(p), 'still in functional/ — nothing moved');
+    assert.ok(!fs.existsSync(path.join(root, 'plans', 'implementation', 'suff-ten.md')), 'nothing arrived at the destination');
+    assert.ok(!fs.existsSync(ledgerFile(root, 'suff-ten')), 'the orphan entry was rolled back');
+  });
+
+  it('case 10b — a same-name clash at the destination is refused before any entry is written: an entry for another destination is untouched', () => {
+    const root = makeSandbox();
+    const p = writePlan(root, 'functional', 'suff-clash', validFunctionalBody('suff-clash'));
+    const ref = 'functional/suff-clash.md';
+    writePlan(root, 'implementation', 'suff-clash', '# a different resident\n\nreal body\n');
+    ledger.writeEntry('suff-clash', {
+      content: fs.readFileSync(p, 'utf8'), stage_from: 'implementation', stage_to: 'todo', plan_basename: 'suff-clash',
+    }, root);
+    const before = fs.readFileSync(ledgerFile(root, 'suff-clash'));
 
     const v = {
       enough: true, reason: 'enough', computed: 1,
@@ -270,9 +308,9 @@ describe('crossBySufficiency — the crossing records the enriched evidence and 
     };
     const crossed = streamingGate.crossBySufficiency(root, p, ref, 'functional', 'implementation', v);
 
-    assert.equal(crossed, false, 'the cross could not complete (move threw)');
+    assert.equal(crossed, false, 'the clash refuses the cross');
     assert.ok(fs.existsSync(p), 'still in functional/ — nothing moved');
-    assert.ok(!fs.existsSync(ledgerFile(root, 'suff-ten')), 'the orphan entry was rolled back');
+    assert.deepEqual(fs.readFileSync(ledgerFile(root, 'suff-clash')), before, 'the other destination\'s entry is byte-for-byte unchanged');
   });
 
   it('case 11 — idempotent: two passes write ONE entry, never a second cross', () => {
@@ -282,10 +320,10 @@ describe('crossBySufficiency — the crossing records the enriched evidence and 
     precompute.writePlanQuestions(root, ref, [forkQuestion('q10-db')], fs.statSync(p).mtimeMs, undefined, CLASSIFIED);
     recordAnswer(root, ref, 'q10-db', '1');
 
-    streamingGate.pendingGateDecisions(root); // first pass: crosses
+    streamingGate.pendingGateDecisions(root, { crossed: [] }); // first pass: crosses
     const entryPath = ledgerFile(root, 'suff-idem');
     const first = fs.readFileSync(entryPath, 'utf8');
-    streamingGate.pendingGateDecisions(root); // second pass: must NOT re-cross
+    streamingGate.pendingGateDecisions(root, { crossed: [] }); // second pass: must NOT re-cross
     const second = fs.readFileSync(entryPath, 'utf8');
     assert.equal(first, second, 'byte-identical — no second write, no re-cross');
   });

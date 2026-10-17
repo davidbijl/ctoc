@@ -717,7 +717,11 @@ describe('X6 — pendingGateDecisions CROSSES a sufficient plan and leaves the p
       undefined, { by: 'gate-critic', at: 1786000000000 });
     // Deliberately answer NOTHING.
 
-    const d = streamingGate.pendingGateDecisions(root).find((x) => x.ref === ref);
+    // four-defects s23 (ruling 4): run the CROSSING pass, so it is the open fork — not a missing
+    // `crossed` flag — that keeps the plan from crossing.
+    const crossed = [];
+    const d = streamingGate.pendingGateDecisions(root, { crossed }).find((x) => x.ref === ref);
+    assert.deepEqual(crossed, [], 'the crossing pass crossed nothing');
     assert.ok(d, 'an unanswered FORK keeps the plan pending — the implementer would guess');
     assert.equal(d.enough, false);
     assert.equal(d.sufficiencyReason, 'open-forks');
@@ -733,7 +737,11 @@ describe('X6 — pendingGateDecisions CROSSES a sufficient plan and leaves the p
     const root = makeSandbox();
     const p = writePlan(root, 'functional', 'suff-none', validFunctionalBody('suff-none'));
 
-    const d = streamingGate.pendingGateDecisions(root).find((x) => x.ref === 'functional/suff-none.md');
+    // four-defects s23 (ruling 4): the crossing pass, so the missing evidence — not a missing
+    // `crossed` flag — is what keeps the plan from crossing.
+    const crossed = [];
+    const d = streamingGate.pendingGateDecisions(root, { crossed }).find((x) => x.ref === 'functional/suff-none.md');
+    assert.deepEqual(crossed, [], 'the crossing pass crossed nothing');
     // ABSENCE OF EVIDENCE IS NOT EVIDENCE OF SUFFICIENCY. Not `true`, not a crash, not a cross.
     assert.equal(d.enough, false, 'never-computed must never read as "enough" — we simply do not KNOW');
     assert.equal(d.sufficiencyReason, 'not-computed');
@@ -749,12 +757,12 @@ describe('X6 — pendingGateDecisions CROSSES a sufficient plan and leaves the p
     precompute.writePlanQuestions(root, ref, [forkQuestion('q10-db')], fs.statSync(p).mtimeMs, undefined, CLASSIFIED);
     recordAnswer(root, ref, 'q10-db', '1');
 
-    streamingGate.pendingGateDecisions(root); // first pass: crosses
+    streamingGate.pendingGateDecisions(root, { crossed: [] }); // first pass: crosses (four-defects s23: only the continuation's pass crosses)
     const entryPath = ledgerFile(root, 'suff-idem');
     assert.ok(fs.existsSync(entryPath), 'crossed on the first pass');
     const first = fs.readFileSync(entryPath, 'utf8');
 
-    streamingGate.pendingGateDecisions(root); // second pass: must NOT re-cross or rewrite
+    streamingGate.pendingGateDecisions(root, { crossed: [] }); // second pass: must NOT re-cross or rewrite
     const second = fs.readFileSync(entryPath, 'utf8');
     assert.equal(first, second, 'the entry is byte-identical — no second write, no re-cross');
     assert.ok(fs.existsSync(path.join(root, 'plans', 'implementation', 'suff-idem.md')), 'still resident once');
@@ -767,7 +775,7 @@ describe('X6 — pendingGateDecisions CROSSES a sufficient plan and leaves the p
     const ref = 'functional/suff-walk.md';
     precompute.writePlanQuestions(root, ref, [forkQuestion('q10-db')], fs.statSync(p).mtimeMs, undefined, CLASSIFIED);
     recordAnswer(root, ref, 'q10-db', '1');
-    streamingGate.pendingGateDecisions(root); // cross
+    streamingGate.pendingGateDecisions(root, { crossed: [] }); // cross (four-defects s23: only the continuation's pass crosses)
 
     const dir = path.join(root, '.ctoc', 'approvals');
     const files = fs.readdirSync(dir).filter((f) => f.endsWith('.json'));

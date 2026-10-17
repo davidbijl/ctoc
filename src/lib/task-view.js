@@ -38,22 +38,53 @@ const stripCtl = (s) => String(s == null ? '' : s).replace(/[\x00-\x1f\x7f-\x9f]
 // The former local mirror omitted `cancelled`, so a cancelled task's result summary was
 // never rendered — one encoding closes that divergence.
 
-// NAV-ROUTE allowlist (Decision 5, the feature's load-bearing safety invariant):
-// a task's next-action may ONLY be a navigation route — never a `claude:*`
-// mutation that could cross a human gate. Literal regex (allowed — the security
-// lint bans `new RegExp` on a non-literal, not a literal pattern). The allowed
-// verbs mirror the menu driver's navigation vocabulary; anything else (including
-// any `claude:` action) is rejected.
+// NAV-ROUTE allowlist (Decision 5, the feature's load-bearing safety invariant; made exact
+// by four-defects slice 18, the owner's ruling of 2026-10-12). A task's next action is
+// offered to the owner as an "Open … ▸" option and run as a menu command when he picks it.
 //
-// R3-D: `stubs` and `menu` were MISSING from the allowlist while start.md lists both
-// as NAV routes. The cost was concrete: a `decompose` completion recording
-// `--next "stubs <slug>"` — the natural next hop after decomposition, straight to
-// the human checkpoint that reviews the stubs — was rejected WHOLESALE by the store,
-// so the one route the flow needs was the one route gate-safety forbade. The
-// allowlist stays a real allowlist (word-bounded, no `claude:` verb ever passes);
-// it now simply matches the NAV vocabulary start.md actually ships.
-const NAV_ROUTE = /^(plan|browse|section|inbox|tasks|task|validate|stubs|menu)\b/;
-const CLAUDE_ACTION = /^claude:/;
+// THE RULE: a route is refused when opening it moves a plan, changes a task, or records an
+// answer, an approval or a comment. Allowed on open: the question sweep that the plan screen
+// and the default screen run (streaming-questions-sweeper), and log lines. On top of the
+// rule the value must be EXACTLY one shape below — words joined by single spaces, no word
+// beginning with '-', nothing else — so a route the rule would allow but that is not listed
+// is refused until it is listed here (fail closed). The old rule read only the first word,
+// so "inbox questions; any command", "inbox answer ID --stdin" with a here-string, and every
+// `menu task …` route passed.
+//
+// Allowed: tasks · task tN · browse STAGE [WORD] (STAGE vision, canvas, functional,
+//   implementation, todo, in-progress, review or done; the route ignores WORD) ·
+//   section business|implementation|execution · plan STAGE/FILE.md (STAGE a plan stage,
+//   not vision; FILE as streaming-gate's SAFE_PLAN_FILE; renderTaskDetail offers it only
+//   for the task's own plan) · stubs SLUG · inbox questions|decisions|gates|escalations|
+//   stale|verify · inbox question QID (inbox.js QUESTION_ID_RE).
+// Refused: menu, menu commands, dashboard (the dashboard table runs the reconcile pass,
+//   which can save the task registry, and plan recovery, which can move a plan back to
+//   todo); every menu task route; every stream route (approve crosses; skip and bare stream
+//   reach pendingGateDecisions, which moves plans on recorded evidence; comment and answer
+//   record; check queues a task); bare plan (the default screen); validate (its confirm
+//   screen names only stage words, never the plan it approves); plan … more|discuss (the
+//   route ignores the third word); inbox answer (records an answer); inbox cleanup (leads to
+//   the cleanup confirmation and override); inbox migration (not in start.md's navigation
+//   table); hotfix check (can run the tests); every claude: action.
+//
+// The value is tested AS GIVEN: a control character makes it refused, never cleaned into a
+// different command. No i flag: "Browse review" and "TASKS" are refused. Literal regex (the
+// security lint bans `new RegExp` on a non-literal). Linear: anchored at both ends, and each
+// starred class is followed only by `\.md` or the end.
+// The optional word after browse STAGE is written `(?: word|)`, not `(?: word)?`: the same
+// language, but the lint's star-height check reads a starred class inside a `?` group as unsafe.
+const NAV_ROUTE = /^(?:tasks|task t\d+|browse (?:vision|canvas|functional|implementation|todo|in-progress|review|done)(?: [a-z0-9][a-z0-9-]*|)|section (?:business|implementation|execution)|plan (?:canvas|functional|implementation|todo|in-progress|review|done)\/[A-Za-z0-9_][A-Za-z0-9._-]*\.md|stubs [A-Za-z0-9_][A-Za-z0-9._-]*|inbox (?:questions|decisions|gates|escalations|stale|verify)|inbox question \d{13,15}-[a-z0-9]{6})$/;
+
+// The detail option's label carries the plan's name only when it is a plain file name
+// (SAFE_PLAN_FILE's characters, without `.md`) once Unicode format characters — a
+// right-to-left override, a zero-width space — are removed, cut at LABEL_NAME_MAX.
+// Anything else reads "Open next ▸": agent-written words never become an option label.
+const SAFE_NAME = /^[A-Za-z0-9_][A-Za-z0-9._-]*$/;
+const FORMAT_CHARS = /\p{Cf}/gu;
+const LABEL_NAME_MAX = 80;
+// The longest value isNavRoute accepts. The longest plan file name in plans/ is 126 characters, so
+// `plan in-progress/<name>` stays far under the cap; a longer value is refused, never cut.
+const NAV_ROUTE_MAX = 256;
 
 // Pagination caps (defense against an oversized/crafted registry flooding a
 // screen). Independent of NB1's MAX_TASKS — these bound the RENDER, not the store.
@@ -66,17 +97,17 @@ const LIST_CAP = 100;
 const TASK_ID = /^t\d+$/;
 
 /**
- * A next-action string is safe to EMIT as a selectable action iff it is a
- * navigation route AND not a `claude:` mutation. Every attacker-influenceable
- * value passes through `stripCtl` first so control chars cannot smuggle a verb.
- * Exported so the store (menu-screens.taskComplete) validates against the SAME
- * allowlist — defense in depth (render layer + store layer).
+ * Is this next action safe to store and to offer? Only when it is a string of at most
+ * NAV_ROUTE_MAX characters that is exactly one read-only route shape (NAV_ROUTE).
+ * The store and the detail screen ask this. The write protection still calls it, but its
+ * background-agent refusal has been off since commit 395bd70a (2026-10-15), so today it
+ * decides nothing. Whether a `plan …` route opens the task's own plan is asked only where
+ * the option is built (renderTaskDetail → opensOwnPlan).
  * @param {*} s
  * @returns {boolean}
  */
 function isNavRoute(s) {
-  const v = stripCtl(String(s == null ? '' : s));
-  return NAV_ROUTE.test(v) && !CLAUDE_ACTION.test(v);
+  return typeof s === 'string' && s.length <= NAV_ROUTE_MAX && NAV_ROUTE.test(s);
 }
 
 /**
@@ -87,8 +118,42 @@ function isNavRoute(s) {
  */
 function planName(task) {
   if (!task || task.plan == null) return '';
-  const base = path.basename(String(task.plan)).replace(/\.md$/, '');
+  // posix: a plan reference is always '/'-separated, and every platform must read it the same way
+  const base = path.posix.basename(String(task.plan)).replace(/\.md$/, '');
   return stripCtl(base);
+}
+
+/**
+ * The name as it may appear in an option label, used only when it is a plain file name
+ * (SAFE_NAME) and cut at LABEL_NAME_MAX; otherwise 'next'. For a `plan STAGE/FILE.md` route
+ * it is the route's own, already-checked file name, so the label names the plan the option
+ * really opens; for any other route it is `planName` with Unicode format characters removed.
+ * @param {{plan?:string|null}} task
+ * @param {string} next - an accepted route
+ * @returns {string}
+ */
+function labelName(task, next) {
+  const name = next.startsWith('plan ')
+    ? next.slice(next.indexOf('/') + 1, -'.md'.length)
+    : planName(task).replace(FORMAT_CHARS, '');
+  if (!SAFE_NAME.test(name)) return 'next';
+  return name.length > LABEL_NAME_MAX ? `${name.slice(0, LABEL_NAME_MAX)}…` : name;
+}
+
+/**
+ * Does this next action open the task's own plan? A `plan STAGE/FILE.md` route (already
+ * NAV_ROUTE-checked, so it holds exactly one '/') qualifies only when FILE.md is the file
+ * name of the task's `plan`, whatever stage folder it names (plans move between stages);
+ * every other accepted route qualifies.
+ * @param {{plan?:string|null}} task
+ * @param {string} next
+ * @returns {boolean}
+ */
+function opensOwnPlan(task, next) {
+  if (!next.startsWith('plan ')) return true;
+  if (task.plan == null) return false;
+  const own = `${path.posix.basename(String(task.plan)).replace(/\.md$/, '')}.md`;
+  return next.slice(next.indexOf('/') + 1) === own;
 }
 
 /**
@@ -279,9 +344,10 @@ function renderTaskBoard(registry) {
 
 /**
  * The task-detail screen. Unknown / null id → a safe "Task not found" screen whose
- * only option navigates back to the board. A done task carrying `result.nextAction`
- * offers a single navigating option (label `Decision ready ▸` when `result.gate` is
- * set, else `Open <plan> ▸`) whose action is the NAV route string — never a
+ * only option navigates back to the board. A done task whose `result.nextAction` is an
+ * exact read-only route (isNavRoute) — and, for a `plan …` route, the task's own plan —
+ * offers a single navigating option (label `Decision ready ▸` when `result.gate` is set,
+ * else "Open", labelName and "▸") whose action is that route as stored — never a
  * `claude:` mutation, never a gate cross. Always a final `◀ Back` → `tasks`.
  * Selection is by label (never a digit).
  * @param {{tasks?:Array<object>}} registry
@@ -325,17 +391,18 @@ function renderTaskDetail(registry, id) {
 
   const options = [];
   const actions = {};
-  // Nav-only invariant: emit the next-action option ONLY when the stored route is
-  // a navigation route (allowlist) and NOT a `claude:` mutation. A crafted or
-  // `--next`-supplied `claude:approve review/x.md` is DROPPED here (degrades to
-  // Back only) — the renderer enforces the invariant its JSDoc documents and does
-  // NOT trust the caller/registry. The stripCtl'd value becomes the action.
-  if (task.status === 'done' && task.result && task.result.nextAction != null
-      && isNavRoute(task.result.nextAction)) {
+  // Nav-only invariant: emit the next-action option ONLY when the stored value is exactly a
+  // read-only route (isNavRoute) and, for a `plan …` route, the task's own plan
+  // (opensOwnPlan). A crafted or `--next`-supplied `claude:approve review/x.md`, a value
+  // that only begins like a route, or a route to another plan is DROPPED here (Back only) —
+  // the renderer does NOT trust the caller/registry. The action is the value as stored; the
+  // label carries a name only through labelName.
+  const next = task.status === 'done' && task.result ? task.result.nextAction : undefined;
+  if (isNavRoute(next) && opensOwnPlan(task, next)) {
     const gate = Number.isInteger(task.result.gate) ? task.result.gate : null;
-    const label = gate != null ? 'Decision ready ▸' : `Open ${planName(task) || 'next'} ▸`;
+    const label = gate != null ? 'Decision ready ▸' : `Open ${labelName(task, next)} ▸`;
     options.push({ label, description: 'Navigate to the next action (does not perform it)' });
-    actions[label] = stripCtl(String(task.result.nextAction));
+    actions[label] = next;
   }
   options.push({ label: '◀ Back', description: 'Return to the task board' });
   actions['◀ Back'] = 'tasks';

@@ -31,10 +31,10 @@
  * TIMEOUT past the wall-clock budget (ETIMEDOUT/SIGTERM). Both fail CLOSED — the
  * gate is refused — but each names its true reason, and the timeout budget is
  * RAISABLE (per call via `opts.timeout`, per environment via
- * `CTOC_VERIFY_TIMEOUT_MS`, default 120000ms) so a legitimately long-but-green
- * suite can extend it instead of being refused on latency alone. A timeout is NOT
- * flagged a launch failure: it RAN, so it can never be reclassified NOT-RUN and
- * papered over by some other passing check.
+ * `CTOC_VERIFY_TIMEOUT_MS`, default 900000ms, 15 minutes) so a legitimately
+ * long-but-green suite can extend it instead of being refused on latency alone.
+ * A timeout is NOT flagged a launch failure: it RAN, so it can never be
+ * reclassified NOT-RUN and papered over by some other passing check.
  *
  * X3 — IT ALSO FAILS CLOSED ON AN UNREADABLE INSTRUMENT. When a test runner emits a
  * node:test-shaped summary but its fail counter cannot be READ from it, that run is
@@ -712,23 +712,26 @@ function runFallbackChecks(projectPath) {
 /**
  * Resolve the per-check wall-clock budget in milliseconds.
  *
- * Precedence: an explicit numeric `override` (opts.timeout) > the
- * `CTOC_VERIFY_TIMEOUT_MS` environment variable (a positive finite integer) >
- * the 120000ms default. A malformed env value is ignored (falls back to the
- * default) rather than silently disabling the timeout — an unbounded run is the
- * very failure the budget exists to prevent.
+ * Precedence: an explicit positive-integer `override` (opts.timeout) wins >
+ * the `CTOC_VERIFY_TIMEOUT_MS` environment variable (a positive integer) >
+ * the 900000ms (15-minute) default. A malformed override or env value is
+ * ignored (falls through to the next source) rather than silently disabling
+ * the timeout — an unbounded run is the very failure the budget exists to
+ * prevent. The limit is per command, so it must cover the longest single
+ * check; this repository's own `npm test` took about 140 s (139-143 s) on
+ * 2026-10-11.
  *
  * @param {number} [override] - per-call override.
  * @returns {number} the budget in milliseconds.
  */
 function resolveVerifyTimeout(override) {
-  if (typeof override === 'number' && Number.isFinite(override) && override > 0) return override;
+  if (typeof override === 'number' && Number.isInteger(override) && override > 0) return override;
   const raw = process.env.CTOC_VERIFY_TIMEOUT_MS;
   if (raw != null) {
     const n = Number(raw);
-    if (Number.isFinite(n) && n > 0) return n;
+    if (Number.isInteger(n) && n > 0) return n;
   }
-  return 120000;
+  return 900000;
 }
 
 /**
@@ -985,6 +988,7 @@ module.exports = {
   applyAppRunCheck,
   buildSummary,
   tryCommand,
+  resolveVerifyTimeout,
   tryCommands,
   parseCoveragePct,
   verifyEvidencePath,

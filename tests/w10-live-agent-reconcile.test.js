@@ -78,18 +78,13 @@ function minutesAgoIso(minutesAgo) {
 }
 
 /**
- * Seed a set of `running` tasks on disk via the REAL registry API. Each spec is
- * `{ agentTaskId, ageMinutes, plan }`; ids are assigned in order (t1, t2, …).
- * @param {Array<{agentTaskId?:string, ageMinutes?:number, plan?:string}>} specs
- * @returns {string[]} the assigned task ids, in seed order
+ * Seed a real plan file for a slug in `plans/<stage>/` (R3-B item 4 / C7: an implement task
+ * whose plan file is absent no longer completes with phantom success — it is refused, and a
+ * build start needs its plan in todo/ or in-progress/). A fully-checked Step 8–16 block lets
+ * validateForReview pass so `menu task complete` runs the genuine completion and
+ * `running → done` succeeds (the behaviour these tests assert).
  */
-/**
- * Seed a real in-progress plan file for a slug (R3-B item 4 / C7: an implement task whose
- * plan file is absent no longer completes with phantom success — it is refused). A
- * fully-checked Step 8–16 block lets validateForReview pass so `menu task complete` runs the
- * genuine completion and `running → done` succeeds (the behaviour these tests assert).
- */
-function seedInProgressPlan(slug, files) {
+function seedPlanIn(stage, slug, files) {
   const stepBlock = ['8: TEST', '9: PREPARE', '10: IMPLEMENT', '11: REVIEW', '12: OPTIMIZE',
     '13: SECURE', '14: VERIFY', '15: DOCUMENT', '16: FINAL-REVIEW']
     .map((s) => `### Step ${s}\n- [x] done\n`).join('\n');
@@ -98,11 +93,27 @@ function seedInProgressPlan(slug, files) {
     '---\napproved_by: human\ngate_crossed: implementation → todo\n---\n\n' +
     `---\ntitle: "${slug}"\ntype: implementation\niron_loop: true\n${filesBlock}---\n\n` +
     `# ${slug}\n\n## Execution Plan (Steps 8-16)\n\n${stepBlock}\n`;
-  const dir = path.join(root, 'plans', 'in-progress');
+  const dir = path.join(root, 'plans', stage);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, `${slug}.md`), content);
 }
 
+/** A running build's plan file, in plans/in-progress/. */
+function seedInProgressPlan(slug, files) {
+  seedPlanIn('in-progress', slug, files);
+}
+
+/** A queued build's plan file, in plans/todo/, which a build start moves. */
+function seedTodoPlan(slug, files) {
+  seedPlanIn('todo', slug, files);
+}
+
+/**
+ * Seed a set of `running` tasks on disk via the REAL registry API. Each spec is
+ * `{ agentTaskId, ageMinutes, plan }`; ids are assigned in order (t1, t2, …).
+ * @param {Array<{agentTaskId?:string, ageMinutes?:number, plan?:string}>} specs
+ * @returns {string[]} the assigned task ids, in seed order
+ */
 function seedRunning(specs) {
   const reg = taskRegistry.emptyRegistry();
   const ids = [];
@@ -123,8 +134,10 @@ function seedRunning(specs) {
 
 /** Seed one queued task (no transition) and return its id. */
 function seedQueued(plan) {
+  const slug = plan || 'w10-s4-queued';
+  seedTodoPlan(slug, ['src/' + slug + '.js']); // a build start needs its plan file
   const reg = taskRegistry.emptyRegistry();
-  const t = taskRegistry.addTask(reg, { kind: 'implement', plan: plan || 'w10-s4-queued', touches: ['src/' + (plan || 'w10-s4-queued') + '.js'] });
+  const t = taskRegistry.addTask(reg, { kind: 'implement', plan: slug, touches: ['src/' + slug + '.js'] });
   taskRegistry.save(root, reg);
   return t.id;
 }
@@ -250,8 +263,9 @@ describe('W10-s4 (H8) — menu task start records agentTaskId', () => {
     assert.equal(started.agentTaskId, 'h9', 'the caller-supplied harness id is recorded');
 
     // A second queued task started WITHOUT --agent-id defaults agentTaskId to the task id.
+    // a non-build task: the subject here is the recorded agent id, which every kind records the same way
     const reg = taskRegistry.load(root);
-    const t2 = taskRegistry.addTask(reg, { kind: 'implement', plan: 'p-start-2', touches: ['src/p-start-2.js'] });
+    const t2 = taskRegistry.addTask(reg, { kind: 'review', plan: 'p-start-2' });
     taskRegistry.save(root, reg);
     const res2 = ms.route(['menu', 'task', 'start', t2.id], root);
     assert.equal(res2.ok, true);

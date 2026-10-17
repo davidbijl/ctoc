@@ -24,7 +24,10 @@ const safeFs = require('./safe-fs');
 const path = require('path');
 const { getPlanCounts, readPlans, getPlansDir, getAgentStatus, getVisionCounts, getVisionStubs } = require('./state');
 const { SECTIONS, getSectionLabel, getStagesInSection, loadDashboardPrefs } = require('./sections');
-const { getInboxCounts, listStaleCandidates, listQuestions, listDecisions, listPlansAtGates } = require('./inbox');
+const {
+  getInboxCounts, listStaleCandidates, listQuestions, listDecisions, listPlansAtGates,
+  answerQuestion, questionAnswer, readQuestion, QUESTION_ID_RE,
+} = require('./inbox');
 // Namespace import (not destructured) preserves the spy seam: a test can rewire
 // staleDetector.verifyStaleCandidate / classifyStaleCandidate at the require
 // boundary. inboxVerifyProposals is the SOLE call site of verifyStaleCandidate.
@@ -898,10 +901,13 @@ function sectionBrowse(sectionName, projectPath) {
 // awaiting review, plans at gates) gets a reachable read-only list screen. "A
 // count with no door is the defect." All three are PURE reads (no fs mutation),
 // bullet-row rendered (numbers are reserved for opening a plan — these open
-// nothing), capped at INBOX_DOOR_MAX_ROWS with a "… and N more" line, and every
-// attacker-influenceable field (a plan slug / step / path derived from a
-// filename or frontmatter) passes through stripCtl so a hostile value cannot
-// inject ANSI/control chars or forge a row (S1).
+// nothing), capped at INBOX_DOOR_MAX_ROWS with a "… and N more" line. The
+// attacker-influenceable fields (a plan slug / step / path derived from a
+// filename or frontmatter) are made safe in two ways: the decisions screen
+// passes them through stripCtl, and the open-questions rows show every value
+// read from a question file only through `quoted` (one escaped JSON string
+// literal on one line), so a hostile value cannot inject ANSI/control chars
+// or forge a row (S1).
 // ===========================================================================
 
 /** Cold-path row cap for the inbox door screens (mirrors the stale drill-in). */
@@ -934,10 +940,11 @@ function _inboxRelPath(root, p) {
 
 /**
  * Shared renderer for the three read-only inbox door screens. `rows` is already
- * a list of pre-sanitized single-line strings (no leading bullet).
+ * a list of pre-sanitized strings (no leading bullet); a row may span several lines
+ * (the open-questions rows do), and only its first line gets the bullet.
  * @param {string} title  screen title (e.g. 'Morning questions')
  * @param {number} total  the TRUE item count (header shows this, not the capped count)
- * @param {string[]} rows sanitized row bodies (no bullet prefix)
+ * @param {string[]} rows sanitized row bodies (no bullet prefix; may hold line breaks)
  * @param {string} emptyMsg message shown when total === 0
  * @returns {{text:string, ask:Object, actions:Object}}
  */
@@ -964,20 +971,72 @@ function _inboxDoorScreen(title, total, rows, emptyMsg) {
 }
 
 /**
+ * The two action texts of an inbox question, built ONLY from an id that already matched
+ * QUESTION_ID_RE. They are the only lines of the open-questions screen and of the full-question view
+ * that begin with the arrow.
+ * @param {string} id a question id (checked by the caller)
+ * @returns {{read: string, answer: string}}
+ */
+function questionActions(id) {
+  return {
+    read: `→ read it whole: inbox question ${id}`,
+    answer: `→ record the owner's own answer: inbox answer ${id} --stdin, with his words on standard input as start.md shows`,
+  };
+}
+
+/** The line break and indent that join the lines of one row of the open-questions screen. */
+const QUESTION_ROW_INDENT = '\n      ';
+
+/**
+ * One row of the open-questions screen. THE QUOTING RULE: every value read from the question file (the
+ * question, the context, source_plan, source_step, the file name) is shown only through `quoted`, cut at
+ * 200 code points. THE STRUCTURAL RULE: no value ever begins a line with its own text. On every line a
+ * value follows a label, and a line that begins with the arrow is one of the two action texts, built
+ * from a file name only after it matched QUESTION_ID_RE. A file name that does not match is not read
+ * again (its values are the list's own parsed item) and gets no action.
+ * @param {string} root
+ * @param {Object} item one parsed item from `listQuestions` (front-matter fields plus `path`)
+ * @returns {string} the row without its leading bullet
+ */
+function questionRow(root, item) {
+  const name = path.basename(item.path);
+  const id = path.basename(name, '.md');
+  const age = _inboxAge(item.created);
+  const agePart = age ? `  (${age})` : '';
+  if (!QUESTION_ID_RE.test(id)) {
+    return [
+      `question file ${quoted(name)}${agePart}`,
+      `from plan: ${quoted(item.source_plan)}  step: ${quoted(item.source_step)}`,
+      'question:  (not read: its file name is not a question id)',
+      '(no action: its file name is not a question id)',
+    ].join(QUESTION_ROW_INDENT);
+  }
+  const q = readQuestion(root, id);
+  if (!q.ok) return `an unreadable question file: ${quoted(name)}`;
+  const actions = questionActions(id);
+  return [
+    `question ${id}${agePart}`,
+    `question:  ${quoted(q.question)}`,
+    `context:   ${quoted(q.context)}`,
+    `from plan: ${quoted(q.source_plan)}  step: ${quoted(q.source_step)}  file: ${quoted(name)}`,
+    actions.read,
+    actions.answer,
+  ].join(QUESTION_ROW_INDENT);
+}
+
+/**
  * Inbox ▸ Morning questions — the door behind the dashboard "N morning questions"
- * count (route `inbox questions`). Read-only.
+ * count (route `inbox questions`). Read-only. Each row (see `questionRow`) shows the question, its
+ * context, its source plan and step and its file name as quoted data, then the action that reads it
+ * whole and the action that records the owner's own answer. The header count is the true count
+ * (`listQuestions` lists every question file once to get it); at most INBOX_DOOR_MAX_ROWS rows are
+ * shown, and only those are read a second time.
  * @param {string} [projectPath]
  */
 function inboxQuestionsScreen(projectPath) {
   const root = getProjectPath(projectPath);
   const items = listQuestions(root);
-  const rows = items.map((it) => {
-    const who = stripCtl(it.source_plan || it.id || '(question)');
-    const step = it.source_step ? ` [step ${stripCtl(String(it.source_step))}]` : '';
-    const age = stripCtl(_inboxAge(it.created));
-    const where = _inboxRelPath(root, it.path);
-    return `${who}${step}${age ? '  ' + age : ''}${where ? '  ' + where : ''}`;
-  });
+  const rows = items.slice(0, INBOX_DOOR_MAX_ROWS).map((it) => questionRow(root, it));
   return _inboxDoorScreen('Morning questions', items.length, rows, 'No morning questions.');
 }
 
@@ -998,6 +1057,222 @@ function inboxDecisionsScreen(projectPath) {
     return `${who}${step}${amb}${age ? '  ' + age : ''}${where ? '  ' + where : ''}`;
   });
   return _inboxDoorScreen('Decisions awaiting review', items.length, rows, 'No decisions awaiting review.');
+}
+
+// What `quoted` writes as an escape: anything outside printable ASCII, letters and numbers; the modifier
+// letters; every default-ignorable character; the conjoining Hangul letters (U+1100-U+11FF, U+D7B0-U+D7FF);
+// and the look-alike quote letters U+1426, U+A78B, U+A78C. Built from a string because the unsafe-regex lint
+// rule cannot read the braced code-point escapes in a literal.
+const ESCAPED_IN_QUOTED = new RegExp(
+  '[^\\x20-\\x7e\\p{L}\\p{N}]|[\\p{Lm}\\p{Default_Ignorable_Code_Point}' +
+  '\\u{1100}-\\u{11ff}\\u{d7b0}-\\u{d7ff}\\u{1426}\\u{a78b}\\u{a78c}]', 'gu');
+
+/**
+ * A value that came from a file, a request or the owner, shown on one line and only inside a JSON string
+ * literal, so it can never close its own quotes or run into the sentence around it. ONE rule for every
+ * value, and nothing is removed: the value is cut at `max` code points (Infinity keeps it whole; the cut
+ * is by code points, before the escaping, so no character is ever split), written with JSON.stringify
+ * (quote, backslash and the ASCII controls, line feed and carriage return included, become their JSON
+ * escapes), and then EVERY character other than printable ASCII (the plain space included), a letter or
+ * a number is written as a backslash, "u" and four hex digits, each UTF-16 unit on its own (an astral
+ * character becomes its two escaped surrogate units). Letters are escaped too when they can pass for a quote or for
+ * nothing: the modifier letters, the look-alike quote letters U+1426, U+A78B and U+A78C, every
+ * default-ignorable character (the Hangul fillers U+115F, U+1160, U+3164 and U+FFA0 among them) and the
+ * conjoining Hangul letters. So look-alike quotes (U+201E U+301D U+2036 ...), combining marks, every space
+ * other than the ASCII space (no-break, ideographic ...), the braille blank, private-use characters,
+ * format characters (zero-width, direction controls, tag characters, a byte-order mark), DEL, the C1
+ * controls and the line and paragraph separators all come out escaped, never literal and never dropped.
+ * The literal parses back to exactly the value (JSON.parse of it equals the string cut at `max` code
+ * points).
+ * @param {unknown} value
+ * @param {number} [max] the most code points kept (default 200; Infinity keeps all)
+ * @returns {string}
+ */
+function quoted(value, max = 200) {
+  const text = String(value == null ? '' : value);
+  const kept = max === Infinity ? text : Array.from(text).slice(0, max).join('');
+  return JSON.stringify(kept).replace(ESCAPED_IN_QUOTED,
+    (c) => c.split('').map((unit) => `\\u${unit.charCodeAt(0).toString(16).padStart(4, '0')}`).join(''));
+}
+
+/**
+ * An id as it may be printed: bare only when it has the shape of a question id, otherwise quoted.
+ * @param {unknown} id
+ * @returns {string}
+ */
+function bareId(id) {
+  return typeof id === 'string' && QUESTION_ID_RE.test(id) ? id : quoted(id, 80);
+}
+
+/**
+ * The sentence (without its lead-in) for a question that could not be read, shared by the answer
+ * route ("Nothing was recorded: ...") and the full-question view ("Nothing to show: ...").
+ * @param {'bad-id'|'no-question'|'not-a-file'|'unreadable'} reason readQuestion's refusal
+ * @param {unknown} id
+ * @returns {string}
+ */
+function readRefusal(reason, id) {
+  const bare = bareId(id);
+  switch (reason) {
+    case 'bad-id': return `${quoted(id, 80)} is not a question id (digits, a dash and six lower-case letters or digits).`;
+    case 'no-question': return `there is no question ${bare}.`;
+    case 'not-a-file': return `the entry for question ${bare} is a link or a folder, not a question file.`;
+    default: return `the question file for question ${bare} could not be read.`;
+  }
+}
+
+/**
+ * The one status line of an answer attempt (see inbox.answerQuestion). Every value read from the question
+ * file goes through `quoted`; the id is printed bare only after it matched the question-id shape.
+ * @param {Object} res answerQuestion's result
+ * @param {string} id
+ * @param {string} root
+ * @returns {string}
+ */
+function answerStatusLine(res, id, root) {
+  if (res.ok) {
+    // The owner's whole answer, never cut (Infinity), through the one escaper.
+    let line = `Recorded the owner's answer to question ${res.id}: ${quoted(res.answer, Infinity)}.`;
+    if (res.question.context.includes(require('./scope-growth').SENTINEL)) {
+      line += ` It is a scope-growth request from plan ${quoted(res.question.source_plan)}; the answer changes no plan's files.`;
+    }
+    if (!res.statusLineUpdated) {
+      line += ' The question file\'s status line could not be updated; the record holds the answer, so the question counts as answered.';
+    }
+    return line;
+  }
+  const none = 'Nothing was recorded: ';
+  const bare = bareId(id);
+  switch (res.reason) {
+    case 'bad-id':
+    case 'no-question':
+    case 'not-a-file':
+    case 'unreadable': return `${none}${readRefusal(res.reason, id)}`;
+    case 'not-open': return `${none}question ${bare} is not open (its status is ${quoted(res.status)}).`;
+    case 'no-answer':
+      return `${none}the owner's words reach this route only on standard input, through \`inbox answer <id> --stdin\` and the quoted heredoc start.md shows, never on the command line.`;
+    case 'answer-unreadable': return `${none}standard input could not be read.`;
+    case 'answer-too-long': return `${none}the answer is longer than 16384 bytes.`;
+    case 'answer-not-utf8': return `${none}the answer is not valid UTF-8 text.`;
+    case 'answer-holds-marker':
+      return 'a line of the answer begins with the marker prefix CTOC_ANSWER_, so the command may not have ended where it should; nothing was recorded.';
+    case 'blank-answer': return `${none}the answer is empty.`;
+    case 'record-unreadable': return `${none}the answer record could not be read, so a second answer cannot be ruled out.`;
+    case 'answered-first-by-another':
+      // Printed without the "Nothing was recorded" lead-in: this answer may sit on the record after the
+      // other one, but the first entry for an id is the one read, so this one is not taken.
+      return `Question ${bare} was answered first by another answer: ${quoted(res.answer, Infinity)}; this answer was not taken.`;
+    case 'already-answered': {
+      // "recorded" only for an id the record holds; a claim alone (no record entry) is an answer still
+      // being recorded, quoting the claim's words when they could be read.
+      const recorded = questionAnswer(root, id);
+      if (recorded.answered) return `${none}question ${bare} already has a recorded answer: ${quoted(recorded.answer)}.`;
+      return `${none}question ${bare} already has an answer being recorded${typeof res.answer === 'string' ? `: ${quoted(res.answer)}` : ''}.`;
+    }
+    default: // write-failed; res.error is an error code or "unknown", never a message or a path
+      return `${none}the answer record could not be written (${quoted(res.error, 120)})${res.claimCleared === false ? '; its claim could not be cleared, so these words may still be recorded' : ''}.`;
+  }
+}
+
+/**
+ * Route `inbox answer <id> --stdin`: record the owner's answer to an inbox question. The words are the
+ * raw standard input start.js read (`answerText`); they are passed on only when the route words are
+ * exactly `<id> --stdin`, so an extra word or a missing `--stdin` is "no answer". Returns the open
+ * questions screen with the one status line in front of its text, plus `ok` and (when refused) `reason`.
+ * @param {string[]} words the route words after `inbox answer`
+ * @param {string} [projectPath]
+ * @param {(Buffer|symbol)} [answerText] the raw bytes of standard input as `inbox.readStandardInput` gives
+ *   them; undefined on a terminal or when nothing was sent; its marker when standard input could not be read
+ */
+function inboxAnswerScreen(words, projectPath, answerText) {
+  const root = getProjectPath(projectPath);
+  const viaStdin = words.length === 2 && words[1] === '--stdin';
+  const res = answerQuestion(root, words[0], viaStdin ? answerText : undefined);
+  const inner = inboxQuestionsScreen(root);
+  const screen = { ...inner, text: `${answerStatusLine(res, words[0], root)}\n\n${inner.text}`, ok: res.ok };
+  return res.ok === true ? screen : { ...screen, reason: res.reason };
+}
+
+/** The most UTF-16 code units of a question's text on one line of the full-question view. */
+const QUESTION_VIEW_WIDTH = 96;
+
+/**
+ * A value cut into pieces of at most QUESTION_VIEW_WIDTH UTF-16 code units (never inside a surrogate
+ * pair), each piece written on its own line, indented four spaces, through `quoted`. Each piece is
+ * quoted AFTER the cut, so an escape can never be split across lines, every line is one complete
+ * JSON string literal whose opening quote begins the line after its indent, and JSON.parse of the
+ * lines, joined, gives the value back. An empty value is one line, `""`.
+ * @param {string} value
+ * @returns {string[]}
+ */
+function wrapQuoted(value) {
+  const lines = [];
+  let from = 0;
+  do {
+    let to = Math.min(from + QUESTION_VIEW_WIDTH, value.length);
+    const high = value.charCodeAt(to - 1);
+    const low = value.charCodeAt(to);
+    if (to < value.length && high >= 0xd800 && high <= 0xdbff && low >= 0xdc00 && low <= 0xdfff) to -= 1;
+    lines.push(`    ${quoted(value.slice(from, to), Infinity)}`);
+    from = to;
+  } while (from < value.length);
+  return lines;
+}
+
+/**
+ * Inbox ▸ Question <id> — one question read whole (route `inbox question <id>`). Read-only: it writes
+ * nothing. THE QUOTING RULE: every value from the question file is shown only through `quoted`; the
+ * question and the context are wrapped (see `wrapQuoted`). THE STRUCTURAL RULE: the only line that
+ * begins with the arrow is the answer action built from the id, shown only while the question's status
+ * line is open and the answer record, read strictly, holds no answer for it. It sits just under the
+ * status line, so a long question (never cut, wrapped over as many lines as it needs) cannot push it out
+ * of view. Whether the question is answered comes from the answer record, never from the status line; a
+ * record that cannot be read gives a line saying so and no action.
+ * @param {string} [id] the question id from the route words
+ * @param {string} [projectPath]
+ * @returns {{text:string, ask:Object, actions:Object}}
+ */
+function inboxQuestionScreen(id, projectPath) {
+  const root = getProjectPath(projectPath);
+  const q = readQuestion(root, id);
+  let text;
+  if ('reason' in q) { // the refusal member of readQuestion's result
+    text = `Nothing to show: ${readRefusal(q.reason, id)}`;
+  } else {
+    let recorded = null; // null: the answer record could not be read, so the answer state is unknown
+    try {
+      recorded = questionAnswer(root, q.id, { strict: true });
+    } catch {
+      recorded = null;
+    }
+    let state = 'the answer record could not be read';
+    if (recorded) state = recorded.answered ? `answered: ${quoted(recorded.answer, Infinity)}` : 'not answered';
+    const lines = [
+      `Inbox ▸ Question ${q.id}`,
+      '─'.repeat(40),
+      `status:    ${quoted(q.status)}   (${state})`,
+    ];
+    if (q.status === 'open' && recorded && !recorded.answered) lines.push(questionActions(q.id).answer);
+    lines.push(
+      `from plan: ${quoted(q.source_plan, Infinity)}  step: ${quoted(q.source_step, Infinity)}  file: ${quoted(`${q.id}.md`)}`,
+      'question:',
+      ...wrapQuoted(q.question),
+      'context:',
+      ...wrapQuoted(q.context),
+    );
+    text = lines.join('\n');
+  }
+  return {
+    text: `${text}\n\n\n`,
+    ask: {
+      questions: [{
+        question: 'Inbox question (read-only).',
+        header: 'Inbox',
+        options: [{ label: '◀ Back', description: 'Return to the open questions' }],
+      }],
+    },
+    actions: { '◀ Back': 'inbox questions' },
+  };
 }
 
 /**
@@ -2172,12 +2447,26 @@ function taskAdd(root, rest) {
  * candidate that vanishes with no explanation is the silent behaviour this program keeps
  * removing.
  *
+ * While a stop is requested, every `implement` entry is held back and reported in
+ * `quarantined` with reason `stop-requested`; every other kind stays on offer (planners,
+ * classifications, question precomputes, reviews, quality and security checks,
+ * decompositions, discussions, syncs). The only code that clears a stop is a forced Start
+ * agent, which then tries to claim a build, so holding every kind would stall planning with no
+ * way to resume it that does not start a build. This is decision 12 of the plan
+ * four-defects-in-the-menu-and-the-release-found-on-2026-10-11, a decision taken under
+ * ambiguity, not by the owner. The stop is checked when a promote list is built, not when a
+ * build starts: an explicit `menu task start` still starts one.
+ * `task-reconcile.reconcileState` builds its own promote list without
+ * this filter; no caller reads it (`src/lib/menu-screens.js` and `src/tabs/tools.js` read only
+ * `report`).
+ *
  * @param {{tasks:Array<object>}} reg  a post-save in-memory registry value
+ * @param {string} root  the project root, where the stop flag is read
  * @returns {{promote:Array<{id:string, kind:string, plan:(string|null), touches:string[], gitOp:boolean}>, quarantined:Array<{id:string,reason:string,summary:string}>}}
  */
-function computePromote(reg) {
+function computePromote(reg, root) {
   const guarded = taskReconcile.applyQuarantine(reg, taskRegistry.nextRunnable(reg));
-  const promote = guarded.promote
+  const offered = guarded.promote
     // NB3 (LOW, defense in depth): only ids of the canonical `t<n>` shape may ride
     // into a `menu task start <id>` dispatch instruction, and id/plan are stripped of
     // control chars — a crafted registry entry can never inject an ANSI/newline
@@ -2191,7 +2480,41 @@ function computePromote(reg) {
       touches: t.touches,
       gitOp: t.gitOp
     }));
-  return { promote, quarantined: guarded.quarantined };
+  if (!taskRegistry.isDrainStopRequested(root)) return { promote: offered, quarantined: guarded.quarantined };
+  const heldByStop = offered.filter((t) => t.kind === 'implement').map((t) => ({
+    id: t.id,
+    reason: 'stop-requested',
+    summary: 'held back: a stop is requested, so no new build is offered until it is cleared'
+  }));
+  return {
+    promote: offered.filter((t) => t.kind !== 'implement'),
+    quarantined: guarded.quarantined.concat(heldByStop)
+  };
+}
+
+/** The only agent ids `menu task start --agent-id` records or stamps. */
+const AGENT_ID = /^[A-Za-z0-9._:-]{1,128}$/;
+
+/** A recorded agent id for a result text: shown only in the accepted form, never raw. */
+function shownAgentId(v) {
+  const s = String(v);
+  return AGENT_ID.test(s) ? s : 'an agent id of unexpected form';
+}
+
+/**
+ * The menu's answer for `actions.claimBuild`: the shape `menu task start` has always
+ * returned (`forced`/`reason` only when the human forced past the scheduler), plus the
+ * plan's `planPath` in the build so the session can brief the agent with it.
+ * @param {object} claim  a `claimBuild` result
+ * @returns {object}
+ */
+function menuClaimResult(claim) {
+  if (!claim.ok) {
+    return { ok: false, refused: true, taskId: claim.taskId, reason: claim.reason, text: claim.text };
+  }
+  const res = { ok: true, taskId: claim.taskId, status: 'running', text: claim.text, planPath: claim.planPath };
+  if (claim.forced) { res.forced = true; res.reason = claim.reason; }
+  return res;
 }
 
 /**
@@ -2204,6 +2527,9 @@ function computePromote(reg) {
  * (`forced_start`) and SHOUTED in the result text, never silent. The whole cycle runs
  * inside the compare-and-swap helper (item 7), and a refusal `ctx.abort()`s so no write
  * (and no generation bump) happens.
+ *
+ * A queued BUILD (`implement` with a plan) is started by `actions.claimBuild`, the one build
+ * start: the same ladder check, plus the plan's move into the build and the build-start lock.
  */
 function taskTransition(root, rest, kind) {
   const p = parseTaskArgs(rest);
@@ -2236,24 +2562,64 @@ function taskTransition(root, rest, kind) {
           : `Task ${id} → ${task.status}`,
     };
     if (forced) res.forced = true;
-    const cancelPromote = computePromote(reg);
+    const cancelPromote = computePromote(reg, root);
     res.promote = cancelPromote.promote;
     if (cancelPromote.quarantined.length > 0) res.quarantined = cancelPromote.quarantined;
     return res;
   }
 
-  return taskRegistry.withRegistry(root, (reg, ctx) => {
+  // The only agent ids a start records or stamps; any other value is refused unechoed.
+  if (kind === 'start' && p.agentId !== undefined && p.agentId !== '' && !AGENT_ID.test(p.agentId)) {
+    return {
+      ok: false,
+      refused: true,
+      taskId: id,
+      reason: 'agent-id-unusable',
+      text: `Task ${stripCtl(String(id)).slice(0, 40)} NOT started — the --agent-id value is not usable ` +
+        `(letters, digits and . _ : - only, 1 to 128 characters).`,
+    };
+  }
+
+  // A queued build that names a plan is started by `actions.claimBuild` (see the decision in
+  // the write callback below); every other start keeps the registry-only path.
+  let delegate = false;
+  const result = taskRegistry.withRegistry(root, (reg, ctx) => {
     const task = reg.tasks.find((t) => t.id === id);
     if (!task) throw new Error('task-registry: unknown task id ' + String(id));
 
-    // A build the menu claimed itself (`startAgent`, through `continueAfterCrossing`) is
-    // already running with no agent id: the session launches its agent and stamps it here.
-    // Only that transition — a task that already carries an agent id is refused below, so a
-    // build is never launched twice.
-    if (kind === 'start' && task.status === 'running' && task.agentTaskId == null
+    // Build or registry-only is decided HERE, in the snapshot that would write, never from an
+    // earlier read: a queued build that names a plan is started by `actions.claimBuild`, which
+    // moves the plan into the build together with the registry write, one build start at a time.
+    // Nothing is written here (abort); a task that is not a build, a build with no plan, and a
+    // task not queued keep the registry-only path below.
+    if (kind === 'start' && task.kind === 'implement' && task.status === 'queued' && task.plan != null) {
+      ctx.abort();
+      delegate = true;
+      return undefined;
+    }
+
+    // The session's later `--agent-id` stamps a running task whose recorded agent is null (a
+    // claim by Start agent) or equals its own task id (the placeholder `menu task start <id>`
+    // recorded). The id already recorded is an idempotent success without a write; any other
+    // recorded agent refuses the stamp, so a build is never launched twice.
+    if (kind === 'start' && task.status === 'running'
         && typeof p.agentId === 'string' && p.agentId !== '') {
-      taskRegistry.updateTask(reg, id, { agentTaskId: p.agentId });
-      return { ok: true, taskId: id, status: 'running', stamped: true, text: `Task ${id} → running (agent ${stripCtl(p.agentId)} recorded)` };
+      if (task.agentTaskId === p.agentId) {
+        ctx.abort();
+        return { ok: true, taskId: id, status: 'running', text: `Task ${id} → running (agent ${p.agentId} already recorded)` };
+      }
+      if (task.agentTaskId == null || task.agentTaskId === task.id) {
+        taskRegistry.updateTask(reg, id, { agentTaskId: p.agentId });
+        return { ok: true, taskId: id, status: 'running', stamped: true, text: `Task ${id} → running (agent ${p.agentId} recorded)` };
+      }
+      ctx.abort();
+      return {
+        ok: false,
+        refused: true,
+        taskId: id,
+        reason: 'agent-recorded',
+        text: `Task ${id} NOT stamped — it already records agent ${shownAgentId(task.agentTaskId)}; a build is never launched twice.`,
+      };
     }
 
     // Legality is asked of the registry's ONE lifecycle encoding (item 4) — no local
@@ -2306,7 +2672,7 @@ function taskTransition(root, rest, kind) {
     // ── fail ─────────────────────────────────────────────────────────────────────
     if (kind === 'fail') {
       taskRegistry.updateTask(reg, id, { status: 'failed', result: { ok: false, summary: p.summary || 'failed' } });
-      const { promote, quarantined } = computePromote(reg);
+      const { promote, quarantined } = computePromote(reg, root);
       const failRes = {
         ok: true,
         taskId: id,
@@ -2325,6 +2691,11 @@ function taskTransition(root, rest, kind) {
     // other kind here, so there is no reachable tail.
     return undefined;
   });
+  if (!delegate) return result;
+  return menuClaimResult(require('./actions').claimBuild(root, id, {
+    agentTaskId: p.agentId || id,
+    force: p.force === true,
+  }));
 }
 
 /**
@@ -2535,7 +2906,8 @@ function taskComplete(root, rest) {
   // the COMPLETION turn to promote (scheduler-consulted every completion, Decision 4),
   // with the concurrent-edit guard applied — the same guard, on the same terms, as the
   // dashboard-open path. With `--continue` (the session's call only) the continuation
-  // replaces it: plans cross on their evidence, planners, classifications and builds start.
+  // replaces it: plans cross on their evidence, planners and classifications are queued, and at
+  // most one build is queued for the session to claim.
   let promote;
   let quarantined;
   if (p.continue === true) {
@@ -2543,7 +2915,7 @@ function taskComplete(root, rest) {
     ({ promote, quarantined } = cont);
     text += continuationText(cont);
   } else {
-    ({ promote, quarantined } = computePromote(settled));
+    ({ promote, quarantined } = computePromote(settled, root));
   }
   const res = {
     ok: true,
@@ -2572,17 +2944,19 @@ function taskComplete(root, rest) {
  *      label `revision-<whole millisecond>`, any status, so a failed classification is never
  *      retried in a loop; such a file never moves its plan, so this is the only way it moves
  *      without the human;
- *   5. when approved plans are buildable, `actions.startAgent` (never forced, so a requested
- *      stop is honoured) up to five times, collecting each claimed build task;
- *   6. the scheduler's promote list (`computePromote`) plus the claimed tasks.
+ *   5. when approved plans are buildable and no stop is requested, at most one queued build
+ *      task, for the first approved plan in `todo/` (in `todo/`'s order) that has no live build
+ *      task. The continuation never claims a build and never moves a plan into the build; the
+ *      session claims it with `menu task start <id>` before it launches the build's agent;
+ *   6. the scheduler's promote list (`computePromote`), which offers that build when the
+ *      scheduler allows it.
  * Each step fails soft with a named reason in `reasons`; a failed crossing pass returns the
  * plain promote list with `pending: []`. `started` phrases what started, for one status line.
  *
  * @param {string} root
  * @param {Array<{ref:string, toStage:string, name:string}>} [extraCrossed]
  * @returns {{crossed: Array<object>, promote: Array<object>, quarantined: Array<object>,
- *   pending: Array<object>, reasons: string[], started: string[], building: string[]}}
- *   `building` names the plans whose builds it started.
+ *   pending: Array<object>, reasons: string[], started: string[]}}
  */
 function continueAfterCrossing(root, extraCrossed = []) {
   const reasons = [];
@@ -2598,8 +2972,8 @@ function continueAfterCrossing(root, extraCrossed = []) {
   try {
     pending = streamingGate.pendingGateDecisions(root, { crossed });
   } catch {
-    const plain = computePromote(loadReg(root));
-    return { crossed: extra.slice(), promote: plain.promote, quarantined: plain.quarantined, pending: [], reasons: ['crossing-failed'], started, building: [] };
+    const plain = computePromote(loadReg(root), root);
+    return { crossed: extra.slice(), promote: plain.promote, quarantined: plain.quarantined, pending: [], reasons: ['crossing-failed'], started };
   }
   crossed.push(...extra);
 
@@ -2624,28 +2998,65 @@ function continueAfterCrossing(root, extraCrossed = []) {
     else if (queued === 'failed') reasons.push('classify-not-queued');
   }
 
-  const claimed = [];
-  const building = [];
   try {
-    if (require('./continuation-queue').nextBuildable(root).buildable.length > 0) {
-      const actions = require('./actions');
-      for (let i = 0; i < 5; i++) {
-        const r = actions.startAgent(root);
-        if (!r || r.started !== true) break;
-        claimed.push({ id: stripCtl(r.task.id), kind: 'implement', plan: r.task.plan == null ? null : stripCtl(r.task.plan), touches: r.task.touches, gitOp: r.task.gitOp === true });
-        building.push(planNameAt(r.plan && r.plan.path, r.plan && r.plan.name));
-      }
-    }
+    if (!taskRegistry.isDrainStopRequested(root)) queueNextBuild(root, reasons);
   } catch {
-    reasons.push('start-failed');
+    reasons.push('build-not-queued');
   }
 
-  const base = computePromote(loadReg(root));
-  const promote = base.promote.concat(claimed.filter((c) => !base.promote.some((t) => t.id === c.id)));
-  if (building.length) started.push(`building ${building.join(', ')}`);
+  const base = computePromote(loadReg(root), root);
   if (planned.length) started.push(`planning ${planned.join(', ')}`);
   if (classifying.length) started.push(`the gate critic checking the questions of ${classifying.join(', ')}`);
-  return { crossed, promote, quarantined: base.quarantined, pending, reasons, started, building };
+  return { crossed, promote: base.promote, quarantined: base.quarantined, pending, reasons, started };
+}
+
+/**
+ * Record at most one queued build task: for the first approved plan in `todo/` (in `todo/`'s
+ * own order) that has no live build task. Approved means `continuation-queue.nextBuildable`:
+ * ledger-vouched, dependencies built. A plan whose spec cannot be made (no `files:`, an
+ * unresolvable dependency) is skipped, as Start agent skips it. Claims nothing and moves no
+ * plan: the session claims the task with the menu's task start before it launches the agent.
+ * A plan whose ledger entry no longer matches the text read here is skipped; a plan whose spec is
+ * refused adds the reason `build-spec-refused` (no name, no message); a plan the registry refuses
+ * is skipped, and the last such refusal is thrown only when no build was queued at all.
+ * @param {string} root
+ * @param {string[]} [reasons] receives `build-spec-refused`
+ * @returns {{taskId: string, plan: string}|null} the task recorded, or null when none was
+ */
+function queueNextBuild(root, reasons = []) {
+  const actions = require('./actions');
+  const residency = require('./approval-residency');
+  const buildable = new Set(require('./continuation-queue').nextBuildable(root).buildable);
+  let failure = null;
+  for (const plan of readPlans(path.join(getPlansDir(root), 'todo'))) {
+    if (!buildable.has(`todo/${path.basename(plan.path)}`)) continue;
+    // One read decides both: the plan as read here must still match its ledger entry, and the
+    // spec is made from that same text (the selector's own read may be older).
+    if (residency.isApprovedForCoverage(plan.path, 'todo', root, plan.content).approved !== true) continue;
+    let spec;
+    try {
+      spec = actions.taskSpecFromPlan(plan, root);
+    } catch {
+      if (!reasons.includes('build-spec-refused')) reasons.push('build-spec-refused');
+      continue;
+    }
+    let added;
+    try {
+      added = taskRegistry.withRegistry(root, (reg, ctx) => {
+        if (taskRegistry.findActivePlanTask(reg, spec.plan, 'implement')) {
+          ctx.abort();
+          return null;
+        }
+        return taskRegistry.addTask(reg, spec);
+      });
+    } catch (err) {
+      failure = err; // the registry refused this plan's task; try the next plan
+      continue;
+    }
+    if (added) return { taskId: added.id, plan: spec.plan };
+  }
+  if (failure) throw failure; // nothing was queued and a plan was refused: the caller records it
+  return null;
 }
 
 /**
@@ -2691,19 +3102,9 @@ function streamCheck(ref, projectPath) {
     failed: `Could not ask for a check of ${file}; its questions stay with you.`,
   }[outcome];
   const screen = streamingGate.streamingGateScreen(root, status);
-  const { promote } = computePromote(loadReg(root));
+  const { promote } = computePromote(loadReg(root), root);
   if (promote.length > 0) screen.promote = promote;
   return screen;
-}
-
-/** The human name of the plan at `planPath`, read from its `# Heading`, else its slug. */
-function planNameAt(planPath, slug) {
-  try {
-    const m = safeFs.readFileSync(planPath, 'utf8').match(/^#\s+(.+)$/m);
-    return streamingGate.humanPlanName(m ? m[1].trim() : '', slug);
-  } catch {
-    return stripCtl(String(slug || ''));
-  }
 }
 
 /** The completion's lines for what the continuation did, names capped like the session status. */
@@ -2716,7 +3117,6 @@ function continuationText(cont) {
   let out = '';
   if (done.length) out += ` · finished on their checks: ${names(done)}`;
   if (moved.length) out += ` · moved on: ${names(moved)}`;
-  if (cont.building.length) out += ` · started building: ${summarize(cont.building)}`;
   if (unwritten.length) out += ` · could not write the questions decided by default into: ${names(unwritten)}`;
   return out;
 }
@@ -2848,6 +3248,9 @@ function route(args, projectPath, opts = {}) {
     case 'inbox':
       // W1 doors: a reachable read-only list behind every dashboard inbox COUNT.
       if (args[1] === 'questions') return inboxQuestionsScreen(projectPath);
+      if (args[1] === 'question') return inboxQuestionScreen(args[2], projectPath);
+      // The owner's answer to one question; his words are `opts.answerText`, read from standard input.
+      if (args[1] === 'answer') return inboxAnswerScreen(args.slice(2), projectPath, opts.answerText);
       if (args[1] === 'decisions') return inboxDecisionsScreen(projectPath);
       if (args[1] === 'gates') return inboxGatesScreen(projectPath);
       if (args[1] === 'escalations') return inboxEscalationsScreen(projectPath);

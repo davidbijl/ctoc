@@ -58,7 +58,7 @@ Hook or gate logic changes only with the owner's explicit approval. Plans declar
 ```bash
 npm test                             # THE GATED ENTRY POINT — runs the suite AND the
                                      # coverage floor + zero-skipped gate (test-gate.js)
-node --test tests/*.test.js          # Run all 567 test files — suite ONLY; does NOT
+node --test tests/*.test.js          # Run all 575 test files — suite ONLY; does NOT
                                      # enforce coverage or the zero-skipped gate. Use for
                                      # a fast pass, not as the gate.
 node src/scripts/release.js          # Sync VERSION to all JSON files
@@ -91,7 +91,7 @@ ctoc/
     tabs/  4 dashboard tab files (overview, vision, review, tools)
   agents/  125 agent definitions
   skills/  430 skill files (102 SKILL.md bodies = 99 Tier-2 specialists + 2 ambient skills, the decision format and deepthink, + 1 pointer to the advocate agent; + 328 reference)
-  tests/  567 test files
+  tests/  575 test files
   .ctoc/  Config and templates
   .claude-plugin/  Plugin metadata
   plans/  Plan files by stage (vision/ … done/)
@@ -136,7 +136,7 @@ Full details: `docs/IRON_LOOP.md`.
 | 15 | DOCUMENT | iron-loop-executor (sonnet) | |
 | 16 | FINAL-REVIEW | iron-loop-critic (opus) | Gate 3: finishes on its checks |
 
-Steps 1–7 are collaborative (agents ask, the user decides); Steps 8–16 run without interruption. Step labels are MANDATORY: `src/lib/plan-validator.js` rejects a missing step; the label-text checker `src/hooks/validate-plan-steps.js` is not wired as a runtime hook. **Step 10 is ONE step** with sub-items per file. One functional plan becomes N small implementation plans (~1–3 files each, linked by `parent_plan`, ordered by `depends_on`). **Step 14 VERIFY** is the quality gate: lint, typecheck, all tests, coverage at or above the floor, 0 skipped, 0 flaky, via `npm test`. **Circuit breaker**: max 3 kickbacks to one step, 5 per plan, then escalate to the user.
+Step labels are MANDATORY: `src/lib/plan-validator.js` rejects a missing step; the label-text checker `src/hooks/validate-plan-steps.js` is not wired as a runtime hook. **Step 10 is ONE step** with sub-items per file. One functional plan becomes N small implementation plans, linked by `parent_plan` and ordered by `depends_on`. **Circuit breaker**: max 3 kickbacks to one step, 5 per plan, then escalate to the user.
 
 ## Menu System Rules
 

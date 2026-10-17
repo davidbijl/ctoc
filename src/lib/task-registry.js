@@ -1219,8 +1219,16 @@ function addAndClaim(root, spec, opts = {}) {
 // ── drain-stop flag (graceful "finish current, then stop") ─────────────────────────
 
 /**
- * Request a graceful drain-stop: existing work finishes, nothing new starts. Persists
- * by creating the flag file `.ctoc/state/drain-stop`. Idempotent.
+ * Request a graceful drain-stop: existing work finishes, and no list offers a new build while
+ * a stop is requested; a build still starts by an explicit `menu task start` or Start agent.
+ * Every kind other than `implement` stays on offer (planners, classifications, question
+ * precomputes, reviews, quality and security checks, decompositions, discussions, syncs): the
+ * only thing that clears a stop is a forced Start agent, which then tries to claim a build, so
+ * holding them back too would stall planning with no way to resume it short of starting a
+ * build. This is decision 12 of the plan
+ * four-defects-in-the-menu-and-the-release-found-on-2026-10-11, a decision taken under
+ * ambiguity, not by the owner. Persists by creating the flag file `.ctoc/state/drain-stop`.
+ * Idempotent.
  * @param {string} root  Project root.
  * @returns {void}
  */

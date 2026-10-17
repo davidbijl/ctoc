@@ -947,10 +947,23 @@ function main() {
     // NOT duplicated into this branch).
     const { route } = require('../lib/menu-screens');
     const splitArgs = splitCliArgs(rest);
+    // The owner's answer to an inbox question arrives on STANDARD INPUT (a quoted heredoc in the main
+    // session), never on the command line: standard input is read for exactly
+    // `inbox answer <id> --stdin`, once, and only when it is not a terminal. `tty.isatty(0)` asks without
+    // building process.stdin (which would put a pipe in non-blocking mode so the read below could fail
+    // with EAGAIN). `readStandardInput` reads descriptor 0 into a buffer capped at the answer limit plus
+    // two bytes (no input at all, or EAGAIN before any byte, is undefined; EAGAIN after some bytes and any
+    // other read error is a marker the route refuses with its own sentence), so the cap lives in one
+    // place, the inbox module.
+    let answerText;
+    if (splitArgs.length === 4 && splitArgs[0] === 'inbox' && splitArgs[1] === 'answer'
+      && splitArgs[3] === '--stdin' && !require('tty').isatty(0)) {
+      answerText = require('../lib/inbox').readStandardInput(0);
+    }
     // A route may answer asynchronously (`hotfix check --run-tests` runs the tests), so the
     // answer is printed once it settles. A synchronous route still throws exactly as before:
     // the call happens before Promise.resolve.
-    Promise.resolve(route(splitArgs, app.projectPath, { liveAgentIds })).then((result) => {
+    Promise.resolve(route(splitArgs, app.projectPath, { liveAgentIds, answerText })).then((result) => {
       console.log(JSON.stringify(result, null, 2));
     });
     return;

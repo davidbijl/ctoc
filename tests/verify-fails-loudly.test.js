@@ -188,3 +188,50 @@ describe('tryCommand — a timeout is UNCERTIFIED with its true reason, not a te
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// V8c-V8f — the DEFAULT per-command limit covers the full suite (900000 ms), the
+// variable still overrides it, and a malformed or fractional value falls back to
+// it. The limit is per command, so it must cover the longest single check.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('resolveVerifyTimeout — the default limit covers the full suite', () => {
+  function withVerifyTimeoutEnv(value, fn) {
+    const prev = process.env.CTOC_VERIFY_TIMEOUT_MS;
+    if (value === undefined) delete process.env.CTOC_VERIFY_TIMEOUT_MS;
+    else process.env.CTOC_VERIFY_TIMEOUT_MS = value;
+    try { return fn(); } finally {
+      if (prev === undefined) delete process.env.CTOC_VERIFY_TIMEOUT_MS;
+      else process.env.CTOC_VERIFY_TIMEOUT_MS = prev;
+    }
+  }
+
+  it('V8c: with the variable unset the default is 900000 ms', () => {
+    withVerifyTimeoutEnv(undefined, () => {
+      assert.equal(verify.resolveVerifyTimeout(), 900000);
+    });
+  });
+
+  it('V8d: a valid variable still overrides the default, below and above it', () => {
+    withVerifyTimeoutEnv('250', () => assert.equal(verify.resolveVerifyTimeout(), 250));
+    withVerifyTimeoutEnv('1800000', () => assert.equal(verify.resolveVerifyTimeout(), 1800000));
+    withVerifyTimeoutEnv(undefined, () => assert.equal(verify.resolveVerifyTimeout(300), 300));
+  });
+
+  it('V8e: an invalid or fractional variable or override falls back to the default', () => {
+    for (const bad of ['', 'abc', '0', '-5', '1.5']) {
+      withVerifyTimeoutEnv(bad, () => {
+        assert.equal(verify.resolveVerifyTimeout(), 900000, `CTOC_VERIFY_TIMEOUT_MS=${JSON.stringify(bad)} must fall back to 900000`);
+      });
+    }
+    withVerifyTimeoutEnv(undefined, () => {
+      assert.equal(verify.resolveVerifyTimeout(300.5), 900000, 'a fractional override 300.5 must fall back to 900000');
+    });
+  });
+
+  it('V8f: a fractional variable does not fail a passing command', () => {
+    withVerifyTimeoutEnv('1.5', () => {
+      const r = verify.tryCommand('node -e "process.exit(0)"', dir);
+      assert.equal(r.success, true, `a fractional limit must fall back, not fail the check; got: ${JSON.stringify(r)}`);
+    });
+  });
+});

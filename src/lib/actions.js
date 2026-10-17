@@ -30,6 +30,7 @@ const { logTransition } = require('./transition-log');
 const { invalidate } = require('./cache');
 const taskRegistry = require('./task-registry');
 const { upsertMarkerFields } = require('./frontmatter-merge');
+const { stripCtl } = require('./tui');
 
 /**
  * Commit `data` to `target` ATOMICALLY (temp sibling + rename), mirroring the
@@ -1000,6 +1001,316 @@ function startExecution(planPath, projectPath) {
   return movePlan(planPath, 'in-progress', root);
 }
 
+/** A lock older than this was left by a start that died; the next start takes it over. */
+const BUILD_START_LOCK_STALE_MS = 60000;
+
+/**
+ * Run `fn` while holding the one build-start lock, `.ctoc/state/build-start.lock`, created
+ * exclusively (`wx`). A start that finds the lock held by a live start does not wait: it
+ * answers `{ busy: true }` at once (no sleep loop), and its caller says so in a plain sentence.
+ * A lock more than 60 s old (the plan-index store waits at most 15 s for its own lock) is
+ * taken over. The lock is released only if it still holds our token, so a start never
+ * deletes another start's lock.
+ *
+ * ponytail: two holders are possible after a takeover (a holder slower than 60 s, or two
+ * starts taking over the same stale lock at once). The registry write's compare-and-swap
+ * re-check keeps the claim single; upgrade path is a heartbeat like the plan-index store's.
+ *
+ * What sits at the lock path is judged with `lstat`, so a link is never followed, when the lock
+ * is taken and when it is released: a symbolic link is deleted and the create retried once
+ * (a link that cannot be deleted, a directory, or anything else that is not a plain file is
+ * never followed or touched, and the result names it: `unusable`, the project-relative path,
+ * so the caller can say so instead of "busy"). The release reads the path only when it is a
+ * plain file of at most 64 bytes (our mark is shorter); anything else is not ours and stays.
+ *
+ * @template T
+ * @param {string} root - Project root
+ * @param {() => T} fn - the build-start work, run only while the lock is ours
+ * @returns {{ busy: false, value: T } | { busy: true, unusable?: string }}
+ */
+function withBuildStartLock(root, fn) {
+  const lockPath = path.join(root, '.ctoc', 'state', 'build-start.lock');
+  safeFs.mkdirSync(path.dirname(lockPath), { recursive: true });
+  const ownerMark = `${process.pid}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+  // true when `op` ran; false when it threw. Every caller below states why its failure is not a verdict.
+  const attempt = (op) => {
+    try { op(); return true; } catch { return false; }
+  };
+  // Windows reports a lock file that is being deleted as EPERM/EACCES/EBUSY: that is "held".
+  const create = () => {
+    try {
+      safeFs.writeFileSync(lockPath, ownerMark, { flag: 'wx' });
+      return 'created';
+    } catch (err) {
+      if (err && err.code === 'EEXIST') return 'held';
+      if (process.platform === 'win32' && err && ['EPERM', 'EACCES', 'EBUSY'].includes(err.code)) return 'busy';
+      throw err;
+    }
+  };
+  let got = create();
+  if (got === 'held') {
+    let st = null;
+    // Gone or unreadable: no age to judge, so the second create below decides (not a verdict).
+    try { st = safeFs.lstatSync(lockPath); } catch { st = null; }
+    if (st) {
+      if (!st.isSymbolicLink() && !st.isFile()) {
+        return { busy: true, unusable: path.relative(root, lockPath).split(path.sep).join('/') };
+      }
+      // A clock set back or forward leaves a lock dated in the future: its age counts both ways.
+      if (!st.isSymbolicLink() && Math.abs(Date.now() - st.mtimeMs) <= BUILD_START_LOCK_STALE_MS) return { busy: true };
+      // A link that cannot be deleted (Windows may refuse) is as unusable as a directory; any
+      // other delete that raced or was refused leaves the lock in place: the second create decides.
+      if (!attempt(() => safeFs.unlinkSync(lockPath)) && st.isSymbolicLink()) {
+        return { busy: true, unusable: path.relative(root, lockPath).split(path.sep).join('/') };
+      }
+    }
+    got = create();
+  }
+  if (got !== 'created') return { busy: true };
+  try {
+    return { busy: false, value: fn() };
+  } finally {
+    // Gone, taken over, replaced by a link or by a file too long to be our mark: not ours to
+    // read or delete, so a failed lstat or read is not an error.
+    let ours = false;
+    try {
+      const now = safeFs.lstatSync(lockPath);
+      ours = now.isFile() && now.size <= 64 && safeFs.readFileSync(lockPath, 'utf8') === ownerMark;
+    } catch { ours = false; }
+    // Ours but undeletable: the next start waits out the 60 s; say so where the human can see it.
+    if (ours && !attempt(() => safeFs.unlinkSync(lockPath))) {
+      taskRegistry.warnLog(root, 'build_start_lock_release_failed',
+        { lockPath: path.relative(root, lockPath).split(path.sep).join('/') });
+    }
+  }
+}
+
+const cutCtl = (v, n) => stripCtl(String(v == null ? '' : v)).slice(0, n);
+const schedulerRefusalText = (id, reason) =>
+  `Task ${id} NOT started — the scheduler refuses it (${reason}). ` +
+  `Wait for the blocker to clear, or override with --force (human decision, logged).`;
+/**
+ * A refused build start: nothing was moved or written.
+ * @param {string} id
+ * @param {string} reason
+ * @param {string} text
+ * @returns {{ ok: false, refused: true, taskId: string, reason: string, text: string }}
+ */
+const refuse = (id, reason, text) => ({ ok: false, refused: true, taskId: id, reason, text });
+/** The words for a build-start lock that is not a plain file (`lockPath` is project-relative). */
+const lockUnusableText = (lockPath) => `${lockPath} is not a plain file; remove it and start again`;
+
+/**
+ * The build start itself, run by a caller that HOLDS the build-start lock: reload the task,
+ * re-check the scheduler, move the build's plan `todo/` -> `in-progress/`, then claim the task
+ * (queued -> running) through the registry's compare-and-swap. The plan moves BEFORE the
+ * registry write and goes back if the write refuses or throws, so a start never leaves a
+ * plan in the build with its task queued (nothing but a failed move back can).
+ *
+ * @param {string} root - Project root
+ * @param {string} id - the queued build task
+ * @param {{ agentTaskId?: (string|null), force?: boolean }} [opts]
+ * @returns {object} see {@link claimBuild}
+ * @throws {Error} unknown task id (code `unknown-task`); a registry write failure
+ */
+function claimBuildLocked(root, id, opts = {}) {
+  const force = opts.force === true;
+  const agentTaskId = opts.agentTaskId == null ? null : opts.agentTaskId;
+
+  // a. Reload and re-check: the first check ran outside the lock.
+  const reg = taskRegistry.load(root);
+  const task = reg.tasks.find((t) => t.id === id);
+  if (!task) throw Object.assign(new Error('task-registry: unknown task id ' + String(id)), { code: 'unknown-task' });
+  if (task.status === 'running' || task.status === 'cancelling') {
+    return refuse(id, 'already-started', `Task ${id} NOT started — another start claimed it first; it is running.`);
+  }
+  if (task.status !== 'queued') {
+    return refuse(id, 'not-queued', `Task ${id} NOT started — it was ${task.status} while starting.`);
+  }
+  const before = taskRegistry.canRun(task, reg);
+  if (!before.run && !force) return refuse(id, before.reason, schedulerRefusalText(id, before.reason));
+
+  // b. Locate the plan. `task.plan` comes from the registry, so it is joined into a path
+  //    only as a safe bare name that names a file EXACTLY (a directory listing, so a name
+  //    that differs only in letter case is not found on a case-insensitive file system).
+  //    --force overrides the scheduler, never a missing plan.
+  const slug = String(task.plan);
+  const shown = cutCtl(slug, 80);
+  if (typeof task.plan !== 'string') {
+    return refuse(id, 'plan-name-not-bare',
+      `Task ${id} NOT started — its plan name is not plain text, so it cannot name a plan file.`);
+  }
+  if (/\.md$/i.test(slug)) {
+    return refuse(id, 'plan-name-not-bare',
+      `Task ${id} NOT started — its plan name "${shown}" must be the bare plan name, without the .md suffix.`);
+  }
+  const plansDir = getPlansDir(root);
+  const holds = (stage) => {
+    try { return safeFs.readdirSync(path.join(plansDir, stage)).includes(`${slug}.md`); } catch { return false; }
+  };
+  let todoPath = '';
+  let buildPath = '';
+  let inTodo = false;
+  let inBuild = false;
+  if (isSafePlanSlug(slug)) {
+    todoPath = path.join(plansDir, 'todo', `${slug}.md`);
+    buildPath = path.join(plansDir, 'in-progress', `${slug}.md`);
+    inTodo = holds('todo');
+    inBuild = holds('in-progress');
+  }
+  if (!inTodo && !inBuild) {
+    return refuse(id, 'plan-not-found',
+      `Task ${id} NOT started — its plan "${shown}" is in neither plans/todo/ nor plans/in-progress/, so it cannot be built.`);
+  }
+  if (!inTodo) {
+    // Only in the build: a start that moved it and failed to write the registry. It belongs to
+    // this task alone; another live build for the same name (letter case aside) holds it.
+    const key = slug.toLowerCase();
+    const other = reg.tasks.find((t) => t.id !== id && t.kind === 'implement' && t.plan != null
+      && !taskRegistry.TERMINAL.has(t.status) && String(t.plan).replace(/\.md$/i, '').toLowerCase() === key);
+    if (other) {
+      return refuse(id, 'plan-held-by-another-build',
+        `Task ${id} NOT started — its plan "${shown}" is already in plans/in-progress/ and task ${cutCtl(other.id, 20)} ` +
+        `covers it (${other.status}); cancel one of the two tasks first.`);
+    }
+  }
+
+  // c. Move the plan (before the registry write). Already in the build: a start that moved
+  //    it and then failed to write the registry; nothing to move.
+  let moved = false;
+  let newPath = buildPath;
+  if (inTodo) {
+    try {
+      newPath = startExecution(todoPath, root);
+      moved = true;
+    } catch (err) {
+      return refuse(id, 'plan-move-failed',
+        `Task ${id} NOT started — its plan "${shown}" could not be moved from plans/todo/ to ` +
+        `plans/in-progress/ (${cutCtl(err && err.message, 120)}); it stays in plans/todo/.`);
+    }
+  }
+
+  // d. The registry write: the mutator re-checks against the freshest state, so a completion,
+  //    a cancel, an add or a reconcile in another process cannot be overwritten.
+  let outcome = null;
+  /** @type {{ run: boolean, reason: string }} set by the mutator that decided the outcome */
+  let decision = { run: false, reason: 'not-evaluated' };
+  let claimedTask = null;
+  let writeErr = null;
+  try {
+    taskRegistry.withRegistry(root, (fresh, ctx) => {
+      outcome = null;
+      decision = { run: false, reason: 'not-evaluated' };
+      const t = fresh.tasks.find((x) => x.id === id);
+      if (!t || t.status !== 'queued') { ctx.abort(); outcome = 'lost'; return; }
+      decision = taskRegistry.canRun(t, fresh);
+      if (!decision.run && !force) { ctx.abort(); outcome = 'refused'; return; }
+      claimedTask = taskRegistry.updateTask(fresh, id, { status: 'running', agentTaskId });
+      outcome = 'claimed';
+    });
+  } catch (err) {
+    writeErr = err;
+  }
+
+  // e. After the write.
+  const suffix = ` · its plan ${shown} is in plans/in-progress/`;
+  if (!writeErr && outcome === 'claimed') {
+    const forced = !decision.run;
+    if (forced) taskRegistry.warnLog(root, 'forced_start', { id, reason: decision.reason });
+    return {
+      ok: true,
+      taskId: id,
+      task: claimedTask,
+      slug,
+      planPath: `plans/in-progress/${slug}.md`,
+      newPath,
+      moved,
+      forced,
+      reason: decision.reason,
+      text: (forced
+        ? `Task ${id} → running — ⚠ FORCED past the scheduler (${decision.reason}); ` +
+          `a human overrode the ladder. Recorded in the task warn log.`
+        : `Task ${id} → running`) + suffix,
+    };
+  }
+  // Not claimed. Where the task stands now decides whether the plan stays in the build.
+  let state = null;
+  let unreadable = false;
+  try {
+    const now = taskRegistry.load(root);
+    const cur = now.tasks.find((x) => x.id === id);
+    state = cur ? cur.status : null;
+    unreadable = now.unreadable === true;
+  } catch {
+    unreadable = true; // unreadable counts as not running: the plan goes back
+  }
+  const inFlight = state === 'running' || state === 'cancelling';
+  let putBack = false;
+  let backNote = '';
+  if (moved && !inFlight) {
+    try {
+      movePlan(newPath, 'todo', root);
+      putBack = true;
+    } catch (err) {
+      backNote = ` Its plan could not be moved back to plans/todo/ (${cutCtl(err && err.message, 120)}); ` +
+        `it is in plans/in-progress/.`;
+    }
+  }
+  if (writeErr) {
+    if (!backNote) throw writeErr;
+    const e = writeErr instanceof Error ? writeErr : new Error(String(writeErr));
+    e.message += backNote;
+    throw e;
+  }
+  if (outcome === 'refused') return refuse(id, decision.reason, schedulerRefusalText(id, decision.reason) + backNote);
+  if (inFlight) {
+    return refuse(id, 'already-started', `Task ${id} NOT started — another start claimed it first; it is running.${backNote}`);
+  }
+  const backClause = putBack ? '; its plan is back in plans/todo/' : '';
+  if (unreadable) {
+    return refuse(id, 'not-queued', `Task ${id} NOT started — the task registry could not be read${backClause}.${backNote}`);
+  }
+  return refuse(id, 'not-queued',
+    `Task ${id} NOT started — it was ${state === null ? 'removed' : state} while starting${backClause}.${backNote}`);
+}
+
+/**
+ * Start a queued build: THE one build-start step behind `menu task start <id>`. Checks the
+ * scheduler read-only first (a refused start takes no lock and writes nothing), then claims
+ * the build under the build-start lock, so two starts are never inside the step at once.
+ *
+ * @param {string} projectPath - Project root
+ * @param {string} taskId - a queued `implement` task that names a plan
+ * @param {{ agentTaskId?: (string|null), force?: boolean }} [opts] - the agent id to record
+ *   (null: Start agent's claim, stamped later); `force` overrides the scheduler only
+ * @returns {{ ok: true, taskId: string, task: object, slug: string, planPath: string,
+ *   newPath: string, moved: boolean, forced: boolean, reason: string, text: string }
+ *   | { ok: false, refused: true, taskId: string, reason: string, text: string }}
+ * @throws {Error} unknown task id (code `unknown-task`); the task is not a build that names a
+ *   plan; the task is not queued; a registry write failure
+ */
+function claimBuild(projectPath, taskId, opts = {}) {
+  const root = projectPath || findProjectRoot();
+  const reg = taskRegistry.load(root);
+  const task = reg.tasks.find((t) => t.id === taskId);
+  if (!task) throw Object.assign(new Error('task-registry: unknown task id ' + String(taskId)), { code: 'unknown-task' });
+  if (task.kind !== 'implement' || task.plan == null) {
+    throw new Error(`task-registry: task ${String(taskId)} is not a build that names a plan`);
+  }
+  if (task.status !== 'queued') throw new Error(`task-registry: invalid transition ${task.status} → running`);
+  const decision = taskRegistry.canRun(task, reg);
+  if (!decision.run && opts.force !== true) return refuse(taskId, decision.reason, schedulerRefusalText(taskId, decision.reason));
+  const locked = withBuildStartLock(root, () => claimBuildLocked(root, taskId, opts));
+  if (!('value' in locked)) {
+    if (locked.unusable) {
+      return refuse(taskId, 'build-start-lock-unusable', `Task ${taskId} NOT started — ${lockUnusableText(locked.unusable)}.`);
+    }
+    return refuse(taskId, 'build-start-busy',
+      `Task ${taskId} NOT started — another build start is being recorded at this moment; run the same command again.`);
+  }
+  return locked.value;
+}
+
 /**
  * Complete execution and move to review
  * Validates the plan before allowing transition.
@@ -1810,18 +2121,23 @@ function taskSpecFromPlan(plan, projectPath) {
  * NEXT plan is tried; the first plan with a valid spec wins. A single refusal never
  * blocks the plans queued behind it.
  *
+ * Steps 3-5 (the todo walk, the claim, the plan move) run under the one build-start lock
+ * (`withBuildStartLock`), so two build starts are never inside the step at once. A start that
+ * finds the lock held answers `{ started: false, error, busy: true }` at once: nothing was
+ * read or moved, and pressing Start agent again is the remedy. A lock that is not a plain
+ * file answers `{ started: false, error }` without `busy`: the human must remove it.
+ *
  * @param {string} projectPath - Project root
  * @param {{ force?: boolean }} [options] - `force: true` clears a drain-stop and
  *   starts anyway (the human-initiated menu start). Without it a drain-stopped root
  *   is honored.
- * @returns {{ started: boolean, error?: string, queued?: boolean, reason?: string,
+ * @returns {{ started: boolean, error?: string, busy?: boolean, queued?: boolean, reason?: string,
  *   task?: object, plan?: object, cleanedUp?: string[], drainStopped?: boolean,
  *   skipped?: Array<{plan:string, reason:string}>,
  *   queuedTasks?: Array<{plan:string, taskId:string, reason:string}>, remainingTodo?: number }}
  */
 function startAgent(projectPath, options = {}) {
   const root = projectPath || findProjectRoot();
-  const { readPlans, getPlansDir, setAgentStatus } = require('./state');
 
   // 1. Drain-stop protection (C1-10). A forced (human-initiated) start un-drains
   //    and proceeds; an unforced start honors the drain-stop and starts nothing.
@@ -1836,6 +2152,27 @@ function startAgent(projectPath, options = {}) {
   // 2. Sweep stale in-progress plans (D2). cleanupStaleInProgress returns
   //    { cleanedUp, skipped }; surface the moved-name list, preserving cleanedUp[].
   const { cleanedUp } = cleanupStaleInProgress(root);
+
+  // 3-5 run under the one build-start lock: a start that finds another start inside the
+  //     step is refused at once instead of racing it.
+  const locked = withBuildStartLock(root, () => claimFirstTodoPlan(root, cleanedUp));
+  if (!('value' in locked)) {
+    if (locked.unusable) return { started: false, error: lockUnusableText(locked.unusable) };
+    return { started: false, error: 'another build start is being recorded at this moment; press Start agent again', busy: true };
+  }
+  return locked.value;
+}
+
+/**
+ * Steps 3-5 of {@link startAgent}: walk the FIFO todo queue and claim the first plan the
+ * scheduler lets start. The caller holds the build-start lock.
+ *
+ * @param {string} root - Project root
+ * @param {string[]} cleanedUp - the plans the stale sweep moved (echoed in every result)
+ * @returns {object} the `startAgent` result
+ */
+function claimFirstTodoPlan(root, cleanedUp) {
+  const { readPlans, getPlansDir, setAgentStatus } = require('./state');
 
   // 3. FIFO todo queue (already sorted by readPlans).
   const plansDir = getPlansDir(root);
@@ -1870,19 +2207,47 @@ function startAgent(projectPath, options = {}) {
     // winner on a conflict), so two interleaved same-plan starts can never each add a
     // duplicate — the former standalone `findActivePlanTask(load(root))` pre-check left a
     // window between the check and the claim.
+    //
+    // A QUEUED existing task (recorded with `menu task add`) is claimed here through
+    // `claimBuildLocked` under the build-start lock this walk holds: never `claimBuild`,
+    // whose own acquisition would refuse itself as busy, and never forced (Start agent's
+    // `force` only clears a requested stop). A running or cancelling one is left alone.
     const { task, claimed, reason, existing } = taskRegistry.addAndClaim(root, spec, { uniquePlan: true });
+    let startedTask;
+    let newPath;
     if (existing) {
-      queuedTasks.push({ plan: plan.name, taskId: task.id, reason: 'already-queued' });
-      continue;
+      if (task.status !== 'queued') {
+        queuedTasks.push({ plan: plan.name, taskId: task.id, reason: 'already-queued' });
+        continue;
+      }
+      let claim;
+      try {
+        claim = claimBuildLocked(root, task.id, { agentTaskId: null });
+      } catch (err) {
+        if (err && err.code === 'unknown-task') { // the task vanished since addAndClaim read it
+          queuedTasks.push({ plan: plan.name, taskId: task.id, reason: 'already-queued' });
+          continue;
+        }
+        throw err;
+      }
+      if (!claim.ok) {
+        queuedTasks.push({ plan: plan.name, taskId: task.id, reason: claim.reason });
+        continue;
+      }
+      startedTask = claim.task;
+      newPath = claim.newPath;
+    } else {
+      if (!claimed) {
+        // item 3: the ladder refused this head; keep its single queued task and try the next.
+        queuedTasks.push({ plan: plan.name, taskId: task.id, reason });
+        continue;
+      }
+      startedTask = task;
+      newPath = startExecution(plan.path, root);
     }
-    if (!claimed) {
-      // item 3: the ladder refused this head; keep its single queued task and try the next.
-      queuedTasks.push({ plan: plan.name, taskId: task.id, reason });
-      continue;
-    }
-    // 5. Claimed → move the plan to in-progress and light up the dashboard status.
+    // 5. Claimed (fresh or an existing queued task) and its plan is in the build → light up
+    //    the dashboard status.
     claimIndex = i;
-    const newPath = startExecution(plan.path, root);
     setAgentStatus(root, {
       active: true,
       plan: plan.name,
@@ -1892,7 +2257,7 @@ function startAgent(projectPath, options = {}) {
     });
     return {
       started: true,
-      task,
+      task: startedTask,
       plan: { name: plan.name, path: newPath },
       cleanedUp,
       skipped,
@@ -1930,7 +2295,7 @@ function stopAgent(projectPath) {
 
   const message = running.length > 0
     ? `Stop requested. Will finish current plan(s): ${running.join(', ')}, then stop.`
-    : 'Stop requested. No plan is currently running; nothing new will start.';
+    : 'Stop requested. No plan is currently running; no new build will be offered until the stop is cleared.';
 
   return { stopped: true, message, running };
 }
@@ -2474,6 +2839,7 @@ module.exports = {
   AGENT_TYPES,
   initBackgroundAgent,
   startExecution,
+  claimBuild,
   completeExecution,
   // R3-D: the live call site of completeExecution (menu `task complete` route)
   completeTaskPlan,
