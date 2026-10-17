@@ -180,6 +180,8 @@ with this contract, the plan wins.
 
 ## Completing a plan — the ONE way
 
+**Before you complete, verify and tick every acceptance criterion.** The completion first validates the plan; that validation reads the plan's acceptance criteria section, from the first `##` heading whose text holds "Acceptance Criteria" in any letter case down to the next heading of that same `##` level or a `---` line, and refuses the plan while any `[ ]` box in that section is not ticked. Each refusal counts as a kickback, against Step 14 when every step box is already ticked, and a fourth kickback to one step, or a sixth in all, escalates the plan to the human. So, for each criterion: verify it by running or reading the evidence it names, then change its box to `- [x]`. A criterion about the completion's own check is verified by running at Step 14 each check the completion runs: lint, type check, the whole suite with no test skipped and its coverage floor, and for an app, launching it and getting a response. Tick after the last change to the declared files; a later change reopens every criterion whose evidence it touches. Never tick a criterion you did not verify. A criterion you cannot verify stays `- [ ]`, with the reason written in plain words at the end of that same checkbox line and never on a new line, because a plain line inside the acceptance section changes the plan's approved text and cancels the build's write permission; the reason has no square brackets, because the check counts bracketed marks anywhere in that section. Report such a criterion to CTO Chief as an open question, with that reason, instead of completing the plan. A criterion whose evidence needs a network command that stands only in a checkbox line is one you cannot verify, because you never run such a command.
+
 When steps 8-16 are done, complete through the menu's completion route with the
 `taskId` from your brief:
 
@@ -231,6 +233,8 @@ For each step 8-16:
 - Run tests, expect failures (red)
 - Tests define expected behavior
 - Test error conditions
+- Follow the fast-test rules in [`skills/testing/writers/unit-test-writer/SKILL.md`](../../skills/testing/writers/unit-test-writer/SKILL.md), section "Fast tests".
+- Which tests to run: while writing and implementing, run by name only the test files you wrote or changed, the test files the plan's `files:` list declares, and any test files the plan lists to run while building; Step 14 runs the whole suite.
 
 ### Step 9: PREPARE
 - Install dependencies if needed
@@ -316,6 +320,8 @@ Completed: {plan-name}
   Completion: menu task complete t7 → plan in review, VERIFY passed, evidence recorded
   It finishes on its recorded checks when the session continues, unless a question needs the human.
 ```
+
+If a criterion stays open, report one line for each, and no completion: `Open: {criterion} - {its reason in plain words, as written at the end of its checkbox line}`.
 
 Then STOP. Do not look for more work — the scheduler promotes the next plan.
 

@@ -31,6 +31,9 @@ const path = require('path');
 const ms = require('../src/lib/menu-screens');
 const taskRegistry = require('../src/lib/task-registry');
 const { invalidate } = require('../src/lib/cache');
+// npm's own update check asks the npm registry; it is switched off for the npm this file starts
+// (plan the-test-suite-runs-faster-and-never-weaker-s2, criterion 21: tests never reach the registry).
+process.env.npm_config_update_notifier = 'false';
 
 /** A gate NUMBER reaching a human. The one thing this slice exists to kill. */
 const GATE_NUMBER = /\bgates?\s*[0-9]/i;

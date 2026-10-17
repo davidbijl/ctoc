@@ -33,6 +33,9 @@ const os = require('node:os');
 const qualityAgent = require('../src/lib/quality-agent');
 const toolDetector = require('../src/lib/tool-detector');
 const { runFullTests } = qualityAgent;
+// npm's own update check asks the npm registry; it is switched off for the npm this file starts
+// (plan the-test-suite-runs-faster-and-never-weaker-s2, criterion 21: tests never reach the registry).
+process.env.npm_config_update_notifier = 'false';
 
 function mkTmp(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));

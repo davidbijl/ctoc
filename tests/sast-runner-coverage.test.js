@@ -36,6 +36,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const cp = require('node:child_process');
+const { makeFakeEslintProject } = require('./helpers/security-scan-fixtures');
 
 const SAST_PATH = require.resolve('../src/lib/sast-runner');
 const REAL_EXEC = cp.execSync;
@@ -289,11 +290,19 @@ test('runGosec_records_error_when_crash_has_no_stdout', async () => {
 });
 
 test('runESLintSecurity_records_error_when_crash_has_no_stdout', async () => {
-  // Arrange
-  cp.execFileSync = () => { throw exitNoStdout('spawn npx ENOENT'); };
+  // Arrange — the scan starts the scanned project's own eslint bin script with the running
+  // Node program (it used to start npx, which fetched eslint from the npm registry), so the
+  // spy now sees that start and the project holds a fake eslint package; on '/no/such/dir'
+  // the run would stop at "eslint is not installed" and never reach the crash branch.
+  const project = makeFakeEslintProject();
+  const starts = [];
+  cp.execFileSync = (file, args) => {
+    starts.push([file, args[0]]);
+    throw exitNoStdout(`spawn ${file} ENOENT`);
+  };
   const Fresh = freshSAST();
   try {
-    const r = new Fresh('/no/such/dir');
+    const r = new Fresh(project.root);
 
     // Act
     await r.runESLintSecurity();
@@ -301,8 +310,11 @@ test('runESLintSecurity_records_error_when_crash_has_no_stdout', async () => {
     // Assert — the no-stdout early-return error branch (lines 663-665).
     assert.equal(r.findings.length, 0);
     assert.ok(r.errors.some(e => e.tool === 'eslint-security' && /ENOENT/.test(e.error)));
+    assert.deepEqual(starts, [[process.execPath, project.bin]],
+      'exactly one start: the project\'s own eslint bin script, run by the running Node program');
   } finally {
     restore();
+    fs.rmSync(project.root, { recursive: true, force: true });
   }
 });
 
@@ -311,11 +323,15 @@ test('runESLintSecurity_records_error_when_crash_has_no_stdout', async () => {
 // it produced nothing usable and must be recorded, never read as green.
 
 test('runESLintSecurity_records_error_when_successful_run_produces_empty_output', async () => {
-  // Arrange — no throw, empty stdout.
-  cp.execFileSync = () => '';
+  // Arrange — no throw, empty stdout. The spy sees the start of the project's own eslint bin
+  // script by the running Node program (it used to be npx), so the project holds a fake eslint
+  // package; on '/no/such/dir' the run would stop at "eslint is not installed" instead.
+  const project = makeFakeEslintProject();
+  const starts = [];
+  cp.execFileSync = (file, args) => { starts.push([file, args[0]]); return ''; };
   const Fresh = freshSAST();
   try {
-    const r = new Fresh('/no/such/dir');
+    const r = new Fresh(project.root);
 
     // Act
     await r.runESLintSecurity();
@@ -323,8 +339,11 @@ test('runESLintSecurity_records_error_when_successful_run_produces_empty_output'
     // Assert
     assert.equal(r.findings.length, 0);
     assert.ok(r.errors.some(e => e.tool === 'eslint-security' && /produced no output/.test(e.error)));
+    assert.deepEqual(starts, [[process.execPath, project.bin]],
+      'exactly one start: the project\'s own eslint bin script, run by the running Node program');
   } finally {
     restore();
+    fs.rmSync(project.root, { recursive: true, force: true });
   }
 });
 
@@ -358,10 +377,18 @@ test('runLanguageScanner_dispatches_go_to_gosec_and_returns_true', async () => {
 });
 
 test('runLanguageScanner_dispatches_javascript_to_eslint_and_returns_true', async () => {
-  // Arrange — eslint available (execSync version probe) + report on execFileSync.
-  cp.execSync = () => '';
-  cp.execFileSync = (file) => {
-    if (file === 'npx' || file === 'npx.cmd') {
+  // Arrange — eslint is the scanned project's own install (a fake package: the lookup finds it
+  // without starting a process), and the report comes from the start of its bin script by the
+  // running Node program. It used to be a shell version probe (execSync) and an npx start; a
+  // shell probe coming back would now fail this test, which is tighter.
+  const project = makeFakeEslintProject();
+  const starts = [];
+  cp.execSync = () => { throw new Error('no shell command may run here'); };
+  cp.execFileSync = (file, args) => {
+    // Every start is recorded before the expected-start check, so "exactly one start" is what
+    // the final assertion holds: a second, unexpected start would show in the list.
+    starts.push([file, args[0]]);
+    if (file === process.execPath && args[0] === project.bin) {
       return JSON.stringify([{ filePath: 'a.js', messages: [
         { ruleId: 'no-eval', line: 1, column: 1, message: 'eval', severity: 2, source: 'eval(x)' }] }]);
     }
@@ -369,7 +396,7 @@ test('runLanguageScanner_dispatches_javascript_to_eslint_and_returns_true', asyn
   };
   const Fresh = freshSAST();
   try {
-    const r = new Fresh('/no/such/dir');
+    const r = new Fresh(project.root);
 
     // Act
     const ran = await r.runLanguageScanner('javascript');
@@ -378,8 +405,11 @@ test('runLanguageScanner_dispatches_javascript_to_eslint_and_returns_true', asyn
     assert.equal(ran, true);
     assert.equal(r.findings.length, 1);
     assert.equal(r.findings[0].tool, 'eslint-security');
+    assert.deepEqual(starts, [[process.execPath, project.bin]],
+      'exactly one start: the project\'s own eslint bin script, run by the running Node program');
   } finally {
     restore();
+    fs.rmSync(project.root, { recursive: true, force: true });
   }
 });
 

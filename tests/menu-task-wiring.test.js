@@ -22,6 +22,9 @@ const path = require('path');
 const ms = require('../src/lib/menu-screens');
 const taskView = require('../src/lib/task-view');
 const taskRegistry = require('../src/lib/task-registry');
+// npm's own update check asks the npm registry; it is switched off for the npm this file starts
+// (plan the-test-suite-runs-faster-and-never-weaker-s2, criterion 21: tests never reach the registry).
+process.env.npm_config_update_notifier = 'false';
 
 // ── tmp-root harness ────────────────────────────────────────────────────────
 

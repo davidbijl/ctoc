@@ -35,6 +35,9 @@ const MOD = '../src/lib/step-13-verify';
 const MOD_PATH = require.resolve(MOD);
 const cp = require('child_process');
 const appRunner = require('../src/lib/app-runner');
+// npm's own update check asks the npm registry; it is switched off for the npm this file starts
+// (plan the-test-suite-runs-faster-and-never-weaker-s2, criterion 21: tests never reach the registry).
+process.env.npm_config_update_notifier = 'false';
 
 /**
  * Load a fresh instance of step-13-verify with the subprocess boundary faked,

@@ -1,0 +1,10 @@
+{
+  "content_sha256": "9d898c62cd4a6a048136c9a539307d88c7904111f4c0b0352644b97437c014e8",
+  "hash_scope": "specification",
+  "stage_from": "review",
+  "stage_to": "done",
+  "approved_at": "2026-10-13T11:16:55.653Z",
+  "advanced_by": "pipeline",
+  "evidence": "evidence: review→done — checks passed, recorded 2026-10-13T11:16:55.514Z in .ctoc/state/verify/the-test-suite-runs-faster-and-never-weaker-s1-split-the-hotfix-check-tests.json (VERIFY passed — ran: lint, typecheck, tests); coverage 99.88% against a floor of 99%, 0 skipped; every required step 8–16 is checked in the plan, including REVIEW, SECURE and FINAL-REVIEW (checked by the build itself); questions: none were stored; crossed on evidence, not approved by the human",
+  "plan_basename": "the-test-suite-runs-faster-and-never-weaker-s1-split-the-hotfix-check-tests"
+}

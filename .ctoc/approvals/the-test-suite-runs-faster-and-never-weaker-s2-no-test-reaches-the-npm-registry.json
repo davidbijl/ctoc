@@ -1,0 +1,9 @@
+{
+  "content_sha256": "80aaaefb4591156545b99e55a8d1c79ec81d00c322061ca6316e481f57cfd802",
+  "hash_scope": "specification",
+  "stage_from": "review",
+  "stage_to": "done",
+  "approved_at": "2026-10-13T11:47:26.596Z",
+  "approved_by": "human",
+  "plan_basename": "the-test-suite-runs-faster-and-never-weaker-s2-no-test-reaches-the-npm-registry"
+}

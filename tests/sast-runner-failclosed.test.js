@@ -18,6 +18,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const cp = require('node:child_process');
+const { makeFakeEslintProject } = require('./helpers/security-scan-fixtures');
 
 const SAST_PATH = require.resolve('../src/lib/sast-runner');
 
@@ -77,17 +78,31 @@ test('runGosec: a crash (non-JSON stdout) surfaces in errors', async () => {
 });
 
 test('runESLintSecurity: a crash (non-JSON stdout) surfaces in errors', async () => {
-  cp.execFileSync = () => { throw crashError('Oops! Something went wrong! :(\nnot json'); };
+  // The scan starts the scanned project's OWN eslint bin script with the running Node program
+  // (it used to start npx, which fetched eslint from the npm registry). So the spy now sees
+  // [process.execPath, <bin script>] instead of npx, and the project must hold a fake eslint
+  // package: on '/nonexistent-project' the run would stop at "eslint is not installed", an
+  // eslint-security error that would keep the assertion below green while the crash branch
+  // was never reached. The one-start assertion proves the branch was reached.
+  const project = makeFakeEslintProject();
+  const starts = [];
+  cp.execFileSync = (file, args) => {
+    starts.push([file, args[0]]);
+    throw crashError('Oops! Something went wrong! :(\nnot json');
+  };
   const SASTRunner = freshSAST();
   try {
-    const r = new SASTRunner('/nonexistent-project');
+    const r = new SASTRunner(project.root);
     await r.runESLintSecurity();
     assert.ok(
       r.errors.some(e => e.tool === 'eslint-security' && e.error),
       'a crashed eslint-security scan must be recorded in this.errors'
     );
+    assert.deepEqual(starts, [[process.execPath, project.bin]],
+      'exactly one start: the project\'s own eslint bin script, run by the running Node program');
   } finally {
     restore();
+    fs.rmSync(project.root, { recursive: true, force: true });
   }
 });
 
