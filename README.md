@@ -25,6 +25,10 @@ CTO Chief is a Claude Code plugin that turns AI coding from "generate and pray" 
 > [!TIP]
 > Enable auto-update: `/plugin` → Marketplaces tab → `robotijn` → Enable auto-update
 
+> [!NOTE]
+> Updating a **fork** install (pulling your own changes, syncing from upstream,
+> and reloading a running session / sandbox): see [`docs/UPDATING.md`](docs/UPDATING.md).
+
 ## Quick Start
 
 **1.** Start Claude Code:
