@@ -5,6 +5,7 @@ created: 2026-10-15
 priority: high
 effort: medium
 depends_on: a-background-agent-cannot-change-claude-codes-settings
+parent_plan: a-background-agent-cannot-change-claude-codes-settings
 files:
   - src/lib/real-path-confinement.js
   - src/hooks/PreToolUse.Edit.js
