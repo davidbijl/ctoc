@@ -1,0 +1,10 @@
+{
+  "content_sha256": "133452730b8488098cf704990165d341fa5e9d544e0beba08467194c00b1b1fc",
+  "hash_scope": "specification",
+  "stage_from": "implementation",
+  "stage_to": "todo",
+  "approved_at": "2026-10-16T15:09:30.854Z",
+  "advanced_by": "sufficiency",
+  "evidence": "sufficiency: implementation/a-background-agent-cannot-change-claude-codes-settings.md — 2 question(s) computed, 2 answered (q10-protected-file-matching-r1792089308848, q11-ctoc-settings-also-protected-r1792089308848); 0 unanswered, 0 blocking; attested by: not recorded; enough (no unanswered fork)",
+  "plan_basename": "a-background-agent-cannot-change-claude-codes-settings"
+}

@@ -1,0 +1,58 @@
+{
+  "ref": "implementation/the-write-protection-compares-real-files-not-spellings.md",
+  "planMtimeMs": 1792102154334.7178,
+  "questions": [
+    {
+      "id": "q10-decision-time-limit-refuses-r1792102154334",
+      "prompt": "Beyond your check-the-real-file answer, the plan adds a new rule to the write-protection hook: when one decision's file-system checks run past 5 seconds, the write is refused. It closes a measured bypass (Claude Code lets a call run when its hook times out), but it is a new refusal on every call of every session, ruled in by the CTO Chief rather than by you. Keep the 5-second limit that refuses?",
+      "critical": false,
+      "important": true,
+      "topic": "security-posture",
+      "options": [
+        {
+          "key": "1",
+          "label": "Keep the 5-second limit that refuses, as the plan specifies",
+          "recommended": true,
+          "pros": "Your trial of 2026-10-15 measured that a hook which times out is reported cancelled and the tool call still runs (plan lines 103 to 105), so without a limit any slow path through the new file-system walk is a way around the protection; a limit that refuses turns that route into a refusal. Five seconds is believed to be about fifty times an ordinary decision and well under Claude Code's believed 60-second hook timeout, which the build reads from Claude Code's documentation and stops on if it is under 10 seconds. The shell's link test runs per operand, per protected area and per reading, and the number of segments in one command is not bounded, so a time limit is the only bound that covers the shell.",
+          "cons": "It is a new refusal on every editing and shell call of every session: on a disk slow enough to take more than 5 seconds (a sluggish network home folder, a heavily loaded machine, antivirus scanning on Windows) a legitimate write is refused, and the refusal carries the ordinary records sentence of the check that refused, with nothing saying time ran out (plan lines 1313 to 1314). A system call that hangs inside one step, such as a hung network mount, is still not bounded, so the bypass is narrowed rather than closed, and how close real decisions come to the limit is only measured at the build's optimisation step.",
+          "description": "Read at plans/implementation/the-write-protection-compares-real-files-not-spellings.md lines 736 to 741 (the 5-second constant and the line in decide() that sets it), with its reasoning at lines 1383 to 1399 and the measured timeout behaviour at lines 103 to 105."
+        },
+        {
+          "key": "2",
+          "label": "Build without the time limit and state the slow path as a limit",
+          "pros": "Your direction keeps the hook a guard against honest mistakes and puts deliberate evasion on isolating agents; a path deep or long enough to run past 5 seconds is only ever built on purpose, so this limit defends against exactly the attacker your answer assigned elsewhere, while its cost lands on every honest session. The walk is already bounded in steps (4,096 segments, 40 links, the identity chain stopping at the project root), a hung mount defeats the limit anyway, and leaving it out keeps a refusal rule you did not approve, and a piece of shared state, out of the one hook Claude Code loads.",
+          "cons": "A crafted command with many operands, or a target through very deep folders, can run the hook past Claude Code's timeout, and the call then runs unchecked (measured, plan lines 103 to 105); the number of segments in one shell command is unbounded today, so this stays an open route to the records, written into the documentation as a stated limit like the race between the check and the write.",
+          "description": "This option is the plan without its budget constant and the line that sets it, described at lines 736 to 741."
+        }
+      ]
+    },
+    {
+      "id": "q11-faulted-protected-folder-allows-r1792102154334",
+      "prompt": "Also beyond your check-the-real-file answer, the plan changes a second hook rule: today, when a file, or a folder the session cannot search, sits where a protected folder belongs (for example .ctoc/state), the hook refuses every write and every shell command, npm test included. The plan changes that so such a folder holds nothing and only writes whose own path runs into it are refused; a dangling link or a link loop there still refuses everything. Make that change?",
+      "critical": false,
+      "important": true,
+      "topic": "security-posture",
+      "options": [
+        {
+          "key": "1",
+          "label": "Make the change, as the plan specifies",
+          "recommended": true,
+          "pros": "The threat modeler measured the lock-out: with .ctoc/state replaced by a file, or made unsearchable, a Write to src/x.js, rm -f src/x.js and npm test were all refused for every session, and planting it is allowed (plan lines 99 to 102), so one file written by any agent stops all work in the project. After the change the hook answers by the target alone, which holds as long as the hook runs as the same user as the tool, as the plan believes, since then what the hook cannot search the write cannot reach either; the one shape that forges a record, a dangling link at the protected path, still refuses everything, and the remove-and-replace sequence this opens already passes today against an ordinary folder.",
+          "cons": "It turns a fail-closed rule into an answer for two fault reasons in the one hook Claude Code loads, and the reasoning rests on the belief, not checked, that the hook and the tool run as the same user (plan lines 1375 to 1376). It also removes a loud signal: a file planted where a protected folder belongs no longer stops anything, so the tampering goes unnoticed until something reads the records, and one shell command that removes the file, puts a link or a folder in its place and writes into it now passes where the lock-out refused it.",
+          "description": "Read at plans/implementation/the-write-protection-compares-real-files-not-spellings.md lines 482 to 490 (resolvesUnder: a protected folder that is a file or cannot be searched holds nothing), with its reasoning at lines 1371 to 1382 and the measured lock-out at lines 99 to 102."
+        },
+        {
+          "key": "2",
+          "label": "Keep today's rule: any fault on a protected folder refuses every write",
+          "pros": "A file or an unsearchable folder sitting where .ctoc/state or .ctoc/approvals belongs never arises in honest work, so it is tamper evidence in itself, and refusing everything makes it impossible to miss: the session stops until a human looks. Keeping the rule leaves the hook's fail direction exactly as it is today, adds no branch that answers on a fault, and needs no belief about which user the hook runs as; the lock-out lets an agent stop work, never forge a record.",
+          "cons": "Any agent can stop every session in the project by writing one file where a protected folder belongs, measured to refuse even npm test and an ordinary rm of a source file, for the main session and every background agent (plan lines 99 to 102), until a human finds and removes the planted file.",
+          "description": "This option keeps today's line in resolvesUnder that refuses every target on any fault of the protected folder, quoted at plan line 122."
+        }
+      ]
+    }
+  ],
+  "classification": {
+    "by": "gate-critic",
+    "at": 1792102154334
+  }
+}
