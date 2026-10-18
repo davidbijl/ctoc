@@ -8,6 +8,7 @@
  *   - .claude-plugin/marketplace.json (marketplace version)
  *   - .claude-plugin/plugin.json (plugin version)
  *   - package.json (version only — license is a static value, not derived here)
+ *   - package-lock.json (top-level version and packages[""].version)
  *   - Documentation files with version references
  *
  * Contract (W09-s1 / finding M7):
@@ -16,8 +17,14 @@
  *     main() returns 1 (non-zero exit) and prints the failing file names to
  *     stderr. A target that is simply not present is skipped, never a failure.
  *   - ATOMIC WRITE: every JSON target is written via atomicWriteFileSync
- *     (temp-file + rename), so a crash mid-write can never truncate the target
- *     and leaves no *.tmp-* residue.
+ *     (temp-file + rename), so a crash mid-write can never truncate the target.
+ *     The target's permission bits are copied onto the new file; a target that
+ *     does not exist yet keeps the default mode, and any other failure to read
+ *     them stops the write. On a failed write the temp file is removed; if that
+ *     removal fails too, the thrown error's message names the temp file and the
+ *     removal error code (and carries the error as `cleanupError`), so a
+ *     leftover *.tmp-* file is reported, never silent. A file already at the
+ *     temporary name (EEXIST) is not ours: it is left alone and the error thrown.
  *
  * The production functions accept an optional `root` (defaulting to ROOT, which
  * honors CTOC_RELEASE_ROOT) so the real script is drivable against a fixture
@@ -52,6 +59,14 @@ const JSON_VERSION_FILES = [
     file: 'package.json',
     updates: [
       { path: ['version'] }
+    ]
+  },
+  {
+    // npm's lockfile records the package version twice: at its top and on the root package ("").
+    file: 'package-lock.json',
+    updates: [
+      { path: ['version'] },
+      { path: ['packages', '', 'version'] }
     ]
   }
 ];
@@ -107,9 +122,11 @@ const COUNT_UPDATES = [
  * Atomically write `data` to `filePath`: write to a sibling temp file in the
  * SAME directory, then rename it over the target. A same-directory rename is
  * atomic on POSIX and uses MoveFileEx on Windows, so a crash can never leave a
- * half-written target. On any error the temp file is removed (best effort) and
- * the original error is rethrown, so the pre-existing target is left intact and
- * no `*.tmp-*` residue is left behind.
+ * half-written target. On any error the temp file is removed (a failed removal is
+ * recorded on the error as `cleanupError` and named in its message) and the original
+ * error is rethrown, so the pre-existing target is left intact. A `*.tmp-*` file is left
+ * behind only when its removal fails, and the error then names it. A file already at
+ * the temporary name (EEXIST) is not ours and is left alone.
  *
  * @param {string} filePath - destination path
  * @param {string|Buffer} data - bytes to write
@@ -119,15 +136,39 @@ const COUNT_UPDATES = [
  */
 function atomicWriteFileSync(filePath, data, { rename = safeFs.renameSync } = {}) {
   const tmp = `${filePath}.tmp-${process.pid}-${Date.now()}`;
-  try {
-    safeFs.writeFileSync(tmp, data);
-    rename(tmp, filePath);
-  } catch (err) {
+  // The original error stays the one thrown; a removal that fails (a name already
+  // gone is not a failure) is recorded on it as `cleanupError`, never swallowed.
+  const removeTmp = (original) => {
     try {
       if (safeFs.existsSync(tmp)) safeFs.unlinkSync(tmp);
-    } catch {
-      /* best-effort cleanup; surface the original error below */
+    } catch (cleanupError) {
+      if (cleanupError.code !== 'ENOENT') {
+        original.cleanupError = cleanupError;
+        original.message += ` (temp file ${tmp} could not be removed: ${cleanupError.code || cleanupError.message})`;
+      }
     }
+  };
+  // The original's permission bits, so a read-only lockfile stays read-only.
+  let mode;
+  try {
+    mode = safeFs.statSync(filePath).mode & 0o777;
+  } catch (err) {
+    // No original to copy from (ENOENT): the new file gets the default mode. Any other error is real.
+    if (err.code !== 'ENOENT') throw err;
+  }
+  try {
+    // 'wx' = create exclusively: a link planted at the temp name is never written through.
+    safeFs.writeFileSync(tmp, data, { flag: 'wx' });
+  } catch (err) {
+    // EEXIST means the name is not ours: leave whatever is there alone.
+    if (err.code !== 'EEXIST') removeTmp(err);
+    throw err;
+  }
+  try {
+    if (mode !== undefined) safeFs.chmodSync(tmp, mode);
+    rename(tmp, filePath);
+  } catch (err) {
+    removeTmp(err);
     throw err;
   }
 }
@@ -135,8 +176,8 @@ function atomicWriteFileSync(filePath, data, { rename = safeFs.renameSync } = {}
 function getVersion(root = ROOT) {
   const versionFile = path.join(root, 'VERSION');
   const version = safeFs.readFileSync(versionFile, 'utf8').trim();
-  if (!version || !/^\d+\.\d+\.\d+$/.test(version)) {
-    throw new Error(`Invalid version format in ${versionFile}: "${version}" (expected X.Y.Z)`);
+  if (!version || !/^\d+\.\d+\.\d+$/.test(version) || !version.split('.').every((n) => Number.isSafeInteger(Number(n)))) {
+    throw new Error(`Invalid version format in ${versionFile}: "${version}" (expected X.Y.Z, each part a whole number up to ${Number.MAX_SAFE_INTEGER})`);
   }
   return version;
 }
@@ -157,12 +198,22 @@ function updateJsonVersionFiles(version, root = ROOT) {
   for (const config of JSON_VERSION_FILES) {
     const filePath = path.join(root, config.file);
 
-    if (!safeFs.existsSync(filePath)) {
-      console.log(`  Skip: ${config.file} (not found)`);
+    // lstat, not stat: a link, a folder or a named pipe is refused before anything is opened,
+    // so the release never follows a link out of its root or hangs on a pipe.
+    let content;
+    try {
+      const st = safeFs.lstatSync(filePath);
+      if (!st.isFile()) throw new Error('not a regular file');
+      content = safeFs.readFileSync(filePath, 'utf8');
+    } catch (err) {
+      if (err.code === 'ENOENT') {
+        console.log(`  Skip: ${config.file} (not found)`);
+      } else {
+        console.error(`  ERROR: ${config.file} could not be read: ${err.message}`);
+        failures.push(config.file);
+      }
       continue;
     }
-
-    const content = safeFs.readFileSync(filePath, 'utf8');
     let json;
     try {
       json = JSON.parse(content);
@@ -177,22 +228,24 @@ function updateJsonVersionFiles(version, root = ROOT) {
 
     for (const update of config.updates) {
       let obj = json;
-      const pathCopy = [...update.path];
-      const lastKey = pathCopy.pop();
-
-      for (const key of pathCopy) {
-        if (obj == null || typeof obj !== 'object') {
-          console.error(`  ERROR: ${config.file} missing expected path: ${update.path.join('.')}`);
-          obj = null;
+      const last = update.path.length - 1;
+      let reachable = true;
+      for (let i = 0; i <= last; i++) {
+        const key = update.path[i];
+        // A container is a real object for a name, a real array for an index.
+        if (obj === null || typeof obj !== 'object' || Array.isArray(obj) !== (typeof key === 'number')) {
+          reachable = false;
           break;
         }
-        obj = obj[key];
+        if (i < last) obj = obj[key];
       }
-      if (obj == null || typeof obj !== 'object') {
+      if (!reachable) {
+        console.error(`  ERROR: ${config.file} missing expected path: ${update.path.map((k) => (k === '' ? '""' : k)).join('.')}`);
         pathMissing = true;
         continue;
       }
 
+      const lastKey = update.path[last];
       if (obj[lastKey] !== version) {
         obj[lastKey] = version;
         changed = true;

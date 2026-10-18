@@ -547,9 +547,11 @@ describe('Group D — sync-barrier holds through nextRunnable (task-registry.js:
   it('D5 (control): two ordinary tasks with disjoint files DO both promote ' +
      '[control against over-tightening Rule 2 into "one task at a time", which would ' +
      'pass D1-D4 and destroy concurrency]', () => {
+    // Non-build tasks: the one-build rule (the owner's decision of 2026-10-11), once built,
+    // limits builds only; this control is about Rule 2 not turning into one task at a time.
     const r = mkReg([
-      task({ id: 't1', kind: 'implement', status: 'queued', touches: ['a.js'], gitOp: false }),
-      task({ id: 't2', kind: 'implement', status: 'queued', touches: ['b.js'], gitOp: false })
+      task({ id: 't1', kind: 'review', status: 'queued', touches: ['a.js'], gitOp: false }),
+      task({ id: 't2', kind: 'review', status: 'queued', touches: ['b.js'], gitOp: false })
     ]);
     assert.deepEqual(promoted(r), ['t1', 't2'],
       'disjoint non-sync work still runs in parallel — Rule 2 governs syncs, not everything');

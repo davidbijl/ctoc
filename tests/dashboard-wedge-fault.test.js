@@ -62,7 +62,7 @@ function ago(ageMs) {
 function task(over) {
   return Object.assign({
     id: 't1',
-    kind: 'implement',
+    kind: 'quality',
     label: '',
     plan: null,
     status: 'queued',

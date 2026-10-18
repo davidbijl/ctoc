@@ -64,6 +64,12 @@ const PRE_BUILD_DESTINATIONS = new Set(
 // ANSI/control sequences or forge screen rows.
 const stripCtl = (s) => String(s).replace(/[\x00-\x1f\x7f-\x9f]/g, '');
 
+// Mirrors `INVISIBLE` in streaming-precompute.js: default-ignorable code points, format
+// characters (zero-width, bidirectional controls), line/paragraph separators and the braille
+// blank. A ready-line name carrying one reads like another plan's name yet compares unequal,
+// which would defeat "when two entries carry the name he gave, ask him which".
+const stripInvisible = (s) => String(s).replace(/[\p{Default_Ignorable_Code_Point}\p{Cf}\p{Zl}\p{Zp}\u2800]/gu, '');
+
 // The three approvePlan gate edges, in furthest-along-FIRST order (review first).
 // Kept aligned with gate-order.GATE_EDGES.
 //
@@ -875,8 +881,12 @@ function crossingBlocked(root, planPath, toStage, content) {
  *
  * INVARIANT: entry-and-moved, or NEITHER. The entry is written FIRST; if the move
  * then fails on a write fault (e.g. a permissions error on the rename), the orphan
- * entry is rolled back. A same-basename collision at the destination never gets that
- * far: it is refused before any entry is written (crossingBlocked). IDEMPOTENT
+ * entry is rolled back. A same-basename collision at the destination is refused before
+ * any entry is written (crossingBlocked), but only when one pass runs alone. When two
+ * continuation passes run at once (for example `stream answer` and a `--continue`
+ * completion), both can pass crossingBlocked; nothing locks the steps from the check
+ * through the write and the move, so the loser's move throws and its rollback can delete
+ * the winner's approval entry. That is listed for the owner; no lock exists today. IDEMPOTENT
  * (Decision 3): a plan already carrying an entry for this destination is never re-crossed. FAIL-SOFT: any error returns false so a cross
  * failure never bricks the pending-decisions read.
  *
@@ -1546,7 +1556,8 @@ function brokenPlanScreen(stage, file, projectRoot, reason) {
  * ride-along pattern — environment, compliance, task board) so that no capability
  * is lost to AskUserQuestion's four-option cap.
  *
- * Pure read: renders only. Nothing here crosses a gate — crossing stays on the
+ * Not a pure read: for a pre-build plan it calls `sweepPendingQuestions`, which writes the
+ * question store and removes waiting files. It crosses no approval point — crossing stays on the
  * explicit `stream approve`, which routes through the gate-safe `approvePlan`. A plan the
  * crossing would accept gets the queue screens' ready line, no detail asked and an Approve
  * not marked Recommended (four-defects s23).
@@ -1978,7 +1989,7 @@ function askQueue(decisions, root) {
  */
 function readyStatus(ready, root) {
   if (ready.length === 0) return '';
-  const names = ready.map((d) => humanPlanName(d.title, d.slug));
+  const names = ready.map((d) => stripInvisible(humanPlanName(d.title, d.slug)));
   let list;
   try { list = require('./loop-b-driver').summarize(names); } catch { list = names.join(', '); }
   const busy = require('./task-registry').load(root).tasks.some((t) => t.status === 'queued' || t.status === 'running');
@@ -1993,7 +2004,7 @@ function readyStatus(ready, root) {
 /** How the session approves one now: one `{ name, approve }` per ready plan, the existing approve route. */
 function withReady(screen, ready) {
   if (screen && ready.length > 0) {
-    screen.ready = ready.map((d) => ({ name: cappedName(humanPlanName(d.title, d.slug)), approve: `stream approve ${d.ref}` }));
+    screen.ready = ready.map((d) => ({ name: cappedName(stripInvisible(humanPlanName(d.title, d.slug))), approve: `stream approve ${d.ref}` }));
   }
   return screen;
 }

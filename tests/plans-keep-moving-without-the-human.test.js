@@ -2118,6 +2118,26 @@ describe('a plan that needs nothing from the owner is not put to him (four-defec
     assert.equal(screen.ready[0].approve, 'stream approve functional/r2c.md');
   });
 
+  it('B2d — zero-width and direction-changing characters never reach the ready line or screen.ready[].name', () => {
+    const root = makeSandbox();
+    writePlan(root, 'functional/r2d.md', functionalBody('Saved\u200B searches'));
+    writeQuestions(root, 'functional/r2d.md', []);
+    writePlan(root, 'functional/r2e.md', functionalBody('Saved searches\u202E'));
+    writeQuestions(root, 'functional/r2e.md', []);
+    writePlan(root, 'functional/r2f.md', functionalBody('Saved searches'));
+    writeQuestions(root, 'functional/r2f.md', []);
+
+    const screen = streamingGate.streamingGateScreen(root);
+
+    assert.equal(screen.ready.length, 3);
+    for (const r of screen.ready) {
+      assert.equal(/[\u200B\u202E]/.test(r.name), false, `no hidden character in the name ${JSON.stringify(r.name)}`);
+      assert.equal(r.name, 'Saved searches', 'the three plans show one and the same name');
+    }
+    assert.equal(/[\u200B\u202E]/.test(screen.text), false, 'no hidden character on the ready line');
+    idleLine(screen.text, 'Saved searches');
+  });
+
   describe('B3 — the screens after skip, comment and a refused approve leave the ready plan out and name it', () => {
     const n3 = 'functional/n3.md';
     function seed() {
@@ -2277,9 +2297,11 @@ describe('a plan that needs nothing from the owner is not put to him (four-defec
     const screen = streamingGate.streamingGateScreen(root);
     assert.match(screen.text, /^Topic: Twin plan/m, 'it is asked');
     noReadyLine(screen);
+    assert.equal(screen.ask.questions[0].options[0].label, d.approveLabel);
     assert.match(screen.ask.questions[0].options[0].description, /^Recommended/);
     const own = route(['plan', 'functional/Twin-Plan.md'], root);
     noReadyLine(own);
+    assert.equal(own.ask.questions[0].options[0].label, d.approveLabel);
     assert.match(own.ask.questions[0].options[0].description, /^Recommended/, "Approve is Recommended on the plan's own screen");
 
     menuScreens.continueAfterCrossing(root);
@@ -2299,9 +2321,11 @@ describe('a plan that needs nothing from the owner is not put to him (four-defec
     const screen = streamingGate.streamingGateScreen(root);
     assert.match(screen.text, /^Topic: No front matter/m, 'it is asked');
     noReadyLine(screen);
+    assert.equal(screen.ask.questions[0].options[0].label, d.approveLabel);
     assert.match(screen.ask.questions[0].options[0].description, /^Recommended/, 'Approve is Recommended on the queue');
     const own = route(['plan', 'functional/nofm.md'], root);
     noReadyLine(own);
+    assert.equal(own.ask.questions[0].options[0].label, d.approveLabel);
     assert.match(own.ask.questions[0].options[0].description, /^Recommended/, "Approve is Recommended on the plan's own screen");
 
     menuScreens.continueAfterCrossing(root);

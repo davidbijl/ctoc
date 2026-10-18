@@ -110,12 +110,12 @@ describe('dashboard wedge reports — a task the concurrent-edit guard held', ()
         },
         ts: { created: ago(11 * MIN), started: ago(10 * MIN), done: ago(1 * MIN) }
       }),
-      task({ id: 't2', touches: ['src/a.js'] })
+      task({ id: 't2', kind: 'quality', touches: ['src/a.js'] })
     ]);
 
     assert.ok(text.includes('held this pass'),
       'a human who never runs a menu task command must still see that work is being held');
-    assert.ok(text.includes('t2'), 'the held candidate must be named');
+    assert.match(text, /^\s+t2 — held/m, 'a line must name t2 as held, not merely mention it');
   });
 });
 
