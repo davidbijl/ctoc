@@ -637,4 +637,17 @@ describe('the protected folder is compared by file identity (owner, 2026-10-15)'
     } finally { rm(root); }
     R.done();
   });
+
+  it('case 22: a single name longer than the file system holds cannot exist, so it is a name still to be made (not a fault)', () => {
+    const { dir, root } = makeRealProject();
+    const R = makeRows();
+    try {
+      const long = 'n'.repeat(300);
+      R.row('resolveExisting of a 300-byte name is ok with the name in the tail', () => assert.deepEqual(
+        confinement.resolveExisting(path.join(root, long)),
+        { ok: true, real: path.join(root, long), reason: null, tail: [long] }));
+      R.row('a 300-byte name is outside the approval records', () => assert.equal(resolvesUnder(long, '.ctoc/approvals', root), false));
+    } finally { rm(dir); }
+    R.done();
+  });
 });

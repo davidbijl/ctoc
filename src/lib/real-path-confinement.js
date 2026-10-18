@@ -85,7 +85,8 @@
  * faults, with no refusing check behind it in the same decision (the background
  * agent's shell settings specs in `protect-records.js`, which guard against a
  * lock-out that way), asks `budgetSpent()` first and keeps the check, so it refuses
- * at `resolvesUnder`'s entry instead of vanishing. Set once per decision by
+ * at `resolvesUnder`'s entry instead of vanishing; `PreToolUse.Bash.isLedgerWrite` asks it too,
+ * and refuses its own text work once the budget is spent. Set once per decision by
  * `protect-records.js`, a fresh process per call; never set by any other caller.
  *
  * THE TWO FUNCTIONS FAIL IN OPPOSITE BOOLEAN DIRECTIONS, and both directions mean
@@ -174,14 +175,17 @@ function resolveExisting(p) {
         st = safeFs.lstatSync(next);
       } catch (err) {
         const code = err && /** @type {NodeJS.ErrnoException} */ (err).code;
-        if (code === 'ENOENT') {
+        // A name longer than the file system holds (ENAMETOOLONG) cannot exist, so it cannot be
+        // written either: out of the caller's text it is a name still to be made, like ENOENT.
+        // Out of a link's contents it stays a fault (below).
+        if (code === 'ENOENT' || (code === 'ENAMETOOLONG' && !linked)) {
           if (linked) return fault('dangling'); // the forged-record shape: see the header
           tail.push(seg); // the ordinary new file
           continue;
         }
         if (code === 'EACCES' || code === 'EPERM') return fault('denied');
         // ENOTDIR (only a file swapped in mid-walk can give it: a file with more to walk is
-        // refused as 'not-a-folder' below before its child is asked), ELOOP, ENAMETOOLONG, a
+        // refused as 'not-a-folder' below before its child is asked), ELOOP, ENAMETOOLONG from a link's contents, a
         // safe-fs validatePath TypeError (empty / NUL-byte path), … — all refuse.
         return fault('resolve-failed');
       }
@@ -395,6 +399,7 @@ function setDeadline(at) {
  * Has the decision budget run out? The one test every walk, `resolvesUnder` and `identityChain`
  * use, exported for a caller that would otherwise DROP a check when a walk faults
  * (`protect-records.fileSpec`): a spent budget must keep the check, so it refuses (Decision 46).
+ * `PreToolUse.Bash.isLedgerWrite` is the other caller: it refuses its own text work past the budget.
  * @returns {boolean}
  */
 function budgetSpent() {

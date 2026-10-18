@@ -1496,5 +1496,31 @@ describe('the write protection compares real files, not spellings (owner, 2026-1
       'the long --touches value (main session)'));
     R.row('main Bash menu task add --touches with 3 paths (control)', () => assertAllowed(run(bash(menu(3).command), ro()),
       'the short --touches value (main session)'));
+    // A single path NAME over 255 bytes makes lstat answer ENAMETOOLONG; such a name cannot exist, so cannot be written.
+    const summary = 'x'.repeat(300);
+    assert.ok(!summary.includes('/'), 'the summary holds no slash');
+    R.row('main Bash menu task complete --summary of 300 characters, no slash', () => assertAllowed(run(bash(
+      `node src/commands/start.js menu task complete x --summary "${summary}"`), ro()), 'the long quoted --summary (main session)'));
+    const rootFiles = Array.from({ length: 30 }, (_, i) => `a-root-level-file-number-${i}.md`).join(',');
+    assert.ok(Buffer.byteLength(rootFiles) > 255, 'the joined root-level names exceed 255 bytes');
+    R.row('main Bash menu task add --touches of root-level files, one name over 255 bytes', () => assertAllowed(run(bash(
+      `node src/commands/start.js menu task add implement x --touches ${rootFiles}`), ro()), 'the long root-level --touches value (main session)'));
+  });
+
+  rowTest("157 · a padded command is not let through by its length (the as-written reading is not dropped)", () => {
+    // `src/L` is a link to `.ctoc/state`: `cd -P src/L && cd ..` stands in `.ctoc`, the tidied reading in `src`.
+    fs.symlinkSync(p('.ctoc', 'state'), p('src', 'L'), 'junction');
+    const sentence = 'echo x > settings.yaml';
+    const base = 'cd -P src/L && cd ..';
+    refusedBoth(bash(`${base} && ${sentence}`), 'the unpadded command (control, refused)', REFUSAL_SETTINGS);
+    refusedBoth(bash(`${base}${' && cd .'.repeat(2100)} && ${sentence}`), '2,100 x " && cd ." then the write', REFUSAL_SETTINGS);
+    refusedBoth(bash(`${base}${' && cd state && cd ..'.repeat(470)} && ${sentence}`), '470 x " && cd state && cd .." then the write', REFUSAL_SETTINGS);
+    // Past 128 operands the as-written reading still reaches the write's target.
+    const operands = (n) => Array.from({ length: n }, (_, i) => `a${i}`).join(' ');
+    refusedBoth(bash(`${base} && echo ${operands(130)} > settings.yaml`), 'a0..a129 then > settings.yaml', REFUSAL_SETTINGS);
+    refusedBoth(bash(`${base} && echo ${operands(100)} > settings.yaml`), 'a0..a99 then > settings.yaml (control, refused)', REFUSAL_SETTINGS);
+    // Controls whose verdict does not change: no `cd`, so the two readings are the same.
+    allowedBoth(bash(`echo ${'w'.repeat(5000)}`), 'echo of one 5,000-character word');
+    allowedBoth(bash(`git add ${Array.from({ length: 200 }, (_, i) => `src/f${i}.js`).join(' ')}`), 'git add of 200 operands, no cd');
   });
 });

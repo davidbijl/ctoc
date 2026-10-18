@@ -440,7 +440,8 @@ function fileSpec(file, root, base, confinement, rx) {
     const real = base.ok ? confinement.resolveExisting(path.join(base.real, rel)) : null;
     // Past the decision budget every walk faults: keep the link test, which then refuses at
     // `resolvesUnder`'s entry, rather than drop it (Decision 46). Asked after the walk, which
-    // may itself run the budget out.
+    // may itself run the budget out. This arm now stands behind `isLedgerWrite`'s own budget
+    // check in the shell hook; no test shows it red on its own.
     if (confinement.budgetSpent() || (real !== null && real.ok && isAbsentOrRegularFile(real.real))) spec.dir = rel;
   }
   return Object.freeze(spec);

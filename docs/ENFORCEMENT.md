@@ -347,8 +347,10 @@ settings for every session, the settings files for background agents — calls t
 each operand as written and tidied, so a hard link to `.ctoc/settings.yaml` (or, for a background
 agent, to a protected settings file that has a link test), a spelling the disk opens as one, a
 link then `..`, and a `cd` through a link are refused there. Held by
-`tests/protect-records.test.js` (cases 139–155) and
-`tests/a-link-cannot-leave-the-repository.test.js` (cases 15–21).
+`tests/protect-records.test.js` (cases 139–157) and
+`tests/a-link-cannot-leave-the-repository.test.js` (cases 15–22). A path or a single name too
+long for the file system (over 255 bytes a name) that does not exist is not read as protected: it
+cannot be written either.
 
 If every write is refused, a protected folder's path (`.ctoc/approvals`, `.ctoc/state/verify`,
 `.ctoc/streaming`, `.ctoc/regulatory-regimes`, or `.ctoc/settings.yaml`) is a dangling symbolic
@@ -516,7 +518,8 @@ protected list and the project's files stay protected on the editing tools.
   checkout, stash pop, merge, pull, reset, rebase, apply);
 - replacing a parent folder (`mv`, `cp -r`, `rsync` or an archive onto `.ctoc`,
   `.ctoc/state` or the project root);
-- hard links; more than 128 operands in one segment; file-writing tools other than the five;
+- hard links; more than 128 operands in one segment (given the segment is not refused, see the
+  padded-command item below); file-writing tools other than the five;
 - read commands with a write side effect (`find -delete`, `tree -o`), which can delete or
   corrupt a record but never forge one;
 - `find … -exec <program> {} +` runs any program on the file, so it can write any content: the
@@ -584,13 +587,22 @@ protected list and the project's files stay protected on the editing tools.
 - a deliberately padded shell command (tens of kilobytes of operands) takes several seconds to
   check, and a hook that times out lets the call run. Measured on a heavily loaded Mac (load
   average 25 to 47): the 64-segment, 128-operand command of about 100 kilobytes took 2.1 to 4.6 s
-  and was allowed under the 5-second budget; a command of `cd a;` segments followed by a write was
-  refused at 5.03 s at 100, 200, 400, 800 and 3,200 kilobytes (before the budget covered the
+  and was allowed under the 5-second budget; a command of `cd a;` segments followed by a write, from
+  a background agent, was refused at 5.03 s at 100, 200, 400, 800 and 3,200 kilobytes, while the main
+  session's 100-kilobyte call finished in 3.5 s and was allowed (before the budget covered the
   shell's text work, 800 kilobytes took 198 s); a command of four segments of `cp x` with 128
   operands through the deepest folders this machine allows (478 kilobytes) was refused at 5.03 s.
-  The file-system walks and the shell's text work stop at 5 seconds and refuse; Node's start-up,
-  reading the payload and the other checks of the shell are outside the budget. Claude Code's
-  default hook timeout is 600 seconds (code.claude.com/docs/en/hooks), far above the budget.
+  The file-system walks stop at 5 seconds and refuse, and the shell's text work is checked at each
+  segment and each operand (the text test on one huge segment, the quoted-literal scan and the
+  folded second reading are not); Node's start-up, reading the payload and the other checks of the
+  shell are outside the budget. Claude Code's default hook timeout is 600 seconds
+  (code.claude.com/docs/en/hooks), far above the budget.
+- a padded command is no longer let through by its length: when a `cd` chain makes the as-written
+  working folder differ from the tidied one and either reading of an operand is longer than 4,096
+  characters, the operand is refused; and past 128 operands in one segment, when the as-written
+  working folder differs from the tidied one (a `..` after a named folder), the segment is refused.
+  The cost: such a command (`cd src && cd .. && git add` of 200 files, say) is refused. A single
+  over-long word with no `cd` before it, whose two readings are the same, is still not resolved.
 - a hard link to a record (a file inside a protected folder) is not seen on any channel — only one
   to the settings file is; on the shell, a look-alike spelling of another copy's
   `.ctoc/settings.yaml` (the text rules are not folded; the link test measures against the

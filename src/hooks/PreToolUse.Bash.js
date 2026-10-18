@@ -306,6 +306,9 @@ function operandResolvesIntoLedger(prefix, token, dir = LEDGER_DIR_RELATIVE, raw
   const raw = resolveTokenPath(rawPrefix, token, false);
   // A token longer than any real path cannot name a ledger entry; resolving it only
   // manufactures an ENAMETOOLONG fault that fail-closes to a false deny. See the const.
+  // But two DIFFERENT readings of which one is over-long (a padded `cd` chain makes the as-written
+  // prefix long while the tidied one stays short) are never skipped: a command is not let through by its length.
+  if (rel !== raw && (rel.length > MAX_CANDIDATE_LEN || raw.length > MAX_CANDIDATE_LEN)) return true;
   return [...new Set([rel, raw])].some((c) => c.length <= MAX_CANDIDATE_LEN
     && realPathConfinement.resolvesUnder(c, dir, process.cwd()));
 }
@@ -438,7 +441,10 @@ function isLedgerWrite(command, spec = LEDGER_SPEC) {
       // OPERAND_RESOLUTION_CAP (Decision 3, a stated ceiling); beyond the cap the
       // arithmetic verdict above stands.
       const candidates = operands.concat(quotedLiterals(seg));
-      touches = candidates.slice(0, OPERAND_RESOLUTION_CAP)
+      // Past the cap the operands get no link test, so the as-written reading would never reach them:
+      // when it differs from the tidied one (a `..` after a named folder) the segment is refused.
+      if (candidates.length > OPERAND_RESOLUTION_CAP && rawPrefix !== prefix) return true;
+      touches =candidates.slice(0, OPERAND_RESOLUTION_CAP)
         .some((t) => operandResolvesIntoLedger(prefix, t, spec.dir, rawPrefix));
     }
     if (touches && !isReadOnlyLedgerCommand(seg)) return true;
