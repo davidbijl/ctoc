@@ -130,7 +130,7 @@ const REFUSAL_SWEEP_CONFIRM = 'CTOC refused this call because only the human con
   + 'to the queue; report the sweep preview and let the main session ask him. A command that only '
   + 'mentions both words is refused too: search one word at a time, and commit with git commit -F <file>.';
 const REFUSAL_SWEEP_PLAIN = REFUSAL_SWEEP_CONFIRM
-  + " A background agent's menu call must also be one plain call: no &&, |, $ or wildcard.";
+  + " A background agent's menu call must also be one plain call, built without $, a backtick, a brace or a wildcard.";
 /** A background agent's sweep confirmation, read fail-closed: quotes and backslashes removed, anywhere in the text. */
 const confirmsSweep = (command) => {
   const flat = command.replace(/["'\\]/g, '');
@@ -636,6 +636,8 @@ function sweepBypassRefusal(command, base) {
     const real = dirs.map((dir) => resolveLikeNode(dir, bare[j])).find((r) => r !== null && ctocKind(r) === 'menu');
     if (real) return REFUSAL_SWEEP_PLAIN;
   }
+  // The runtime itself may be a variable (`$NODE "…/start.js" …`): any word naming the menu counts.
+  if (bare.some((w) => /start\.js/i.test(w) || COMMANDS_TEXT_RE.test(w))) return REFUSAL_SWEEP_PLAIN;
   return null;
 }
 

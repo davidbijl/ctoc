@@ -425,7 +425,7 @@ describe('a background agent: one reading of a command (refused by the security 
     const plain = "CTOC refused this call because only the human confirms which builds go back to the queue; "
       + 'report the sweep preview and let the main session ask him. A command that only mentions both words is '
       + "refused too: search one word at a time, and commit with git commit -F <file>. A background agent's menu "
-      + 'call must also be one plain call: no &&, |, $ or wildcard.';
+      + 'call must also be one plain call, built without $, a backtick, a brace or a wildcard.';
     for (const command of [
       `${MENU} menu task list $(echo x)`,
       `${MENU} menu task list \`echo x\``,
@@ -735,13 +735,14 @@ describe('only the human confirms a sweep (owner, 2026-10-18)', () => {
     assertAllowed(run(agent(bash('grep -n sweep src/commands/start.md'))), 'grep for one word');
   });
 
-  const PLAIN = " A background agent's menu call must also be one plain call: no &&, |, $ or wildcard.";
+  const PLAIN = " A background agent's menu call must also be one plain call, built without $, a backtick, a brace or a wildcard.";
   const SHELL_BUILT = [
     `${MENU} menu task sw\${E}eep --confirm none`,
     `${MENU} menu task sweep $'\\x2d-confirm' none`,
     `${MENU} menu task sweep --con\${X}firm none`,
     `node ${path.join(REPO, 'src', 'commands')}/sta*.js menu task sweep --con\${X}firm none`,
     'node "$S" menu task sw${E}eep --con${X}firm none',
+    '$NODE "${CLAUDE_PLUGIN_ROOT}/src/commands/start.js" menu task sw${E}eep --con${E}firm none',
   ];
 
   test('102 · a confirmation built by the shell is refused for a background agent, with the plain-call sentence', () => {

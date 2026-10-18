@@ -219,7 +219,7 @@ the task's own id that an older version recorded) is unknown, never dead.
 - `menu task sweep --confirm none` applies only the task changes that move no plan, on his word too.
 - A background agent cannot run `--confirm`: the write protection refuses it. Report the
   preview and let the main session ask him. A background agent's menu call must also be one
-  plain call: no `&&`, `|`, `$` or wildcard. This refusal lives in the hook file
+  plain call, built without `$`, a backtick, a brace or a wildcard. This refusal lives in the hook file
   `src/hooks/protect-records.js`, which changed: update CTOC and restart Claude Code so the
   session runs the new copy.
 - The confirmation carries the human's name for the log with `--by <name>`; it is recorded as

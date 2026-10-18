@@ -335,10 +335,11 @@ function sweepVerdict(registry, input = {}) {
       put('never-moved', 'plan-shared', 'another build of this plan is still recorded as running or queued');
     } else if (!isSafePlan(t.plan)) {
       put('never-moved', 'unsafe-name', 'its plan name holds characters the menu will not put in a command');
+    } else if (live !== null && realId && live.has(String(t.agentTaskId))) {
+      // Owner's order: a plan whose agent id is in the live list is never moved, running or already marked dead.
+      put('never-moved', 'alive', `the builder is alive (agent ${agent} is in the live list)`);
     } else if (o && o.status === 'running') {
-      if (live !== null && realId && live.has(String(t.agentTaskId))) {
-        put('never-moved', 'alive', `the builder is alive (agent ${agent} is in the live list)`);
-      } else if (Number.isFinite(ageMs) && ageMs < taskReconcile.DEFAULT_GRACE_MS) {
+      if (Number.isFinite(ageMs) && ageMs < taskReconcile.DEFAULT_GRACE_MS) {
         put('not-yet', 'young', 'started under a minute ago');
       } else {
         put('not-yet', 'under-floor', `${unknown}; ${ageText} min old; it can be named once it is ${BUILD_BOUND_MIN} min old`);

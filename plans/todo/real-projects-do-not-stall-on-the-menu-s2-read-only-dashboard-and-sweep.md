@@ -2296,3 +2296,30 @@ Decisions taken (review round):
   (git prints the sha as its source).
 - `recoverOrphanedPlans` without `released` has no production caller; it is kept because existing tests
   call it. Deleting it is for the owner to schedule.
+
+### Step 11 REVIEW — executed
+
+The review round ran: critic findings R1-R15, security findings S1-S5, the synthesizer's change list and what was applied are recorded in the "Review kickback round" section above.
+
+### Step 12 OPTIMIZE — executed
+
+Checked: one `git log` per preview (all candidates together, one time budget); the `--version` call is made only on git's usage-error status 129, so a modern git makes no `--version` call. No change needed.
+
+### Step 13 SECURE — executed
+
+The security scan's verdict was warn. Its findings S1-S5 and their resolution are in the "Review kickback round" section above (hook bypass spellings refused, work check fails closed per task, one name rule, no variable matching GIT_ reaches git). The final review then found one more bypass, fixed in the final kickback round below.
+
+### Step 14 VERIFY — executed
+
+- The CTO Chief's `npm test` on eb2b9150: 13358 tests, 13358 pass, 0 fail, 0 skipped, coverage 99.66% against the 99% floor, test gate PASS.
+- After the final kickback round, `npm test` from the project root: 13359 tests, 13359 pass, 0 fail, 0 cancelled, 0 skipped, coverage 99.66% (threshold 99%), corpus claims verified 3 refuted 0, test gate PASS. The one added test is B6b.
+
+### Step 15 DOCUMENT — executed
+
+575 test files on disk; `CLAUDE.md` lines 61 and 94 and `README.md` line 1145 carry that count; `docs/ENFORCEMENT.md` and `src/commands/start.md` are updated (and reworded in the final kickback round).
+
+### Step 16 FINAL-REVIEW — kickback round and its red-then-green evidence
+
+1. A build already marked dead (an orphan left by an older dashboard render), started 300 minutes ago, whose real agent id `h1` is in the live list was offered as "would go back" and a confirmation moved it. B6b (both a `presumed-dead` and a `staleness` marker) was RED: actual `would-go-back`, expected `never-moved`. Fix: `sweepVerdict` tests `live !== null && realId && live.has(id)` before the status branches, so any such row is never-moved with code `alive`. GREEN: the plan stays in `in-progress/` after a confirmation. `applySweep` builds its eligible set from a fresh preview made with the same live list in the same call, so the move-time check is the same function.
+2. `$NODE "${CLAUDE_PLUGIN_ROOT}/src/commands/start.js" menu task sw${E}eep --con${E}firm none` from a background agent was allowed. Case 102 (new entry in the shell-built list) was RED (exit 0). Fix: after the expansion check passes, `sweepBypassRefusal` refuses when any word names `start.js` or a `src/commands` folder. GREEN: cases 82 and 97-104 pass, all eight must-allow calls in case 104 stay allowed, case 103 allows the command for the main session and an empty agent id (108 pass, 0 fail in `tests/protect-records.test.js`).
+3. The sentence said "no &&, |", but case 104 allows both. Reworded in the hook, `src/commands/start.md`, `docs/ENFORCEMENT.md` and the two pinned test strings to: "built without $, a backtick, a brace or a wildcard".

@@ -340,6 +340,21 @@ describe('the dashboard never sends live work back to the build queue', () => {
     assert.match(res.text, /the builder is alive/);
   });
 
+  it('B6b. an already-dead build whose real agent id is in the live list is never moved', () => {
+    for (const orphanReason of ['presumed-dead', 'staleness']) {
+      const dir = makeProject();
+      seedPlan(dir, 'in-progress', 'b6b');
+      const [id] = seedTasks(dir, [{ plan: 'b6b', status: 'orphaned', agent: 'h1', startedMin: 300, doneMin: 60,
+        result: { ok: false, orphanReason, summary: 's' } }]);
+      const preview = sweep(dir, ['h1']);
+      assert.equal(rowOf(preview, id).group, 'never-moved', orphanReason);
+      assert.equal(rowOf(preview, id).code, 'alive', orphanReason);
+      sweep(dir, ['h1'], '--confirm', tokenOf(preview, id));
+      assert.ok(inStage(dir, 'in-progress', 'b6b'), `${orphanReason}: the plan must stay in the building folder`);
+      assert.ok(!inStage(dir, 'todo', 'b6b'), orphanReason);
+    }
+  });
+
   it('B7. exactly the named, still-eligible plans move (scenario 2.8)', () => {
     for (const p of ['pa', 'pb', 'pc', 'pd']) seedPlan(root, 'in-progress', p);
     const [a, b, c, d] = seedTasks(root, [
