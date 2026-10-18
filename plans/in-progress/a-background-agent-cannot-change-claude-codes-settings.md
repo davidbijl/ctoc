@@ -952,51 +952,51 @@ protected files (by file identity and folded name) and, as a mistake guard, shel
 name them, while the loaded hook is intact; this is not a containment boundary — agent isolation
 is. In detail:
 
-- [ ] A background agent's Write, Edit, MultiEdit and NotebookEdit of each protected file (a–d)
+- [x] A background agent's Write, Edit, MultiEdit and NotebookEdit of each protected file (a–d)
   — direct, through a file link, a folder link, a hard link, through `..`, a `..` after a link,
   in any letter case, with the long s, with `\`, with a trailing dot or space, with `::$DATA` on
   any segment, `::$INDEX_ALLOCATION` or `:$I30:$INDEX_ALLOCATION` on a folder — are refused with
   exactly `REFUSAL_AGENT_SETTINGS` ("each protected file, editing tools", "spellings", "spellings
   the file system folds, and hard links", "links" (a)–(d), "worktrees", "the config folder by
   the home folder").
-- [ ] A background agent in a worktree cannot write the main checkout's two `.claude` settings
+- [x] A background agent in a worktree cannot write the main checkout's two `.claude` settings
   files or its `.ctoc/settings.json`, and one in the main checkout cannot write a worktree's
   ("worktrees").
-- [ ] The home fallback holds with `CLAUDE_CONFIG_DIR` unset and empty, including a config folder
+- [x] The home fallback holds with `CLAUDE_CONFIG_DIR` unset and empty, including a config folder
   reached through a link ("the config folder by the home folder").
-- [ ] A background agent's shell writes to each file by redirect, append, `tee`, `cp`, `mv`,
+- [x] A background agent's shell writes to each file by redirect, append, `tee`, `cp`, `mv`,
   `sed -i`, a `cd` split, an existing link, `ln` and the long s are refused with the same
   sentence; reads stay allowed ("shell writes", "shell reads stay allowed").
-- [ ] Every one of those calls without `agent_id`, and with an empty one, is decided exactly as
+- [x] Every one of those calls without `agent_id`, and with an empty one, is decided exactly as
   today (the `agentOnly` halves; links (e) and the dangling half of "shell writes" keep today's
   records refusal), and the main session's dressed-menu-call cases (97–111) pass unchanged
   (Decision 34).
-- [ ] The new agent check runs after the regulatory-settings check in both channels (evidence: the
+- [x] The new agent check runs after the regulatory-settings check in both channels (evidence: the
   Step 11 critic's read of the calls in `decide()` and `bashRefuses()`); as a guard of today's
   behaviour, an agent's shell write through a link to `.ctoc/settings.yaml` keeps the
   regulatory-settings sentence ("the regulatory-settings check keeps running first").
-- [ ] Ordinary agent work stays allowed, including an Edit of and a Write over an existing
+- [x] Ordinary agent work stays allowed, including an Edit of and a Write over an existing
   ordinary file (`src/e.js`), and including under a missing config folder, a dangling user
   settings link, a dangling project settings link, a user settings path that is a folder, a
   config folder at the filesystem root and a looping project settings link ("ordinary agent work
   stays allowed").
-- [ ] A genuine menu call's arguments stay data ("a genuine menu call's arguments stay data").
-- [ ] On a crash, a background agent's call mentioning a settings file (long s included) is
+- [x] A genuine menu call's arguments stay data ("a genuine menu call's arguments stay data").
+- [x] On a crash, a background agent's call mentioning a settings file (long s included) is
   refused with `REFUSAL_AGENT_SETTINGS_UNCHECKED`; the main session's is allowed ("when the
   protection cannot run").
-- [ ] `isLedgerWrite` runs no link test for a spec without `dir`; every existing spec is unchanged
+- [x] `isLedgerWrite` runs no link test for a spec without `dir`; every existing spec is unchanged
   ("a spec without dir runs the text tests only"; `ledger-forgery-closed`,
   `bash-gate-plan-coverage`, `bash-gate-payload-reader`,
   `the-bash-channel-cannot-reach-the-ledger-through-a-link` pass unchanged).
-- [ ] `deployment-setup.md` no longer tells the agent to write `.ctoc/settings.json`, says which
+- [x] `deployment-setup.md` no longer tells the agent to write `.ctoc/settings.json`, says which
   checks it runs on the block and which the main session runs after writing, and says the owner
   decides; the pinned sentence in `tests/agent-tool-grants.test.js` holds the new instruction.
-- [ ] `hooks/hooks.json` unchanged; the case "hooks/hooks.json registers exactly the one
+- [x] `hooks/hooks.json` unchanged; the case "hooks/hooks.json registers exactly the one
   protection" passes.
-- [ ] Dead-export count stays at 65 and unreachable files are not higher than at Step 9.
-- [ ] `npm test`: 0 failed, 0 skipped, coverage at or above `.ctoc/coverage-baseline.json`
+- [x] Dead-export count stays at 65 and unreachable files are not higher than at Step 9.
+- [x] `npm test`: 0 failed, 0 skipped, coverage at or above `.ctoc/coverage-baseline.json`
   `minPct`; `npm run lint` and `npm run typecheck` clean, zero warnings.
-- [ ] The Step 12 medians are quoted (five: the Write of `src/x.js`, the Edit of the existing
+- [x] The Step 12 medians are quoted (five: the Write of `src/x.js`, the Edit of the existing
   `src/e.js`, `ls`, the five-operand and the 128-operand `git add`); a 128-operand cost over the
   stop is stated with its number in the plan's result.
 - [ ] Live, after the owner releases it: in a scratch CTOC project, a background agent's Write to
@@ -1281,7 +1281,7 @@ is. In detail:
 - [x] Run `node --test tests/claude-md-keeps-every-rule.test.js tests/protect-records.test.js` after the edits; green.
 
 ### Step 16: FINAL-REVIEW
-- [ ] Dispatch `iron-loop-critic` against every acceptance box; each box quotes its evidence, including the Step 11 guard removals and the Step 12 medians.
+- [x] Dispatch `iron-loop-critic` against every acceptance box; each box quotes its evidence, including the Step 11 guard removals and the Step 12 medians.
 - [ ] After the owner releases it: in a real session on a scratch CTOC project, read and record the session's permission mode; a background agent's Write to `.claude/settings.json` and its `echo x > .claude/settings.json` are refused (which shows that an editing tool's payload carries `agent_id` and that exit 2 blocks a Write in that mode), and the main session's Write of the same file goes through; quote the refusal exactly as shown. Until the release, report this box as not run.
 
 ## Execution Record
@@ -1464,3 +1464,31 @@ The final review (`iron-loop-critic`) found every acceptance criterion met with 
 ### Records pass: verification (executor)
 
 `node --test tests/claude-md-keeps-every-rule.test.js tests/protect-records.test.js tests/agent-tool-grants.test.js`: tests 177, pass 177, fail 0, skipped 0. `npx eslint . --max-warnings 0`: exit 0, zero warnings. No change in `src/` or `tests/` in this pass; the hook's header comment states neither point (it says only that a padded command takes several seconds), so it is unchanged.
+
+### Port onto main (CTO Chief, 2026-10-17/18)
+
+- The branch was rebased onto origin/main 76278489 (CTOC 6.14.130), without the question-step fix, which the coordinator held back and did not merge. The rebased commits are 67a397bd, 5785e9d1 and 2759006b.
+- Main's switch `RECORD_REFUSALS_OFF` (the owner's order of 2026-10-15, "remove that hook block, it is wrong") turns the shell record-write refusal and the background-agent menu refusal off. By the coordinator's decision the background-agent settings shell check now runs inside that switch, right after the `.ctoc/settings.yaml`/regimes check, and is skipped for a pure call of the plugin's own menu. The editing-tool check is unchanged. Case 129's two dangling-link rows now assert the regulatory-settings sentence (the record check that refused them first is off), under a comment quoting the order. The question-step cases 97–111 do not exist on this base.
+- Result on the rebased branch: `npm test` 13315 tests, 0 failed, 0 skipped, coverage 99.65% against the 99% floor, test gate PASS; `npx eslint . --max-warnings 0` clean. The load-sensitive main test "finding 2c: a colour change in a one-line stylesheet is judged in linear time" (`tests/hotfix-check-review-findings.test.js`) failed once under full-suite load on the ported code and passed alone and on the next full run.
+- The final review's two blocking items were fixed (the Step 11 and Step 13 records, the deadline sentence). The automatic flag triages are recorded: path traversal, confirmed but covered by the follow-up plan; incomplete protected registry, not a defect of this fix.
+
+Evidence per ticked acceptance box (records pass, read-only; re-run on the rebased branch: `node --test` on `tests/protect-records.test.js`, `tests/agent-tool-grants.test.js`, `tests/claude-md-keeps-every-rule.test.js`, the four bash-gate and ledger suites, `tests/export-reachability.test.js`, `tests/reachability.test.js`: tests 324, pass 324, fail 0, skipped 0):
+
+1. Editing tools refused for every spelling and link form: cases 112, 113, 114, 115, 116, 117, 118, 120, 121a, 121b in the new block (Step 8 record; green after Step 10; green on the rebased branch).
+2. Worktrees: case 120, "from a worktree, the main checkout's files; from the main checkout, a worktree's".
+3. Home fallback: cases 121a (unset) and 121b (empty), plus 118 for a config folder reached through a link.
+4. Agent shell writes refused with the same sentence, reads allowed: case 129 "shell writes" and case 131 "shell reads stay allowed for the background agent". On the rebased branch the dangling-link rows of 129 assert the regulatory-settings sentence (port section above).
+5. Main-session and empty-agent-id halves (`agentOnly`): every case of the block runs both halves, green. Links (e): case 119 keeps the records sentence for every session for the editing tools. The dangling half of "shell writes" keeps today's decision on this base, which is the regulatory-settings sentence, because the shell record check is off here. The main session's dressed-menu-call half does not apply on this base: cases 97–111 do not exist here (the question-step fix was held back). What holds is the main-session half: every refused agent call is decided as today without `agent_id` (the `agentOnly` halves). The dressed-call half (cases 97–111 unchanged) is not testable on this base and is not claimed.
+6. Order of checks: case 130 "the regulatory-settings check keeps running first" (green); the Step 11 critic's read of the calls in `decide()` and `bashRefuses()` (Step 11: REVIEW, critic).
+7. Ordinary agent work stays allowed: cases 122 (base), 123–128 (configurations a–f, with the Edit of and Write over the existing `src/e.js`) and 135 (g).
+8. A genuine menu call's arguments stay data: case 132.
+9. The crash rule: case 133 "when the protection cannot run" (agent refused with `REFUSAL_AGENT_SETTINGS_UNCHECKED`, main session allowed).
+10. `isLedgerWrite`: case 134 "a spec without dir runs the text tests only"; `ledger-forgery-closed`, `bash-gate-plan-coverage`, `bash-gate-payload-reader` and `the-bash-channel-cannot-reach-the-ledger-through-a-link` are green in the 324-test re-run above.
+11. `deployment-setup.md`: the pinned sentence in `tests/agent-tool-grants.test.js` (red at Step 8, green after Step 10, green in the re-run above).
+12. `hooks/hooks.json` unchanged: `git diff 76278489 HEAD -- hooks .claude-plugin` is empty; case 60 "hooks/hooks.json registers exactly the one protection" is green.
+13. Dead exports and unreachable files: `.ctoc/export-reachability-baseline.json` `maxDead` 65 and `.ctoc/reachability-baseline.json` `maxUnreachable` 17, the numbers of Step 9; `tests/export-reachability.test.js` and `tests/reachability.test.js` green in the re-run above.
+14. `npm test`, lint, typecheck: Step 14 records (13178 and 13179 tests before the port) and the port result above (13315 tests, 0 failed, 0 skipped, coverage 99.65% against the 99% floor, gate PASS; eslint clean). This records pass did not re-run the full suite.
+15. Step 12 medians: the Step 12 table quotes all five, run 1 and run 2, and states the 128-operand cost (about +35 ms, under the 50 ms stop). Measured before the port; not re-measured on the rebased branch.
+16. Step 16, first box (critic against every acceptance box): the "Step 16: FINAL-REVIEW, so far" record shows the final review ran and found every criterion met except the live probe; its blocking items were fixed (the Step 11 and Step 13 records, the deadline sentence; see the port section).
+
+Left open: "Live, after the owner releases it: …" and the second Step 16 box (the live probe). Both need a release and are reported as not run.
