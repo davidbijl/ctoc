@@ -106,8 +106,8 @@ const path = require('path');
 const safeFs = require('./safe-fs');
 
 /**
- * Hard cap on the ancestor walk. Termination is already guaranteed by the
- * `dirname` fixed point; this is a second, independent bound so a pathological
+ * Hard cap on the segments one walk takes. With links, `MAX_LINK_HOPS`
+ * guarantees termination; this is a second, independent bound so a pathological
  * path can never turn a permission check into a long loop.
  */
 const MAX_ANCESTOR_WALK = 4096;

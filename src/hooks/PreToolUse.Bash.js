@@ -350,6 +350,11 @@ function isLedgerWrite(command, spec = LEDGER_SPEC) {
   let prefix = '';
   let rawPrefix = ''; // the same accumulated cwd as written (no `..` removed), for the link test
   for (const rawSeg of segments) {
+    // The decision's budget also covers this function's own TEXT work (the `cd` prefix rebuild
+    // below grows with the square of the `cd` count; operand resolution with the operand count).
+    // Claude Code lets a call run when its hook times out, so a padded command that outlasts the
+    // budget is refused here — even a read-only one (the owner's "refuse after 5 s").
+    if (realPathConfinement !== null && realPathConfinement.budgetSpent()) return true;
     const seg = rawSeg.replace(/^[\s({]+/, '').trim();
     if (!seg) continue;
     const cdKw = seg.match(/^(?:cd|pushd)\b(.*)$/i);
@@ -420,7 +425,11 @@ function isLedgerWrite(command, spec = LEDGER_SPEC) {
     const tokens = seg.replace(/[<>]+/g, ' ').split(/\s+/).filter(Boolean);
     const operands = tokens.slice(1).filter((t) => !t.startsWith('-'));
     if (!touches) {
-      touches = operands.some((t) => spec.resolvedRe.test(resolveTokenPath(prefix, t)));
+      // Each operand is path work too: past the budget, refuse (see the top of the loop).
+      for (const t of operands) {
+        if (realPathConfinement !== null && realPathConfinement.budgetSpent()) return true;
+        if (spec.resolvedRe.test(resolveTokenPath(prefix, t))) { touches = true; break; }
+      }
     }
     if (!touches && spec.dir) {
       // (c) The filesystem-aware test — the link-through-the-ledger close. Candidates

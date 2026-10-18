@@ -1457,4 +1457,28 @@ describe('the write protection compares real files, not spellings (owner, 2026-1
     R.row('main Bash echo x > src/x.js, same preload', () => assertAllowed(spawned(bash('echo x > src/x.js')), 'the main session with the preload'));
     R.row('agent Bash echo x > src/x.js, no preload', () => assertAllowed(run(asAgent(bash('echo x > src/x.js')), ro()), 'the control without the preload'));
   });
+
+  rowTest("155 · once the budget is spent the shell's own text work refuses (the owner's \"refuse after 5 s\")", () => {
+    // The shell's `cd` prefix rebuild and operand resolution are text work the file-system walks' deadline
+    // does not cover; past the budget isLedgerWrite itself must refuse, or a padded command outlasts
+    // Claude Code's hook timeout (a timed-out hook lets the call run). The verdict is judged, never wall time.
+    fs.mkdirSync(p('a'), { recursive: true });
+    const preload = p('budget-spent-decision.js');
+    fs.writeFileSync(preload, [
+      `const c = require(${JSON.stringify(RPC)});`,
+      'const set = c.setDeadline;',
+      "c.setDeadline = (at) => { if (typeof set === 'function') set(typeof at === 'number' ? Date.now() - 1 : at); };",
+      '',
+    ].join('\n'));
+    const spawned = (input) => spawnSync(process.execPath, ['--require', preload, ENTRY], {
+      cwd: project, env: { ...process.env, CLAUDE_CONFIG_DIR: cfg }, input: JSON.stringify(input), encoding: 'utf8',
+    });
+    const padded = 'cd a; cd a; cd a; ls';
+    R.row('agent Bash cd a; cd a; cd a; ls, budget spent', () => assertRefused(spawned(asAgent(bash(padded))),
+      'a padded read-only command past the budget (agent)', REFUSAL_SETTINGS));
+    R.row('main Bash cd a; cd a; cd a; ls, budget spent', () => assertRefused(spawned(bash(padded)),
+      'a padded read-only command past the budget (main session)', REFUSAL_SETTINGS));
+    R.row('agent Bash cd a; cd a; cd a; ls, no preload (control)', () => assertAllowed(run(asAgent(bash(padded)), ro()), 'the control (agent)'));
+    R.row('main Bash cd a; cd a; cd a; ls, no preload (control)', () => assertAllowed(run(bash(padded)), 'the control (main session)'));
+  });
 });

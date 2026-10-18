@@ -284,11 +284,13 @@ trailing dots and spaces dropped, lower case) and by a settings file name reache
 the identity tests run on the path twice, collapsed by name and as written (joined to the working
 directory without normalising), because the kernel applies `..` after following a link
 (`<project>/src/y/../foo` with `y` a link to a folder holding `foo`, itself a link to the config
-file, leads to the config file although by name it is `<project>/src/foo`; one case stays open
-until the follow-up plan "the write protection compares real files, not spellings" lands: a
-BROKEN link `foo` there, pointing at a settings file that does not exist yet, reached through
-`link/..`, is not refused, and it is reachable only if Claude Code's Write follows `..` after a
-link, which is not verified);
+file, leads to the config file although by name it is `<project>/src/foo`; a BROKEN link `foo`
+there, pointing at a settings file that does not exist yet, reached through `link/..`, is refused
+— not by this agent-only settings rule but by the records protection's rule against a link whose
+destination is missing, which walks the path as written and applies to every session (as it
+already does for a broken link written directly), with the records sentence; its shell twin is
+refused by the regulatory-settings link test, with the regulatory-settings sentence; the real-path
+name test reads both forms too);
 for an ABSENT target, also by the identity of its folder and its folded name, which refuses a
 fresh create through a path alias of a protected file's folder (macOS
 `/System/Volumes/Data<folder>`, `/.nofollow<folder>`); the shell by text, read as written and
@@ -316,6 +318,46 @@ ordinarily named config folder (`CLAUDE_CONFIG_DIR=…/config`), an agent's shel
 `config/settings.json` (ask the main session). Held by `tests/protect-records.test.js` (cases
 112–138) and, for the deployment-setup instruction, by
 `tests/agent-tool-grants.test.js`.
+
+**Where a path really leads — compared by file identity (the owner's decision of 2026-10-15).**
+Every editing-tool target is walked the way the file system walks it (a `..` after a symbolic
+link goes to the link's real parent) and also read tidied (`..` removed by text), and either
+reading landing in a protected area refuses. Each is compared with each protected area by file
+identity (device and inode), not by spelling, so a spelling the disk opens as a protected folder
+(letter case, the long s ſ on macOS; believed on Windows) is refused. A protected folder that does
+not exist yet is compared through its nearest existing parent's identity and its Unicode-folded
+missing names (NFKC, then lower case). A hard link to the settings file has that file's identity
+and is refused. The waiting folder stays writable under every Unicode-folded spelling of its name.
+The root-independent test reads the folded path and the folded real path, so another copy's
+records count under a look-alike spelling or through a link, and a link inside the waiting folder
+that leads into the store is refused. A file, or a folder the session cannot search, where a
+protected folder is expected refuses only the writes that run into it. From 5 seconds after a
+decision starts, every file-system walk fails and every check whose failure could let the call
+through refuses, or is backed in the same decision by one that refuses — the background agent's
+shell settings check keeps its link test rather than dropping it — because Claude Code lets a call
+run when its hook times out (a call that needs no walk is decided as without the budget, and the
+budget does not cover Node's start-up). The shell's own text work obeys the same budget: once it is
+spent, the shell checks refuse even a long read-only command (the owner's "refuse after 5 s"). On
+a slow disk the budget refuses ordinary writes: an ordinary Write makes about 190 file-system
+calls, so refusals start at roughly 26 ms per call on average. The background agent's settings
+check reads its identity tests and its real-path name test on the path as written and tidied. On
+the shell the text rules stay a guard against honest mistakes (the owner's ruling of 2026-10-15),
+the record refusals stay off, and the link test of the checks that still run — the regulatory
+settings for every session, the settings files for background agents — calls the same function on
+each operand as written and tidied, so a hard link to `.ctoc/settings.yaml` (or, for a background
+agent, to a protected settings file that has a link test), a spelling the disk opens as one, a
+link then `..`, and a `cd` through a link are refused there. Held by
+`tests/protect-records.test.js` (cases 139–155) and
+`tests/a-link-cannot-leave-the-repository.test.js` (cases 15–21).
+
+If every write is refused, a protected folder's path (`.ctoc/approvals`, `.ctoc/state/verify`,
+`.ctoc/streaming`, `.ctoc/regulatory-regimes`, or `.ctoc/settings.yaml`) is a dangling symbolic
+link or a link loop: the hook refuses everything then, because a dangling link there is how a
+record is forged at the link's destination. The same happens when a protected folder
+(`.ctoc/approvals`, `.ctoc/state/verify`, `.ctoc/streaming`) is turned into a link to `..` or
+above: every editing call of every session is refused, and under the owner's shell switch one
+shell command from any session can make it so. This is recoverable from the owner's own terminal: remove
+the link and make the folder again.
 
 **What it refuses:**
 
@@ -504,7 +546,9 @@ protected list and the project's files stay protected on the editing tools.
   the loaded hook is intact;
 - a background agent's shell route to a settings file that the text cannot read: a script
   written then run, a path in a variable (`$CLAUDE_CONFIG_DIR/settings.json`) or built at run
-  time, a hard link, a link whose target is spelled differently, a copy or move whose
+  time, a hard link to, or a link through another spelling of, a protected file that gets no link
+  test (its real path is neither absent nor a regular file; for every other protected file both
+  are refused), a copy or move whose
   destination names only the folder (`cp x.json .ctoc`), git operations that rewrite
   `.ctoc/settings.json` without naming it (`git apply` of a patch the agent wrote,
   `git checkout <rev> -- .`, `git stash pop`);
@@ -538,6 +582,22 @@ protected list and the project's files stay protected on the editing tools.
 - the home folder's `.claude/settings.local.json` is refused by the name rule although it is not on
   the protected list (a harmless false refusal);
 - a deliberately padded shell command (tens of kilobytes of operands) takes several seconds to
-  check (measured about 10 s against about 4 s before this protection), and a hook that times out
-  lets the call run; the deadline in the follow-up plan "the write protection compares real files,
-  not spellings" will bound it once that plan is built; until then nothing does.
+  check, and a hook that times out lets the call run. Measured on a heavily loaded Mac (load
+  average 25 to 47): the 64-segment, 128-operand command of about 100 kilobytes took 2.1 to 4.6 s
+  and was allowed under the 5-second budget; a command of `cd a;` segments followed by a write was
+  refused at 5.03 s at 100, 200, 400, 800 and 3,200 kilobytes (before the budget covered the
+  shell's text work, 800 kilobytes took 198 s); a command of four segments of `cp x` with 128
+  operands through the deepest folders this machine allows (478 kilobytes) was refused at 5.03 s.
+  The file-system walks and the shell's text work stop at 5 seconds and refuse; Node's start-up,
+  reading the payload and the other checks of the shell are outside the budget. Claude Code's
+  default hook timeout is 600 seconds (code.claude.com/docs/en/hooks), far above the budget.
+- a hard link to a record (a file inside a protected folder) is not seen on any channel — only one
+  to the settings file is; on the shell, a look-alike spelling of another copy's
+  `.ctoc/settings.yaml` (the text rules are not folded; the link test measures against the
+  session's root); a disk without identities (inode 0) falls back to the real path's text in any
+  letter case, as before; Windows aliases of an existing folder (8.3 names, trailing dots and
+  spaces, streams) are caught by identity, read from the code and not run on Windows, while a
+  not-yet-existing folder spelled with a letter Windows folds but lower-casing does not (the
+  dotless ı) is not; a link swapped between the decision and the write — one agent can race
+  itself with a background shell loop; a file system that stalls inside one call (a hung network
+  mount) can hold the hook past Claude Code's timeout, which lets the call run.

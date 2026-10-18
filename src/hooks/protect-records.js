@@ -35,7 +35,13 @@
  *   any letter case, with `\` read as `/`, through a symbolic link, and also by a
  *   root-independent path test so a session outside the project cannot write another
  *   copy's records. Reuses `PreToolUse.Edit.js` (`isProtectedLedgerPath`,
- *   `isProtectedVerifyPath`, `targetsStreamingLive`).
+ *   `isProtectedVerifyPath`, `targetsStreamingLive`). The target is read as written (a `..`
+ *   after a link goes to the link's real parent) and tidied (`..` removed by text); each
+ *   reading is compared with each area by file identity through
+ *   `real-path-confinement.resolvesUnder`, the waiting folder by its Unicode-folded name, the
+ *   root-independent test on the Unicode-folded path and real path. From 5 seconds after the
+ *   decision starts every walk fails and every check whose failure could let the call through
+ *   refuses or is backed by one that refuses (`DECISION_BUDGET_MS`).
  *   Shell: a non-read command naming any area, directly, after a `cd`, from the
  *   session's working directory, or through a symbolic link; an inline script naming a
  *   record writer (the approval-ledger names, `step-13-verify`, `persistVerifyResult`,
@@ -96,7 +102,11 @@
  *   project's settings file and regulatory-profiles check, which runs first; it is skipped for
  *   a pure call of this plugin's own menu, whose arguments are data. This is a guard
  *   against honest mistakes and a name-and-identity check on the editing tools, NOT a
- *   containment boundary: isolating agents is.
+ *   containment boundary: isolating agents is. The settings check's real-path name test reads
+ *   both forms (as written and tidied); the agent's shell settings specs keep their link test
+ *   once the budget is spent (`fileSpec`, Decision 46); and the shell link test of the checks
+ *   inside the switch compares by identity on the operand as written and tidied. Once the
+ *   budget is spent `isLedgerWrite` refuses even a read-only command.
  *   Nothing else is loaded or run: no plan coverage, no escape phrases, no enforcement
  *   mode, no Iron Loop step gates, no irreversible-command net, no plan-move gate.
  *
@@ -119,8 +129,8 @@
  *   written then run; a path held in a variable or built at run time; the file name spelled
  *   with a backslash (`settings\.json`), a backslash-newline continuation, `?` and `*`
  *   patterns or brace lists naming it, or `$'…'` quoting; a command run through `sh -c`,
- *   `env -C` or `git -C`; a hard link on the shell; a link whose target is spelled
- *   differently; a copy or move whose destination names only the folder; git operations that
+ *   `env -C` or `git -C`; a hard link to, or a link through another spelling of, a protected
+ *   file that gets no link test (its real path is neither absent nor a regular file); a copy or move whose destination names only the folder; git operations that
  *   rewrite `.ctoc/settings.json` without naming it; replacing, moving or deleting the whole
  *   `.claude` or `.ctoc` folder (the sandbox refuses the shell route into `.claude`, measured
  *   on 2026-10-15); the crash rule not seeing a hard link to a settings file; the config
@@ -131,8 +141,12 @@
  *   file (reads to the shell rules; `-exec` can write any content, so a record's "never
  *   forged" does not hold for it); a fresh create through a macOS folder alias in a config
  *   folder not called `.claude` that does not exist yet (no folder to compare); a padded
- *   command of tens of kilobytes (several seconds to check, and a hook that times out lets
- *   the call run). The home folder's `.claude/settings.local.json` is refused by the name
+ *   command of tens of kilobytes: the walks and the shell's text work stop at 5 seconds and
+ *   refuse (measured: 100 to 3,200 kilobytes of `cd` segments refused at 5.03 s), the rest
+ *   of the shell's checks and Node's start-up are outside that budget, and Claude Code's
+ *   hook timeout is 600 seconds; on the shell, a look-alike spelling of
+ *   another copy's `.ctoc/settings.yaml` (the text rules are not folded); a link swapped
+ *   mid-call; a stalled file system. The home folder's `.claude/settings.local.json` is refused by the name
  *   rule although it is not on the list. The full list is in `docs/ENFORCEMENT.md`.
  *
  * FAIL RULE
@@ -340,8 +354,9 @@ function sameFileAsSettings(p, protectedFiles) {
  * Is an editing tool's target a file a background agent may not change? Any one of: the target
  * exists and is the same file (device and inode) as a protected file that exists — every
  * spelling the file system folds, every link, every hard link; the folded name of its lexical
- * path or of its real path (its real path read on the path collapsed by name and as written) is a protected name (`.claude/settings(.local).json`,
- * `.ctoc/settings.json`, or the config folder's `settings.json`, lexical or real); or a settings
+ * path or of its real path (its real path read on the path collapsed by name and as written) is a protected
+ * name (`.claude/settings(.local).json`, `.ctoc/settings.json`, or the config folder's
+ * `settings.json`, lexical or real); or a settings
  * file name reached through a `..` (Claude Code may resolve `link/..` physically, not by name).
  * A stat fault on the target other than "does not exist", or a fault of its real path, refuses;
  * a protected file whose stat faults is dropped from the identity test (it never refuses every
