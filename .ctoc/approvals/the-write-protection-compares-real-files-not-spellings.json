@@ -1,0 +1,10 @@
+{
+  "content_sha256": "348f9a2face6f2b6dcfc6c72c3dffa3a8fa3e603a9054011d3c8616adfa3a66e",
+  "hash_scope": "specification",
+  "stage_from": "implementation",
+  "stage_to": "todo",
+  "approved_at": "2026-10-18T07:50:48.308Z",
+  "advanced_by": "sufficiency",
+  "evidence": "sufficiency: implementation/the-write-protection-compares-real-files-not-spellings.md — no questions were computed (0 question(s) computed), 0 answered; 0 unanswered, 0 blocking; attested by: not recorded; 2 recorded answer(s) did not bind to this revision; enough (no unanswered fork)",
+  "plan_basename": "the-write-protection-compares-real-files-not-spellings"
+}
