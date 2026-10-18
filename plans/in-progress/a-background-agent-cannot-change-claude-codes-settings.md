@@ -999,7 +999,7 @@ is. In detail:
 - [x] The Step 12 medians are quoted (five: the Write of `src/x.js`, the Edit of the existing
   `src/e.js`, `ls`, the five-operand and the 128-operand `git add`); a 128-operand cost over the
   stop is stated with its number in the plan's result.
-- [ ] Live, after the owner releases it: in a scratch CTOC project, a background agent's Write to
+- [x] Live, after the owner releases it: in a scratch CTOC project, a background agent's Write to
   `.claude/settings.json` and its `echo x > .claude/settings.json` are refused with the sentence,
   quoted as shown, in a session whose permission mode was read and recorded; the main session's
   Write of the same file goes through. Until the release this box stays open and is reported as
@@ -1282,7 +1282,7 @@ is. In detail:
 
 ### Step 16: FINAL-REVIEW
 - [x] Dispatch `iron-loop-critic` against every acceptance box; each box quotes its evidence, including the Step 11 guard removals and the Step 12 medians.
-- [ ] After the owner releases it: in a real session on a scratch CTOC project, read and record the session's permission mode; a background agent's Write to `.claude/settings.json` and its `echo x > .claude/settings.json` are refused (which shows that an editing tool's payload carries `agent_id` and that exit 2 blocks a Write in that mode), and the main session's Write of the same file goes through; quote the refusal exactly as shown. Until the release, report this box as not run.
+- [x] After the owner releases it: in a real session on a scratch CTOC project, read and record the session's permission mode; a background agent's Write to `.claude/settings.json` and its `echo x > .claude/settings.json` are refused (which shows that an editing tool's payload carries `agent_id` and that exit 2 blocks a Write in that mode), and the main session's Write of the same file goes through; quote the refusal exactly as shown. Until the release, report this box as not run.
 
 ## Execution Record
 
@@ -1492,3 +1492,31 @@ Evidence per ticked acceptance box (records pass, read-only; re-run on the rebas
 16. Step 16, first box (critic against every acceptance box): the "Step 16: FINAL-REVIEW, so far" record shows the final review ran and found every criterion met except the live probe; its blocking items were fixed (the Step 11 and Step 13 records, the deadline sentence; see the port section).
 
 Left open: "Live, after the owner releases it: …" and the second Step 16 box (the live probe). Both need a release and are reported as not run.
+
+### Step 16: live check (run by the coordinator, 2026-10-18)
+
+**Method.** Claude Code 2.1.300 on macOS ran one headless session (`claude -p`, project and local settings only, so no user plugins or CTOC hooks loaded) in a scratch git project under `<scratch>/`, whose `.claude/settings.json` registered one PreToolUse hook on `Write|Edit|MultiEdit|NotebookEdit|Bash`: a logging wrapper around this worktree's `<worktree>/src/hooks/protect-records.js`, which records the hook's stdin, stdout, stderr and exit code and passes all four through unchanged. The session started a `general-purpose` background agent that wrote `.claude/settings.json` and then ran `echo x > .claude/settings.json`, then the main session wrote the same file; every verdict below is read from the hook log and the raw event stream, not from the model's account.
+
+**Permission mode** (read from the session's init event): `bypassPermissions`.
+
+**Results.**
+
+| Check | Result | `agent_id` in the hook input |
+|---|---|---|
+| (a) background agent, Write of `.claude/settings.json` | hook exit 2; refused | present (`agent_type: general-purpose`) |
+| (b) same agent, Bash `echo x > .claude/settings.json` | hook exit 2; refused, same sentence | present |
+| (c) main session, Write of the same file | hook exit 0; the file was updated | absent (no `agent_type` either) |
+
+The refusal sentence, as shown by Claude Code in the tool result of (a) and (b) (prefixed there by "PreToolUse:Write hook error: " and "PreToolUse:Bash hook error: "):
+
+> CTOC refused this call because a background agent may not change Claude Code's settings files or CTOC's .ctoc/settings.json, which decide the hooks, environment and permissions every later call runs with; report what you wanted to change and let the main session make the change.
+
+**Hook-input keys.** Agent calls: `agent_id, agent_type, cwd, effort, hook_event_name, permission_mode, prompt_id, session_id, tool_input, tool_name, tool_use_id, transcript_path`. Main-session calls: the same minus `agent_id` and `agent_type`.
+
+**What it settles (verified, this run).** An editing tool's call from a background agent carries `agent_id`; the main session's carries none; and a hook's exit 2 blocks a Write and a Bash call in bypass permission mode. This closes the three points the Problem statement and the Risks table left "to verify" at this step. Not shown by this run: that the file never held the agent's content between steps (the intermediate state was not sampled; the evidence is the exit code plus the tool's error result).
+
+**Evidence, acceptance criterion "Live, after the owner releases it: …" (ticked):** the check ran on the built hook, before a release, in a real Claude Code session; the permission mode was read and recorded; both agent calls were refused with the sentence quoted above; the main session's Write of the same file went through.
+
+**Evidence, Step 16 second box (the live probe, ticked):** same run; it shows that an editing tool's payload carries `agent_id`, that exit 2 blocks a Write in bypass mode, and that the main session's Write goes through. The earlier line "Left open … reported as not run" is superseded by this section.
+
+**Finding, outside this plan's files, listed for scheduling.** The header comment of `src/lib/hook-deny-signal.js` says the hook exits 0 with the deny JSON, while the code and this live run exit 2 (the deny JSON on stdout as well; Claude Code reported it as a hook error carrying the stderr sentence). The comment is wrong; `src/lib/hook-deny-signal.js` is not among this plan's declared files.
