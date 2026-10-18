@@ -743,6 +743,8 @@ describe('only the human confirms a sweep (owner, 2026-10-18)', () => {
     `node ${path.join(REPO, 'src', 'commands')}/sta*.js menu task sweep --con\${X}firm none`,
     'node "$S" menu task sw${E}eep --con${X}firm none',
     '$NODE "${CLAUDE_PLUGIN_ROOT}/src/commands/start.js" menu task sw${E}eep --con${E}firm none',
+    'echo x | xargs node src/commands/start.js menu task sw${E}eep --confirm none',
+    'bash -c "node src/commands/start.js menu task sw\\${E}eep --confirm none"',
   ];
 
   test('102 · a confirmation built by the shell is refused for a background agent, with the plain-call sentence', () => {
@@ -768,6 +770,10 @@ describe('only the human confirms a sweep (owner, 2026-10-18)', () => {
       'node --test tests/menu-screens-coverage.test.js 2>&1 | tail -5',
       'git add src/lib/menu-screens.js && git commit -F msg',
       'grep -n x src/commands/start.js | head',
+      "grep -n 'a.*b' src/commands/start.js | head",
+      'ls src/commands/*.ts | wc -l',
+      'for f in src/commands/*.js; do wc -l "$f"; done',
+      'npx eslint "src/commands/**/*.ts" && npm test',
     ]) assertAllowed(run(agent(bash(command))), `${command} (background agent)`);
   });
 

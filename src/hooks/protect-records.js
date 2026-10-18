@@ -78,7 +78,12 @@
  *   sentence. A spelling the shell builds (`sw${E}eep`, `$'\x2d-confirm'`, a wildcard script word) in a
  *   command that is not one plain call is refused with that sentence plus "must also be one plain
  *   call": a runtime's script word that is the menu, names `start.js` or `src/commands`, holds `$` or
- *   a backtick, or is a wildcard. Not caught: a script file that runs the confirmation, inline code
+ *   a backtick, or is a wildcard; and, whatever the runtime word is, any word naming `start.js` or
+ *   `src/commands` when a word in command position (the first word of a segment split on `;`, `|`,
+ *   `&&`, `||`, `&`, a newline, and after `$(` or a backtick) holds `$` or a backtick, or is `eval`,
+ *   `exec`, `xargs`, `sh`, `bash`, `zsh`, `env`, `command`, `source` or `.`. So `grep -n x
+ *   src/commands/*.js | head` and `for f in src/commands/*.js; do wc -l "$f"; done` stay allowed.
+ *   Not caught: a script file that runs the confirmation, inline code
  *   moving a plan by other means, `git mv`, or a `cd` into `src` then a relative `commands/…` word.
  *   Nothing else is loaded or run: no plan coverage, no escape phrases, no enforcement
  *   mode, no Iron Loop step gates, no irreversible-command net, no plan-move gate.
@@ -636,9 +641,33 @@ function sweepBypassRefusal(command, base) {
     const real = dirs.map((dir) => resolveLikeNode(dir, bare[j])).find((r) => r !== null && ctocKind(r) === 'menu');
     if (real) return REFUSAL_SWEEP_PLAIN;
   }
-  // The runtime itself may be a variable (`$NODE "…/start.js" …`): any word naming the menu counts.
-  if (bare.some((w) => /start\.js/i.test(w) || COMMANDS_TEXT_RE.test(w))) return REFUSAL_SWEEP_PLAIN;
+  // The runtime itself may be a variable (`$NODE "…/start.js" …`) or reached through a wrapper
+  // (`xargs node …`, `bash -c "…"`): any word naming the menu counts, but only when a word in command
+  // position is built at run time or is a wrapper. A plain `grep … src/commands/…` stays allowed.
+  if (bare.some((w) => /start\.js/i.test(w) || COMMANDS_TEXT_RE.test(w)) && hasIndirectCommand(command)) {
+    return REFUSAL_SWEEP_PLAIN;
+  }
   return null;
+}
+
+const WRAPPER_WORD_RE = /^(eval|exec|xargs|sh|bash|zsh|env|command|source|\.)$/;
+const CONTROL_WORD_RE = /^(do|then|else|elif|if|while|until|time|!|\{|\()$/;
+
+/**
+ * True when a word in command position (the first word of a segment split on `; | && || &` and a
+ * newline, and of what follows `$(` or a backtick) holds `$` or a backtick, or is a wrapper such as
+ * `eval`, `xargs`, `bash`. Loop keywords (`do`, `then` …) before the word are skipped.
+ * @param {string} command
+ * @returns {boolean}
+ */
+function hasIndirectCommand(command) {
+  const pieces = [command, ...command.split(/\$\(|`/).slice(1)];
+  return pieces.some((piece) => piece.split(/[;&|\n]+/).some((segment) => {
+    const words = segment.split(/\s+/).filter(Boolean);
+    while (words.length && CONTROL_WORD_RE.test(words[0])) words.shift();
+    if (!words.length) return false;
+    return /[$`]/.test(words[0]) || WRAPPER_WORD_RE.test(words[0].replace(/['"]/g, ''));
+  }));
 }
 
 /**
