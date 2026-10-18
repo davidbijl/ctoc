@@ -2835,6 +2835,7 @@ module.exports = {
   moveUpInQueue,
   moveDownInQueue,
   removeFromQueue,
+  planDeclaredFiles,
   // Background agent functions
   AGENT_TYPES,
   initBackgroundAgent,

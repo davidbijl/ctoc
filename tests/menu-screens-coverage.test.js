@@ -297,13 +297,22 @@ describe('buildDashboardTable — inbox count wiring (each count names its door)
     assert.match(out, /Inbox clear/);
   });
 
-  test('a_stale_running_task_with_no_live_agent_surfaces_the_orphaned_offer_line', () => {
+  test('a_stale_running_task_with_no_live_agent_surfaces_the_looks_dead_line_and_changes_nothing', () => {
+    // Contract replaced 2026-10-18 (owner): opening the dashboard changes no task and moves no plan;
+    // a dead build moves only when the human names it in `menu task sweep` — plan
+    // real-projects-do-not-stall-on-the-menu-s2. The old case asserted the render orphaned the task
+    // and printed "1 task orphaned — offer re-run"; the render now only counts what a sweep would do.
     const root = mkProject();
     // kind 'plan' (30-min floor) started 3h ago, liveAgentIds absent → staleness backstop
-    // orphans it on reconcile; the dashboard surfaces the singular re-run offer.
+    // would mark it dead; the dashboard counts it in one line and writes nothing.
     writeRegistry(root, [makeTask('t1', { kind: 'plan', status: 'running', plan: 'p', startedAgo: 3 * 3600 * 1000 })]);
+    const file = path.join(root, '.ctoc', 'state', 'tasks.json');
+    const before = fs.readFileSync(file, 'utf8');
     const out = menu.buildDashboardTable(root);
-    assert.match(out, /1 task orphaned — offer re-run/);
+    assert.match(out, /1 other task looks dead/);
+    assert.match(out, /would be marked dead on age alone/);
+    assert.doesNotMatch(out, /orphaned — offer re-run/);
+    assert.equal(fs.readFileSync(file, 'utf8'), before, 'the registry bytes must be unchanged');
   });
 
   test('corrupt_deploy_ready_log_does_not_crash_the_dashboard', () => {

@@ -101,7 +101,7 @@ describe('a build start moves its plan', () => {
     const res = run('start', t1);
     assert.equal(res.ok, true, JSON.stringify(res));
     assert.equal(res.status, 'running');
-    assert.equal(taskOf(t1).agentTaskId, 't1', 'the placeholder is the task id');
+    assert.equal(taskOf(t1).agentTaskId, null, 'a start without --agent-id records no agent id (the task id is not an agent\'s id)');
     assert.equal(res.planPath, 'plans/in-progress/delta.md');
     assert.deepEqual(stagesOf('delta'), ['in-progress']);
     const done = run('complete', t1);
@@ -217,11 +217,11 @@ describe('the --agent-id stamp', () => {
     assert.equal(regBytes(), before);
   }
 
-  it('5a. claimed by `menu task start` (agent = its own id): the session stamps it, a second id is refused', () => {
+  it('5a. claimed by `menu task start` (no agent id recorded): the session stamps it, a second id is refused', () => {
     writePlan('todo', 'delta');
     const t1 = addBuild('delta');
     assert.equal(run('start', t1).ok, true);
-    assert.equal(taskOf(t1).agentTaskId, 't1');
+    assert.equal(taskOf(t1).agentTaskId, null);
     stampTwice(t1);
   });
 
@@ -883,10 +883,9 @@ describe('fix round 1: the stamp', () => {
     const t1 = addBuild('delta');
     assert.equal(run('start', t1).ok, true);
     let before = regBytes();
-    const again = run('start', t1, '--agent-id', 't1'); // the placeholder itself
-    assert.equal(again.ok, true, JSON.stringify(again));
-    assert.equal(again.status, 'running');
-    assert.match(again.text, /Task t1 → running \(agent t1 already recorded\)/);
+    const again = run('start', t1, '--agent-id', 't1'); // the task id is not an agent's id: refused, nothing written
+    assert.equal(again.ok, false, JSON.stringify(again));
+    assert.equal(again.reason, 'agent-id-not-real');
     assert.equal(regBytes(), before, 'no write');
     assert.equal(run('start', t1, '--agent-id', 'H1').stamped, true);
     before = regBytes();

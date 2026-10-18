@@ -6,6 +6,7 @@
  * Usage:
  *   node start.js                            -> streaming-gate.streamingGateScreen()
  *   node start.js menu commands              -> dashboardCommands()
+ *   node start.js menu task sweep [--confirm ...] -> taskSweep()
  *   node start.js browse {stage}             -> stageBrowse(stage)
  *   node start.js plan {stage}/{file}        -> streaming-gate.planDecisionScreen(ref)
  *   node start.js validate {stage}/{file}    -> validateScreen(stage, file)
@@ -224,47 +225,41 @@ const WEDGE_MESSAGE_CAP = 120;
 const FAILURE_MESSAGE_CAP = 120;
 
 /**
- * Render the reconcile pass's TRUSTWORTHINESS — not its findings.
+ * Render the sweep preview's TRUSTWORTHINESS — not its findings.
  *
- * NOT BRICKING AND NOT SAYING ANYTHING ARE DIFFERENT INSTRUCTIONS. The `catch` around
- * `taskReconcile.reconcileState` below used to be empty, on the reasoning that a reconcile
- * failure must never brick the dashboard. That reasoning is correct and it is only half the
- * job: with the failure discarded, the dashboard rendered the task registry EXACTLY as it
- * would have if the pass had succeeded — same TASKS block, same counts, no orphan line,
- * nothing amiss. The human read a screen asserting the background plane was in a known
- * state when nothing had checked it. That is presenting STALE STATE AS LIVE, and it is
- * worse than a blank section: a blank section prompts a question, a confident wrong section
- * does not. This function changes only whether the failure is REPORTED, never whether it is
- * SURVIVED.
+ * NOT BRICKING AND NOT SAYING ANYTHING ARE DIFFERENT INSTRUCTIONS. The dashboard computes its
+ * sweep line with `planRecovery.previewSweep` (a read: no task change, no plan move). When that
+ * preview throws, the dashboard must still render, but it must also say the check did not run:
+ * a screen that rendered the task registry exactly as it would after a good check would present
+ * STALE STATE AS LIVE, which is worse than a blank section (a blank section prompts a question,
+ * a confident wrong section does not). This function changes only whether the failure is
+ * REPORTED, never whether it is SURVIVED.
  *
- * Three states mean "the task state below is not trustworthy right now", and none of them
- * had a reader. They differ in WHY, and the difference changes what the human should do, so
- * each renders its own line:
+ * Two states mean "the task state below is not trustworthy right now":
  *
- *   `threw`               the pass DID NOT RUN — likely a code defect; the counts are stale.
- *   `report.corrupt`      it ran against an EMPTY view — the registry file needs repairing.
- *   `report.saveFailed`   it ran and decided, but nothing was persisted — usually disk or
- *                         permissions; the same work is re-decided next open.
+ *   `threw`           the preview DID NOT RUN — likely a code defect; the counts are stale.
+ *   `report.corrupt`  it ran against an EMPTY view — the registry file needs repairing.
  *
- * Corrupt and save-failed can both hold, and both render, corrupt first: a bad read explains
- * a bad write, not the reverse. A thrown pass renders alone — there is no report to inspect.
+ * Saving belongs to the sweep, not to the dashboard: a failed save is said by the apply screen
+ * (`menu task sweep --confirm …`) and by the Doctor message, where saving happens. A thrown
+ * preview renders alone — there is no report to inspect.
  *
  * WHAT IS REACHABLE, verified against the code rather than assumed. An unparseable
  * registry file does NOT arrive here: `task-registry.load` fails OPEN to an empty registry,
  * so no corrupt marker is set and this function correctly stays silent — a false alarm is
  * the same defect class as a silent failure. `corrupt.reason === 'load-failed'` (the loader
- * itself threw) and `saveFailed` are the two reachable PARTIAL states, and a throw mid-pass
- * never delivers a half report, because the report object does not escape the throw.
+ * itself threw) is the one reachable PARTIAL state, and a throw mid-preview never delivers a
+ * half report, because the report object does not escape the throw.
  *
  * Every interpolated value comes from a registry file, which is attacker-influenceable, so
  * it passes through `stripCtl` AND is length-bounded: a crafted message must not be able to
  * forge an extra dashboard row.
  *
- * Returns '' when the pass ran, parsed and persisted — a healthy project's dashboard is
+ * Returns '' when the preview ran and parsed — a healthy project's dashboard is
  * byte-identical.
  *
- * @param {string|null} threw  the caught reconcile error message, or null.
- * @param {object|null} report  the reconcile report, or null when the pass threw.
+ * @param {string|null} threw  the caught preview error message, or null.
+ * @param {object|null} report  the preview's report, or null when it threw.
  * @returns {string}  zero or more complete newline-terminated lines, or ''.
  */
 function renderReconcileHealth(threw, report) {
@@ -293,12 +288,6 @@ function renderReconcileHealth(threw, report) {
       `${extra} · view: tasks\n`;
   }
 
-  if (report.saveFailed) {
-    out += `  ⛔ the task check ran but could NOT be saved — what you see is not what is stored, ` +
-      `and the same work will be re-decided next open: ` +
-      `${bounded(report.saveFailed, 'no message recorded')} · view: tasks\n`;
-  }
-
   return out;
 }
 
@@ -324,7 +313,7 @@ const WEDGE_REASONS = Object.freeze({
  * Render the reconcile pass's five WEDGE REPORTS as dashboard lines.
  *
  * These fields — `report.unsatisfiable`, `report.deferred`, `report.stalenessOrphaned`
- * (written by `task-reconcile.reconcileState`), plus `report.quarantined` and
+ * (computed by the sweep preview, `plan-recovery.previewSweep`), plus `report.quarantined` and
  * `report.quarantineFaulted` (written by `task-reconcile.applyQuarantine`, shipped by
  * plans/review/00076-quarantine-fault-fails-safe.md and
  * plans/review/00077-quarantine-on-every-promote-path.md) — had NO reader on this screen
@@ -397,7 +386,7 @@ function renderWedgeReports(report) {
   const wedged = list(report.unsatisfiable);
   if (wedged.length > 0) {
     const n = wedged.length;
-    out += `  ⛔ ${n} task${plural(n)} can NEVER run — the scheduler failed ${n === 1 ? 'it' : 'them'} · view: tasks\n`;
+    out += `  ⛔ ${n} task${plural(n)} can NEVER run — a sweep marks ${n === 1 ? 'it' : 'them'} failed · view: tasks\n`;
     for (const e of wedged.slice(0, WEDGE_RENDER_CAP)) {
       const known = WEDGE_REASONS[e && e.reason];
       const marker = known && known.permanent ? '⛔ PERMANENT — ' : '⚠ ';
@@ -412,7 +401,7 @@ function renderWedgeReports(report) {
   const deferred = list(report.deferred);
   if (deferred.length > 0) {
     const n = deferred.length;
-    out += `  ⊙ ${n} task${plural(n)} held one pass — every dead dependency was orphaned on age alone ` +
+    out += `  ⊙ ${n} task${plural(n)} held one pass by a sweep — every dead dependency would be marked dead on age alone ` +
       `and may still finish · view: tasks\n`;
     for (const e of deferred.slice(0, WEDGE_RENDER_CAP)) {
       out += `      ${clean(e && e.id, 'unknown')} — waiting on: ${depsOf(e)}\n`;
@@ -426,7 +415,7 @@ function renderWedgeReports(report) {
   const aged = list(report.stalenessOrphaned);
   if (aged.length > 0) {
     const n = aged.length;
-    out += `  ⚠ ${n} task${plural(n)} orphaned on age alone — the agent was never confirmed dead ` +
+    out += `  ⚠ ${n} task${plural(n)} would be marked dead on age alone — the agent was never confirmed dead ` +
       `and may still be alive · view: tasks\n`;
     for (const e of aged.slice(0, WEDGE_RENDER_CAP)) {
       const mins = Number.isFinite(e && e.ageMs) ? Math.round(e.ageMs / 60000) : 'unknown';
@@ -441,57 +430,41 @@ function renderWedgeReports(report) {
 }
 
 /**
- * Render the plan-recovery pass's outcome as dashboard lines the human READS.
+ * The one dashboard line that counts what `menu task sweep` would do, with the door that applies it.
+ * TOTAL: it never throws. It returns '' for anything that is not a well-formed preview, and when
+ * nothing is pending, so a clean project's dashboard is byte-identical.
  *
- * 00216 re-queues a dead-builder orphan (in-progress → todo) and surfaces a
- * still-quarantined staleness orphan, but did so SILENTLY — `recoverOrphanedPlans`'s
- * return was discarded, so a plan was moved and the human saw nothing. This is that
- * report's READER. It NAMES what happened in plain words — never a stage name, a gate
- * number or a plan slug: "re-queued for a clean rebuild" (not "moved to todo"), "the
- * builder may still be running" (not "still quarantined"). `skipped` (a live re-claim or
- * a move collision) is deliberately NOT surfaced here: it is a non-event from the human's
- * seat (nothing happened to the plan), and the collision case already records its own log.
- *
- * Returns '' when there is nothing to say (no recovered, no surfaced, no throw), so a
- * project with no orphaned plans renders BYTE-IDENTICALLY to before this slice — the
- * contract that protects every existing dashboard substring/count regression test.
- *
- * TOTAL and fail-open, mirroring renderWedgeReports/renderReconcileHealth: a null/absent/
- * malformed report yields fewer lines, never a throw.
- *
- * @param {object|null} report  the recoverOrphanedPlans return { recovered, surfaced, skipped },
- *   each an array; or null when the call threw.
- * @param {string|null} threw  the caught recovery error message, or null.
- * @returns {string}  zero or more complete newline-terminated lines, or ''.
+ * @param {object|null} preview  the `planRecovery.previewSweep` return
+ * @returns {string}  one newline-terminated line, or ''
  */
-function renderRecoveryReport(report, threw) {
-  const list = (v) => (Array.isArray(v) ? v : []);
-  const plural = (n) => (n === 1 ? '' : 's');
-  let out = '';
-
-  const recovered = list(report && report.recovered).length;
-  if (recovered > 0) {
-    out += `  ⚠ ${recovered} plan${plural(recovered)} whose builder is no longer running — ` +
-      `re-queued for a clean rebuild and re-verification\n`;
+function renderSweepLine(preview) {
+  try {
+    if (!preview || typeof preview !== 'object' || !preview.counts || typeof preview.counts !== 'object') return '';
+    const c = preview.counts;
+    for (const k of ['buildsBack', 'deadHeld', 'notYet', 'otherDead', 'neverRun', 'released', 'old', 'pending']) {
+      if (!Number.isFinite(c[k])) return '';
+    }
+    if (c.pending + c.deadHeld + c.notYet === 0) return '';
+    const one = (n, singular, plural) => (n === 1 ? singular : plural);
+    const bound = (Array.isArray(preview.builds) && preview.builds.find((b) => b && Number.isFinite(b.bound))) || { bound: 240 };
+    const parts = [];
+    if (c.buildsBack > 0) {
+      parts.push(`${c.buildsBack} ${one(c.buildsBack, 'build would go', 'builds would go')} back to the build queue when you name ${one(c.buildsBack, 'it', 'them')}`);
+    }
+    if (c.deadHeld > 0) {
+      parts.push(`${c.deadHeld} dead ${one(c.deadHeld, 'build cannot go', 'builds cannot go')} back on ${one(c.deadHeld, 'its', 'their')} own (work was found after the claim, or it could not be checked)`);
+    }
+    if (c.notYet > 0) {
+      parts.push(`${c.notYet} ${one(c.notYet, 'build shows', 'builds show')} no sign of life (${one(c.notYet, 'it', 'they')} can be named once ${one(c.notYet, 'it is', 'they are')} ${bound.bound} min old)`);
+    }
+    if (c.otherDead > 0) parts.push(`${c.otherDead} other ${one(c.otherDead, 'task looks', 'tasks look')} dead`);
+    if (c.neverRun > 0) parts.push(`${c.neverRun} ${one(c.neverRun, 'task', 'tasks')} can never run`);
+    if (c.released > 0) parts.push(`the files of ${c.released} dead ${one(c.released, 'task', 'tasks')} would be released`);
+    if (c.old > 0) parts.push(`${c.old} old ${one(c.old, 'task', 'tasks')} would leave the view`);
+    return parts.length === 0 ? '' : `  ⚠ ${parts.join(', ')}: review them with \`menu task sweep\`\n`;
+  } catch {
+    return '';
   }
-
-  const surfaced = list(report && report.surfaced).length;
-  if (surfaced > 0) {
-    out += `  ⚠ ${surfaced} plan${plural(surfaced)} orphaned on staleness alone — ` +
-      `the builder may still be running; not yet recovered\n`;
-  }
-
-  // Belt-and-suspenders: recoverOrphanedPlans is throw-free by contract, but if it ever
-  // does throw the failure is STATED, never swallowed — mirroring renderReconcileHealth. The
-  // message is a control-flow string (recovery's own reasons / an injected fault), stripped of
-  // control bytes and bounded, so no absolute path or terminal escape reaches the screen.
-  if (typeof threw === 'string' && threw.length > 0) {
-    const s = stripCtl(threw);
-    const bounded = s.length > FAILURE_MESSAGE_CAP ? `${s.slice(0, FAILURE_MESSAGE_CAP)}…` : s;
-    out += `  ⛔ plan recovery could not run: ${bounded}\n`;
-  }
-
-  return out;
 }
 
 /**
@@ -551,99 +524,50 @@ function buildDashboardTable(projectPath, opts = {}) {
   // Fail-open: a corrupt/absent registry loads as empty → renderTasksSection === ''
   // → ZERO added output, so the dashboard is byte-for-byte unchanged for a project
   // with no background tasks (protects every dashboard substring/count regression).
-  // NB4/H8: reconcile the registry against the live harness TaskList BEFORE rendering,
-  // so a session-restart orphan (a `running` task with no live agent) stops blocking
-  // the ≤MAX_CONCURRENT concurrency count and is offered for re-run — WITHOUT falsely orphaning a
-  // genuinely-live long-running agent. The live agent-id list now flows in from the
-  // caller as `opts.liveAgentIds` (start.js parses it from the `--live-agent-ids <csv>`
-  // argv flag the parent session appends on each on-open render). When it is absent
-  // (`undefined`/`null` — a true session restart or the TUI child with no Task access),
-  // reconcile falls back to the staleness backstop, exactly as before. Fail-open but NOT
-  // SILENT: any reconcile failure still falls back to the plain load so the dashboard
-  // always renders, AND the reason is now kept and rendered by renderReconcileHealth. The
-  // pass is no longer treated as purely best-effort — not bricking and not saying anything
-  // are different instructions.
-  // The pass's report is now kept WHOLE, not reduced to the orphan count: its four wedge
-  // fields (unsatisfiable / deferred / stalenessOrphaned / quarantineFaulted) are rendered
-  // by renderWedgeReports below. They were computed on every open and discarded before.
-  let orphanedCount = 0;
-  /** The WHOLE report — not one number. See renderWedgeReports for why. @type {object|null} */
-  let reconcileReport = null;
-  /** The captured failure message — NOT discarded. See renderReconcileHealth. @type {string|null} */
-  let reconcileThrew = null;
+  // The dashboard makes no task-registry write, no plan move and no cleanup-log write (owner,
+  // 2026-10-18). It previews what `menu task sweep` would do (src/lib/plan-recovery.js
+  // previewSweep) and says so in one line; `menu task sweep` is the one route that applies it,
+  // and only on the plans the human names. The live agent-id list flows in as
+  // `opts.liveAgentIds` (start.js parses it from `--live-agent-ids <csv>`); absent, a build is
+  // judged on its age alone. Fail-open but NOT SILENT: a preview failure still renders the
+  // dashboard, AND the reason is kept and rendered by renderReconcileHealth (not bricking and
+  // not saying anything are different instructions).
+  /** @type {object|null} */ let preview = null;
+  /** @type {string|null} */ let previewThrew = null;
   try {
-    const { report } = taskReconcile.reconcileState(root, { liveAgentIds: opts.liveAgentIds });
-    reconcileReport = report || null;
-    orphanedCount = (report && Array.isArray(report.orphaned)) ? report.orphaned.length : 0;
+    preview = planRecovery.previewSweep(root, { liveAgentIds: opts.liveAgentIds });
   } catch (err) {
-    // NOT swallowed. A reconcile failure must not BRICK the dashboard — it must also not be
-    // INVISIBLE. Rendering the registry as though the pass succeeded presents stale state as
-    // live, which is the more dangerous of the two failures: a blank section prompts a
-    // question, a confident wrong section does not. The dashboard still renders; only the
-    // reason is kept, and renderReconcileHealth puts it on screen.
-    reconcileThrew = (err && err.message) ? String(err.message) : String(err);
-  }
-  // Recover orphaned plans whose builder is gone, and CAPTURE the result so the human SEES
-  // it. The reconcile pass above wrote the durable orphan verdict (result.orphanReason) that
-  // recovery projects onto the PLAN: a released (file-freed) orphan is re-queued
-  // in-progress→todo for a clean rebuild, a still-quarantined staleness orphan is only
-  // surfaced, and a plan a fresh agent re-claimed is never touched. Recovery MUST run after
-  // reconcileState — the reconciler is what writes the orphanReason markers recovery reads.
-  // 00216 wired this call but discarded its return, so a plan was re-queued SILENTLY; this
-  // slice keeps the report and renderRecoveryReport (below) puts the recovered/surfaced
-  // counts on screen, so a phantom "being built" plan no longer disappears without a word.
-  // recoverOrphanedPlans is contractually throw-free, so this catch is a belt-and-suspenders
-  // guard mirroring the reconcile pattern above — fail-open (a recovery fault must never
-  // brick the dashboard) but NOT silent (the reason is kept and rendered). No liveAgentIds is
-  // passed: 00216 reads the reconciler's PERSISTED verdict (not the live list), and its typed
-  // opts are { now? } only — passing the live list would be an ignored argument that also
-  // fails the typecheck.
-  /** The captured recovery report — its recovered/surfaced counts reach the screen. @type {object|null} */
-  let recoveryReport = null;
-  /** The captured recovery failure message — NOT discarded. See renderRecoveryReport. @type {string|null} */
-  let recoveryThrew = null;
-  try {
-    recoveryReport = planRecovery.recoverOrphanedPlans(root);
-  } catch (err) {
-    recoveryThrew = (err && err.message) ? String(err.message) : String(err);
+    previewThrew = (err && err.message) ? String(err.message) : String(err);
   }
   // Second registry read (the TASKS block source). It keeps its empty-registry fallback
   // because the dashboard MUST still render — but an empty registry here is NOT an
   // observed zero, it is a read that FAILED. What stops the human reading it as a checked
-  // zero is `renderReconcileHealth` above: on this exact path the reconcile pass's load
-  // ALSO failed and its `⛔ … could not be read (load-failed) … a floor, not the truth`
-  // line already sits directly beneath the TASKS counts. The coexistence is pinned by test
+  // zero is `renderReconcileHealth` below: on this exact path the preview's own load ALSO
+  // failed and its `⛔ … could not be read (load-failed) … a floor, not the truth` line sits
+  // directly beneath the TASKS counts. The coexistence is pinned by test
   // (dashboard-survives-unreadable-registry, case 4), not left to the ordering argument.
   let taskReg;
   try { taskReg = taskRegistry.load(root); } catch { taskReg = taskRegistry.emptyRegistry(); }
   let tasksBlock = '';
   try { tasksBlock = taskView.renderTasksSection(taskReg); } catch { tasksBlock = ''; }
   if (tasksBlock) out += tasksBlock + '\n';
-  // TRUSTWORTHINESS BEFORE FINDINGS. A human who reads the counts without knowing the check
-  // never ran, ran against an empty view, or could not persist what it decided has been
-  // actively MISLED, not merely under-informed. So this leads every FINDING: above the
-  // orphan line and above every wedge line, asserted by the tests rather than left to
-  // convention. It sits INSIDE the TASKS section, directly beneath the counts it qualifies —
-  // which is why each line says "the task counts ABOVE"; detaching it to sit above the
-  // section header would leave a bare ⛔ line belonging to nothing.
-  out += renderReconcileHealth(reconcileThrew, reconcileReport);
-  // NB4: surface newly-orphaned tasks on the existing TASKS line as a re-run offer.
-  // Re-run is routed through the scheduler (canRun/nextRunnable) by the menu driver,
-  // never a direct launch (start.md Two-Plane Protocol). No new screen (D-NB4-5).
-  if (orphanedCount > 0) {
-    out += `  ⚠ ${orphanedCount} task${orphanedCount === 1 ? '' : 's'} orphaned — offer re-run\n`;
-  }
-  // The four wedge reports the reconcile pass computes on EVERY open finally have a READER.
-  // Before this, a task the scheduler had already failed for a permanent dependency cycle
-  // was indistinguishable on screen from an ordinary one-off failure, and a concurrent-edit
-  // guard that never ran looked exactly like one that ran and decided to hold. Returns ''
-  // for a clean project, so a project with no wedges renders byte-identically.
-  out += renderWedgeReports(reconcileReport);
-  // The recovery pass's recovered/surfaced counts finally have a READER (00216 moved the
-  // plans SILENTLY). This sits with the other reconcile-pass findings so a human opening the
-  // menu SEES a phantom "being built" plan was actually re-queued for a rebuild, or is being
-  // held because its builder may still be alive. Returns '' for a clean project — byte-identical.
-  out += renderRecoveryReport(recoveryReport, recoveryThrew);
+  // TRUSTWORTHINESS BEFORE FINDINGS. A human who reads the counts without knowing the preview
+  // never ran, or ran against an empty view, has been actively MISLED, not merely
+  // under-informed. So this leads every FINDING: above the sweep line and above every wedge line,
+  // asserted by the tests rather than left to convention. It sits INSIDE the TASKS section,
+  // directly beneath the counts it qualifies — which is why each line says "the task counts
+  // ABOVE"; detaching it to sit above the section header would leave a bare ⛔ line belonging
+  // to nothing.
+  out += renderReconcileHealth(previewThrew, preview && preview.report);
+  // The ONE line that counts what a sweep would do (builds that would go back to the build
+  // queue, dead builds that cannot, builds with no sign of life, other dead tasks, tasks that
+  // can never run, files that would be released, old tasks that would leave the view), with the
+  // door that applies it. '' for a clean project, so such a dashboard renders byte-identically.
+  out += renderSweepLine(preview);
+  // The wedge reports the preview computes (the concurrent-edit guard's fault and holds, tasks
+  // that can never run, work held one pass, tasks that would be marked dead on age alone). Before
+  // these had a reader a permanent dependency cycle looked like an ordinary one-off failure.
+  out += renderWedgeReports(preview && preview.report);
 
   // Inbox (A3 — async-overnight surface; SP2 adds the possibly-stale stream)
   const inbox = getInboxCounts(root);
@@ -2340,10 +2264,10 @@ function parseTaskArgs(subArgs) {
       case '--label': out.label = String(args[++i] == null ? '' : args[i]); break;
       case '--summary': out.summary = String(args[++i] == null ? '' : args[i]); break;
       case '--next': out.next = String(args[++i] == null ? '' : args[i]); break;
-      // H8: the harness agent id to record on the task at `menu task start`, so the
-      // on-open reconcile can match it against the live-agent-id set (never falsely
-      // orphaning a genuinely-live long-running agent). Defaults to the task id
-      // downstream when omitted.
+      // H8: the harness agent id to record on the task at `menu task start`, so a sweep
+      // can match it against the live-agent-id set (never treating a genuinely-live
+      // long-running agent as dead). Records no agent id when omitted; the session stamps
+      // the harness id after the launch.
       case '--agent-id': out.agentId = String(args[++i] == null ? '' : args[i]); break;
       case '--gate': out.gate = args[++i]; break;
       case '--b64': out.b64 = String(args[++i] == null ? '' : args[i]); break;
@@ -2580,6 +2504,12 @@ function taskTransition(root, rest, kind) {
     };
   }
 
+  // An agent id is the launched agent's own (owner, 2026-10-18): never empty, never the task id.
+  if (kind === 'start' && p.agentId !== undefined && !taskReconcile.isRealAgentId(p.agentId, id)) {
+    return { ok: false, refused: true, taskId: id, reason: 'agent-id-not-real',
+      text: `Task ${stripCtl(String(id)).slice(0, 40)} NOT started — --agent-id must be the launched agent's own id: not empty and not the task id. Nothing was changed.` };
+  }
+
   // A queued build that names a plan is started by `actions.claimBuild` (see the decision in
   // the write callback below); every other start keeps the registry-only path.
   let delegate = false;
@@ -2608,7 +2538,7 @@ function taskTransition(root, rest, kind) {
         ctx.abort();
         return { ok: true, taskId: id, status: 'running', text: `Task ${id} → running (agent ${p.agentId} already recorded)` };
       }
-      if (task.agentTaskId == null || task.agentTaskId === task.id) {
+      if (!taskReconcile.isRealAgentId(task.agentTaskId, task.id)) {
         taskRegistry.updateTask(reg, id, { agentTaskId: p.agentId });
         return { ok: true, taskId: id, status: 'running', stamped: true, text: `Task ${id} → running (agent ${p.agentId} recorded)` };
       }
@@ -2652,10 +2582,10 @@ function taskTransition(root, rest, kind) {
         // durably in the warn log and SHOUT it in the returned text.
         taskRegistry.warnLog(root, 'forced_start', { id, reason: decision.reason });
       }
-      // H8: record `agentTaskId` at start so the on-open reconcile can match it against
-      // the live-agent-id set. Caller-supplied `--agent-id` (the harness id) wins; falls
-      // back to the task id so the wiring works before the session passes the harness id.
-      taskRegistry.updateTask(reg, id, { status: 'running', agentTaskId: p.agentId || id });
+      // H8: record `agentTaskId` at start so a sweep can match it against the live-agent-id
+      // set. Records no agent id when `--agent-id` is omitted; the session stamps the harness
+      // id after the launch. The task id is never recorded as an agent id.
+      taskRegistry.updateTask(reg, id, { status: 'running', agentTaskId: p.agentId || null });
       const res = {
         ok: true,
         taskId: id,
@@ -2693,7 +2623,7 @@ function taskTransition(root, rest, kind) {
   });
   if (!delegate) return result;
   return menuClaimResult(require('./actions').claimBuild(root, id, {
-    agentTaskId: p.agentId || id,
+    agentTaskId: p.agentId || null,
     force: p.force === true,
   }));
 }
@@ -3131,6 +3061,229 @@ function taskList(root) {
   };
 }
 
+// ── menu task sweep ─────────────────────────────────────────────────────────────────
+
+const SWEEP_TOKEN_RE = /^[0-9a-f]{12}$/;
+const SWEEP_USAGE = '`menu task sweep` takes nothing, `--confirm <plan>@<token>,…` from its preview, or ' +
+  '`--confirm none`, optionally followed by `--by <name>`; nothing was changed.';
+
+/**
+ * Parse the words after `menu task sweep`. `[]` is the preview; `--confirm none` names nothing;
+ * `--confirm <plan>@<token>,…` names plans from a preview; `--by <name>` (only with `--confirm`)
+ * is the requester the cleanup log records as declared, not verified.
+ * @param {string[]} words
+ * @returns {{ ok: boolean, confirm?: (null|Array<{plan:string, token:string}>), by?: string, text?: string }}
+ */
+function parseSweepArgs(words) {
+  const w = Array.isArray(words) ? words : [];
+  const refuse = (offender) => ({ ok: false, text: `${offender === undefined ? '' : `Unexpected "${stripCtl(String(offender)).slice(0, 40)}". `}${SWEEP_USAGE}` });
+  if (w.length === 0) return { ok: true, confirm: null };
+  if (w[0] !== '--confirm' || w.length < 2) return refuse(w[0] === '--confirm' ? undefined : w[0]);
+  let by;
+  if (w.length > 2) {
+    if (w[2] !== '--by' || w.length !== 4) return refuse(w[2]);
+    by = stripCtl(String(w[3])).slice(0, 80);
+  }
+  const list = String(w[1]);
+  if (list === 'none') return { ok: true, confirm: [], by };
+  const confirm = [];
+  const byPlan = new Map();
+  for (const item of list.split(',')) {
+    const at = item.lastIndexOf('@');
+    const plan = at === -1 ? '' : item.slice(0, at);
+    const stamp = at === -1 ? '' : item.slice(at + 1);
+    if (!planRecovery.isSafePlan(plan) || !SWEEP_TOKEN_RE.test(stamp)) return refuse(item);
+    if (byPlan.has(plan)) {
+      if (byPlan.get(plan) !== stamp) return refuse(item);
+      continue;
+    }
+    byPlan.set(plan, stamp);
+    confirm.push({ plan, token: stamp });
+  }
+  return { ok: true, confirm, by };
+}
+
+/** The human name of the plan at `planPath`, read from its `# Heading`, else its slug. */
+function planNameAt(planPath, slug) {
+  try {
+    const m = safeFs.readFileSync(planPath, 'utf8').match(/^#\s+(.+)$/m);
+    return streamingGate.humanPlanName(m ? m[1].trim() : '', slug);
+  } catch {
+    return stripCtl(String(slug || ''));
+  }
+}
+
+/** The name the human knows a plan by — read from its file only for a plan still being built here. */
+function sweepPlanName(root, plan, inProgress) {
+  if (inProgress.has(plan) && planRecovery.isSafePlan(plan)) {
+    return stripCtl(planNameAt(path.join(root, 'plans', 'in-progress', `${plan}.md`), plan)).slice(0, 80);
+  }
+  return stripCtl(String(plan)).slice(0, 80);
+}
+
+/** The dashboard line's parts, in words, for the "changes that move no plan" lines. */
+function sweepOtherChanges(counts) {
+  const parts = [];
+  if (counts.otherDead > 0) parts.push(`${counts.otherDead} other task${counts.otherDead === 1 ? '' : 's'} would be marked dead, their slots freed`);
+  if (counts.neverRun > 0) parts.push(`${counts.neverRun} task${counts.neverRun === 1 ? '' : 's'} that can never run would be marked failed`);
+  if (counts.released > 0) parts.push(`the files of ${counts.released} dead task${counts.released === 1 ? '' : 's'} would be released`);
+  if (counts.old > 0) parts.push(`${counts.old} old task${counts.old === 1 ? '' : 's'} would leave the view`);
+  return parts;
+}
+
+/**
+ * The sweep preview screen: every build in one of three groups with its reason, the changes a
+ * sweep makes that move no plan, and the options that apply them.
+ * @param {string} root
+ * @param {object} preview  `planRecovery.previewSweep`
+ * @param {string} lead  a first line (a stale apply says "Nothing changed …"), or ''
+ */
+function sweepScreen(root, preview, lead) {
+  const builds = Array.isArray(preview && preview.builds) ? preview.builds : [];
+  const counts = (preview && preview.counts) || {};
+  const inProgress = new Set(readPlans(path.join(getPlansDir(root), 'in-progress')).map((p) => p.name));
+  const line = (b, tail) => `  • ${sweepPlanName(root, b.plan, inProgress)} — ${stripCtl(b.reason)}${tail}\n`;
+  const back = builds.filter((b) => b.group === 'would-go-back');
+  const never = builds.filter((b) => b.group === 'never-moved');
+  const notYet = builds.filter((b) => b.group === 'not-yet');
+
+  let text = lead ? `${lead}\n\n` : '';
+  text += 'Background tasks ▸ Sweep — a preview, nothing has changed\n';
+  text += `${'─'.repeat(40)}\n`;
+  if (back.length > 0) {
+    text += `Would go back to the build queue when you name them (${back.length})\n`;
+    for (const b of back) text += line(b, b.safePlan ? ` · name: ${b.plan}@${b.token}` : '');
+  }
+  if (never.length > 0) {
+    text += `Never moved, even when named (${never.length})\n`;
+    for (const b of never) {
+      text += line(b, '');
+      if (b.wayOut) {
+        text += b.safeId
+          ? `      Way out: \`menu task complete ${b.id}\` sends the work that was found to review; \`menu task fail ${b.id}\` gives it up.\n`
+          : '      Way out: finish or give up this task from the task board.\n';
+      }
+    }
+  }
+  if (notYet.length > 0) {
+    text += `Not yet eligible (${notYet.length})\n`;
+    for (const b of notYet) text += line(b, '');
+  }
+  const other = sweepOtherChanges(counts);
+  text += `Changes a sweep makes that move no plan: ${other.length > 0 ? other.join(' · ') : 'none'}\n`;
+  text += '\n\n\n';
+
+  const confirmable = back.filter((b) => b.safePlan);
+  const options = [];
+  const actions = {};
+  if (confirmable.length > 0) {
+    const label = `Send back the ${confirmable.length} plan${confirmable.length === 1 ? '' : 's'} listed first`;
+    options.push({ label, description: 'Confirm these plans from the preview; each dead build goes back to the build queue' });
+    actions[label] = `menu task sweep --confirm ${confirmable.map((b) => `${b.plan}@${b.token}`).join(',')}`;
+  }
+  const otherPending = (counts.otherDead || 0) + (counts.neverRun || 0) + (counts.released || 0) + (counts.old || 0);
+  if (otherPending > 0) {
+    options.push({ label: 'Free only the other tasks', description: 'Apply only the changes that move no plan' });
+    actions['Free only the other tasks'] = 'menu task sweep --confirm none';
+  }
+  options.push({ label: '◀ Back', description: 'Return to the dashboard' });
+  actions['◀ Back'] = 'dashboard';
+  return {
+    ok: true,
+    text,
+    ask: {
+      questions: [{
+        question: back.length > 0 ? 'Name the dead builds to send back to the build queue' : 'Nothing waits for your name',
+        header: 'Sweep',
+        multiSelect: false,
+        options,
+      }],
+    },
+    actions,
+    sweep: {
+      builds: builds.map((b) => ({ plan: b.plan, id: b.id, group: b.group, code: b.code, reason: b.reason, token: b.token })),
+      counts,
+    },
+  };
+}
+
+/** The screen after a confirmed sweep: what moved, what did not and why, and the changes that moved no plan. */
+function appliedScreen(root, res) {
+  const inProgressNow = new Set(readPlans(path.join(getPlansDir(root), 'in-progress')).map((p) => p.name));
+  const name = (plan) => sweepPlanName(root, plan, inProgressNow);
+  const preview = res.preview || { builds: [], counts: {} };
+  const rowOf = (plan) => preview.builds.find((b) => b.plan === plan);
+  let text = 'Background tasks ▸ Sweep applied\n';
+  text += `${'─'.repeat(40)}\n`;
+  const moved = Array.isArray(res.moved) ? res.moved : [];
+  if (moved.length > 0) {
+    text += `Sent back to the build queue (${moved.length}): ${moved.map((m) => `${name(m.plan)} — ${stripCtl((rowOf(m.plan) || {}).reason || 'its builder is gone')}`).join('; ')}\n`;
+  }
+  const notMoved = Array.isArray(res.notMoved) ? res.notMoved : [];
+  if (notMoved.length > 0) {
+    text += `Not moved (${notMoved.length}): ${notMoved.map((m) => `${name(m.plan)} — ${stripCtl(m.reason)}`).join('; ')}\n`;
+  }
+  if (res.unnamed > 0) {
+    text += `${res.unnamed} other build${res.unnamed === 1 ? '' : 's'} that would go back ${res.unnamed === 1 ? 'was' : 'were'} not named and stay${res.unnamed === 1 ? 's' : ''} exactly as ${res.unnamed === 1 ? 'it was' : 'they were'}.\n`;
+  }
+  const report = res.report || {};
+  const list = (v) => (Array.isArray(v) ? v : []);
+  const buildIds = new Set(preview.builds.map((b) => b.id));
+  const otherDead = [...list(report.orphaned), ...list(report.cancelled)].filter((id) => !buildIds.has(id)).length;
+  const released = list(report.quarantineReleased).filter((id) => !list(report.orphaned).includes(id) && !buildIds.has(id)).length;
+  const bits = [];
+  if (list(report.swept).length > 0) bits.push(`${report.swept.length} old task${report.swept.length === 1 ? '' : 's'} left the view`);
+  if (otherDead > 0) bits.push(`${otherDead} other task${otherDead === 1 ? '' : 's'} marked dead, their slots freed`);
+  if (list(report.unsatisfiable).length > 0) bits.push(`${report.unsatisfiable.length} task${report.unsatisfiable.length === 1 ? '' : 's'} that can never run marked failed`);
+  if (released > 0) bits.push(`the files of ${released} dead task${released === 1 ? '' : 's'} released`);
+  text += `Changes that moved no plan: ${bits.length > 0 ? bits.join(' · ') : 'none'}\n`;
+  if (report.saveFailed) {
+    text += `⛔ the task changes could NOT be saved: ${stripCtl(String(report.saveFailed)).slice(0, 120)}\n`;
+  }
+  text += '\n\n\n';
+  return {
+    ok: true,
+    text,
+    ask: { questions: [{ question: 'Back to the dashboard?', header: 'Sweep', multiSelect: false, options: [{ label: '◀ Back', description: 'Return to the dashboard' }] }] },
+    actions: { '◀ Back': 'dashboard' },
+  };
+}
+
+/**
+ * `menu task sweep` — the preview, or (with `--confirm`) the apply. The one route that sends a dead
+ * build back to the build queue, and only for the plans the human named.
+ * @param {string} root
+ * @param {string[]} words  the words after `sweep`
+ * @param {string[]} [liveAgentIds]
+ */
+function taskSweep(root, words, liveAgentIds) {
+  const parsed = parseSweepArgs(words);
+  if (!parsed.ok) {
+    return {
+      ok: false,
+      refused: true,
+      text: parsed.text,
+      ask: { questions: [{ question: 'Back to the dashboard?', header: 'Sweep', multiSelect: false, options: [{ label: '◀ Back to dashboard', description: 'Return to the dashboard' }] }] },
+      actions: { '◀ Back to dashboard': 'dashboard' },
+    };
+  }
+  if (parsed.confirm === null) {
+    return sweepScreen(root, planRecovery.previewSweep(root, { liveAgentIds }), '');
+  }
+  const res = planRecovery.applySweep(root, { confirm: parsed.confirm, liveAgentIds, by: parsed.by });
+  if (res.stale) {
+    return {
+      ...sweepScreen(root, res.preview, 'Nothing changed: what you confirmed no longer matches the sweep (a build changed since). This is the sweep now; confirm again from it.'),
+      ok: false,
+      stale: true,
+    };
+  }
+  const screen = appliedScreen(root, res);
+  const { promote } = computePromote(loadReg(root), root);
+  if (promote.length > 0) screen.promote = promote;
+  return screen;
+}
+
 /**
  * `menu task <sub>` dispatcher. Mutations FAIL-SOFT at this boundary: an illegal
  * transition / unknown id / invalid kind is a caller error, not data corruption,
@@ -3141,7 +3294,7 @@ function taskList(root) {
  * @param {string} [projectPath]
  * @returns {Object}
  */
-function taskCommand(subArgs, projectPath) {
+function taskCommand(subArgs, projectPath, opts = {}) {
   const root = getProjectPath(projectPath);
   const sub = subArgs[0];
   const rest = subArgs.slice(1);
@@ -3154,6 +3307,7 @@ function taskCommand(subArgs, projectPath) {
       case 'cancel': return taskTransition(root, rest, 'cancel');
       case 'list': return taskList(root);
       case 'board': return taskView.renderTaskBoard(loadReg(root));
+      case 'sweep': return taskSweep(root, rest, opts.liveAgentIds);
       default:
         return { ok: false, error: 'unknown task subcommand', text: `Unknown task subcommand: ${stripCtl(String(sub == null ? '' : sub))}` };
     }
@@ -3202,7 +3356,7 @@ function route(args, projectPath, opts = {}) {
       }
       // NB2: `menu task <sub> …` records/reads background-task state.
       if (args[1] === 'task') {
-        return taskCommand(args.slice(2), projectPath);
+        return taskCommand(args.slice(2), projectPath, opts);
       }
       return dashboardPipeline(projectPath, opts);
 

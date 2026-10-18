@@ -28,6 +28,15 @@
  * staleness detection cannot pass. Case 8 spawns the real `start.js` process to
  * prove the ride-along is not bypassed. Raw fs/os/child_process are permitted in
  * tests/**.
+ *
+ * Contract replaced 2026-10-18 (owner): opening the dashboard changes no task and moves no plan;
+ * a dead build moves only when the human names it in `menu task sweep` — plan
+ * real-projects-do-not-stall-on-the-menu-s2. Cases 1+2, 3, 4, 5, 6 and 6b asserted what the
+ * RENDER did (orphaned a task, printed "1 task orphaned — offer re-run", recorded the task id as
+ * the agent id); they now assert the replacement at least as tightly: the render leaves the
+ * registry bytes alone and counts the build, and the sweep decides on the same live list.
+ * Cases 7, 7b, 7c, 8 and 9 are unchanged. `seedRunning` now gives every spec its own plan (the
+ * old default put two running tasks on one plan).
  */
 
 'use strict';
@@ -37,12 +46,13 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execFileSync, spawnSync } = require('child_process');
 
 const { extractLiveAgentIds } = require('../src/commands/start');
 const ms = require('../src/lib/menu-screens');
 const taskRegistry = require('../src/lib/task-registry');
 const taskReconcile = require('../src/lib/task-reconcile');
+const planRecovery = require('../src/lib/plan-recovery');
 
 const MENU = path.join(__dirname, '..', 'src', 'commands', 'start.js');
 
@@ -108,6 +118,25 @@ function seedTodoPlan(slug, files) {
   seedPlanIn('todo', slug, files);
 }
 
+/** A repository with one 2020 commit, so the sweep's work check can answer "no work after the claim". */
+function initRepo(dir) {
+  const env = {};
+  for (const [k, v] of Object.entries(process.env)) if (!/^GIT_/i.test(k)) env[k] = v;
+  env.GIT_AUTHOR_DATE = '2020-01-01T00:00:00Z';
+  env.GIT_COMMITTER_DATE = '2020-01-01T00:00:00Z';
+  const run = (args) => {
+    const r = spawnSync('git', ['-c', 'user.name=T', '-c', 'user.email=t@test.invalid', '-c', 'commit.gpgsign=false',
+      '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', ...args], { cwd: dir, encoding: 'utf8', shell: false, env });
+    assert.equal(r.status, 0, `git ${args.join(' ')}: ${r.stderr}`);
+  };
+  run(['init', '-q', '-b', 'main']);
+  fs.writeFileSync(path.join(dir, 'README.md'), 'readme\n');
+  run(['add', 'README.md']);
+  run(['commit', '-q', '-m', 'init']);
+}
+
+const tasksBytes = () => fs.readFileSync(path.join(root, '.ctoc', 'state', 'tasks.json'), 'utf8');
+
 /**
  * Seed a set of `running` tasks on disk via the REAL registry API. Each spec is
  * `{ agentTaskId, ageMinutes, plan }`; ids are assigned in order (t1, t2, …).
@@ -117,17 +146,17 @@ function seedTodoPlan(slug, files) {
 function seedRunning(specs) {
   const reg = taskRegistry.emptyRegistry();
   const ids = [];
-  for (const spec of specs) {
-    const slug = spec.plan || 'w10-s4-demo';
+  specs.forEach((spec, i) => {
+    const slug = spec.plan || `w10-p${i + 1}`;
     seedInProgressPlan(slug, ['src/' + slug + '.js']);
-    const t = taskRegistry.addTask(reg, { kind: 'implement', plan: spec.plan || 'w10-s4-demo', touches: ['src/' + (spec.plan || 'w10-s4-demo') + '.js'] });
+    const t = taskRegistry.addTask(reg, { kind: 'implement', plan: slug, touches: ['src/' + slug + '.js'] });
     taskRegistry.updateTask(reg, t.id, {
       status: 'running',
       agentTaskId: spec.agentTaskId,
       ts: { started: minutesAgoIso(spec.ageMinutes == null ? PAST_STALE_MIN : spec.ageMinutes) },
     });
     ids.push(t.id);
-  }
+  });
   taskRegistry.save(root, reg);
   return ids;
 }
@@ -172,32 +201,55 @@ describe('W10-s4 (H8) — extractLiveAgentIds argv parser', () => {
 });
 
 describe('W10-s4 (H8) — live-agent ids threaded through route → reconcile', () => {
-  it('1+2. a live old task stays running while a dead old task is orphaned in the SAME pass (scenarios 4+5)', () => {
+  it('1+2. the render changes nothing and counts; the sweep keeps the live task and sends the dead one back on his name (scenarios 4+5)', () => {
+    initRepo(root);
     // t1: live (agentTaskId a1 in the live set), 40 min old → must stay running.
-    // t2: dead (agentTaskId a2 NOT in the live set), 40 min old → must be orphaned.
+    // t2: dead (agentTaskId a2 NOT in the live set), 40 min old → a sweep may send it back.
     const [t1, t2] = seedRunning([
       { agentTaskId: 'a1' },
       { agentTaskId: 'a2' },
     ]);
+    const before = tasksBytes();
 
     const res = ms.route(['menu'], root, { liveAgentIds: ['a1'] });
 
+    assert.equal(tasksBytes(), before, 'opening the dashboard must leave the registry bytes unchanged');
+    assert.match(res.text, /1 build would go back to the build queue when you name it/);
+
+    const preview = ms.route(['menu', 'task', 'sweep'], root, { liveAgentIds: ['a1'] });
+    const row = (id) => preview.sweep.builds.find((b) => b.id === id);
+    assert.equal(row(t1).group, 'never-moved');
+    assert.equal(row(t1).code, 'alive');
+    assert.equal(row(t2).group, 'would-go-back');
+    assert.equal(row(t2).code, 'confirmed-dead');
+
+    const named = [t1, t2].map((id) => `${row(id).plan}@${row(id).token}`).join(',');
+    ms.route(['menu', 'task', 'sweep', '--confirm', named], root, { liveAgentIds: ['a1'] });
     assert.equal(readTask(t1).status, 'running', 'live long-running task must NOT be orphaned');
-    assert.equal(readTask(t2).status, 'orphaned', 'dead long-running task must still be orphaned');
-    // Exactly one orphan surfaced on the dashboard — the dead one, not the live one.
-    assert.match(res.text, /1 task orphaned — offer re-run/, 'only the dead task is offered for re-run');
+    assert.ok(fs.existsSync(path.join(root, 'plans', 'in-progress', `${row(t1).plan}.md`)));
+    assert.equal(readTask(t2).status, 'orphaned', 'dead long-running task is orphaned by the confirmed sweep');
+    assert.ok(fs.existsSync(path.join(root, 'plans', 'todo', `${row(t2).plan}.md`)), 'and its plan is back in the build queue');
   });
 
   it('3. the live long-running task counts toward the MAX_CONCURRENT cap (scenario 6)', () => {
-    // t1 live+old, plus freshly-started running tasks up to the cap → the cap is full once reconciled.
+    // t1 live+old, plus freshly-started running tasks up to the cap → the cap is full once swept.
     const cap = taskRegistry.MAX_CONCURRENT;
     const specs = Array.from({ length: cap }, (_, i) => ({
       agentTaskId: `a${i + 1}`, ageMinutes: i === 0 ? PAST_STALE_MIN : 0, plan: `p${i + 1}`,
     }));
+    initRepo(root);
     const [t1] = seedRunning(specs);
+    const liveList = specs.map((s) => s.agentTaskId);
 
-    // Reconcile via the real render, honoring the live set: t1 must NOT be freed.
-    ms.route(['menu'], root, { liveAgentIds: specs.map((s) => s.agentTaskId) });
+    // The preview honors the live set: t1 is alive. Without a1 in the list the same build would go back.
+    const previewRow = (live) => ms.route(['menu', 'task', 'sweep'], root, { liveAgentIds: live }).sweep.builds.find((b) => b.id === t1);
+    assert.deepEqual([previewRow(liveList).group, previewRow(liveList).code], ['never-moved', 'alive']);
+    const without = previewRow(liveList.filter((a) => a !== 'a1'));
+    assert.deepEqual([without.group, without.code], ['would-go-back', 'confirmed-dead']);
+
+    // The sweep that names nothing, honoring the live set: t1 must NOT be freed.
+    const swept = ms.route(['menu', 'task', 'sweep', '--confirm', 'none'], root, { liveAgentIds: liveList });
+    assert.equal(swept.ok, true, 'the sweep that names nothing must run');
 
     const reg = taskRegistry.load(root);
     assert.equal(reg.tasks.filter((t) => t.status === 'running').length, cap, 'every one stays running');
@@ -214,11 +266,18 @@ describe('W10-s4 (H8) — live-agent ids threaded through route → reconcile', 
   });
 
   it('4. a genuine completion of the live task is accepted, not rejected (scenario 7)', () => {
+    initRepo(root);
     const [t1] = seedRunning([{ agentTaskId: 'a1' }]);
 
-    // On-open reconcile with the live set present leaves t1 running.
-    ms.route(['menu'], root, { liveAgentIds: ['a1'] });
-    assert.equal(readTask(t1).status, 'running', 'precondition: live task still running after reconcile');
+    // The preview with the live set present holds t1 as alive; without a1 in the list it would go back.
+    const rowFor = (live) => ms.route(['menu', 'task', 'sweep'], root, { liveAgentIds: live }).sweep.builds.find((b) => b.id === t1);
+    assert.deepEqual([rowFor(['a1']).group, rowFor(['a1']).code], ['never-moved', 'alive']);
+    assert.deepEqual([rowFor(['other']).group, rowFor(['other']).code], ['would-go-back', 'confirmed-dead']);
+
+    // The sweep with the live set present leaves t1 running.
+    const swept = ms.route(['menu', 'task', 'sweep', '--confirm', 'none'], root, { liveAgentIds: ['a1'] });
+    assert.equal(swept.ok, true, 'the sweep that names nothing must run');
+    assert.equal(readTask(t1).status, 'running', 'precondition: live task still running after the sweep');
 
     // The live agent later reports its real completion.
     const res = ms.route(['menu', 'task', 'complete', t1, '--summary', 'done'], root);
@@ -226,34 +285,39 @@ describe('W10-s4 (H8) — live-agent ids threaded through route → reconcile', 
     assert.equal(readTask(t1).status, 'done');
   });
 
-  it('5. a true session restart (no live ids) orphans an implement task past the 120-min floor but NOT one inside it (scenario 8 backstop preserved, R2-A kind-aware floor pinned)', () => {
-    // Both tasks are seeded into the SAME registry and reconciled in the SAME
-    // pass, so neither half can be satisfied by a "fix" that breaks the other:
-    //   • disable staleness entirely  → the stale task stays running → 1st fails.
-    //   • revert to the flat 30-min floor → the 45-min task is orphaned → 2nd fails.
+  it('5. with no live ids the preview holds both builds by the kind-aware floor, and naming them moves neither (scenario 8 backstop preserved, R2-A kind-aware floor pinned)', () => {
+    // Both tasks are seeded into the SAME registry and previewed in the SAME pass, so neither half
+    // can be satisfied by a "fix" that breaks the other:
+    //   • disable staleness entirely  → the 150-min build is not held as files-held → 1st fails.
+    //   • revert to the flat 30-min floor → the 45-min build turns files-held → 2nd fails.
+    initRepo(root);
     const [stale, young] = seedRunning([
       { agentTaskId: 'a1', ageMinutes: PAST_IMPLEMENT_STALE_MIN, plan: 'w10-stale' },
       { agentTaskId: 'a2', ageMinutes: WITHIN_IMPLEMENT_GRACE_MIN, plan: 'w10-young' },
     ]);
 
-    // No opts / no liveAgentIds → reconcile falls back to the AGE backstop.
-    ms.route(['menu'], root);
+    const preview = ms.route(['menu', 'task', 'sweep'], root);
+    const row = (id) => preview.sweep.builds.find((b) => b.id === id);
+    assert.equal(row(stale).group, 'not-yet');
+    assert.equal(row(stale).code, 'files-held', 'an implement task past the 120-min floor, with no live id confirming it, is held on age alone');
+    assert.equal(row(young).group, 'not-yet');
+    assert.equal(row(young).code, 'under-floor', 'kind-aware floor: a 45-min implement task is INSIDE the 120-min grace window');
 
-    assert.equal(
-      readTask(stale).status,
-      'orphaned',
-      'backstop preserved: an implement task past the 120-min floor, with no live id confirming it, is still orphaned',
-    );
-    assert.equal(
-      readTask(young).status,
-      'running',
-      'kind-aware floor: a 45-min implement task is INSIDE the 120-min grace window and must NOT be orphaned on age alone',
-    );
+    const beforeStale = JSON.stringify(readTask(stale));
+    const beforeYoung = JSON.stringify(readTask(young));
+    const applied = planRecovery.applySweep(root, { confirm: [stale, young].map((id) => ({ plan: row(id).plan, token: row(id).token })) });
+    assert.equal(applied.ok, true);
+    assert.deepEqual(applied.notMoved.map((n) => [n.id, n.reason]), [
+      [stale, 'no live agent list was given; 150 min old; its files stay held until it is 240 min old'],
+      [young, 'no live agent list was given; 45 min old; it can be named once it is 240 min old'],
+    ]);
+    assert.equal(JSON.stringify(readTask(stale)), beforeStale);
+    assert.equal(JSON.stringify(readTask(young)), beforeYoung);
   });
 });
 
 describe('W10-s4 (H8) — menu task start records agentTaskId', () => {
-  it('6. --agent-id records the harness id; absent → defaults to the task id', () => {
+  it('6. --agent-id records the harness id; absent → records no agent id (contract replaced 2026-10-18: it used to record the task id)', () => {
     const id = seedQueued('p-start');
 
     const res = ms.route(['menu', 'task', 'start', id, '--agent-id', 'h9'], root);
@@ -262,14 +326,15 @@ describe('W10-s4 (H8) — menu task start records agentTaskId', () => {
     assert.equal(started.status, 'running');
     assert.equal(started.agentTaskId, 'h9', 'the caller-supplied harness id is recorded');
 
-    // A second queued task started WITHOUT --agent-id defaults agentTaskId to the task id.
+    // A second queued task started WITHOUT --agent-id records no agent id: the task id is not an agent's id.
     // a non-build task: the subject here is the recorded agent id, which every kind records the same way
     const reg = taskRegistry.load(root);
     const t2 = taskRegistry.addTask(reg, { kind: 'review', plan: 'p-start-2' });
     taskRegistry.save(root, reg);
     const res2 = ms.route(['menu', 'task', 'start', t2.id], root);
     assert.equal(res2.ok, true);
-    assert.equal(readTask(t2.id).agentTaskId, t2.id, 'agentTaskId defaults to the task id when --agent-id is omitted');
+    assert.equal(readTask(t2.id).agentTaskId, null, 'agentTaskId is null when --agent-id is omitted');
+    assert.notEqual(readTask(t2.id).agentTaskId, t2.id, 'and never the task id');
   });
 
   it('6b. a recorded agentTaskId is what the live set matches on end-to-end', () => {
@@ -285,8 +350,11 @@ describe('W10-s4 (H8) — menu task start records agentTaskId', () => {
     t.ts.started = minutesAgoIso(PAST_STALE_MIN);
     taskRegistry.save(root, reg);
 
-    ms.route(['menu'], root, { liveAgentIds: ['h1'] });
-    assert.equal(readTask(id).status, 'running', 'the recorded agentTaskId matched the live set → not orphaned');
+    const preview = ms.route(['menu', 'task', 'sweep'], root, { liveAgentIds: ['h1'] });
+    const row = preview.sweep.builds.find((b) => b.id === id);
+    assert.equal(row.group, 'never-moved');
+    assert.equal(row.code, 'alive', 'the recorded agentTaskId matched the live set → alive');
+    assert.equal(readTask(id).status, 'running');
   });
 });
 

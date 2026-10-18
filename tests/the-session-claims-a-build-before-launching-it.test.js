@@ -105,7 +105,7 @@ describe('the session instructions say what the continuation and the stop do', (
       '`menu task complete <id> --continue`, `menu task fail <id>` and `menu task cancel <id>` keep the work moving and can return `promote[]` too',
       'What stops a double launch is the CLAIM: a second claim of a running build does not answer `ok`',
       STAMP_REFUSED,
-      "none (Start agent's claim) or the task's own id (the placeholder `menu task start <id>` records); the id already recorded is accepted again without a write; any other recorded agent id is refused",
+      "none (Start agent's claim) or the task's own id (an old placeholder an earlier version recorded, read as no id); the id already recorded is accepted again without a write; any other recorded agent id is refused",
     ]) {
       assert.ok(completion.includes(text), `the COMPLETION section lacks: ${text}`);
     }
@@ -116,7 +116,7 @@ describe('the session instructions say what the continuation and the stop do', (
     const launchAt = step3.indexOf('launch `Agent(run_in_background)`');
     assert.ok(claimAt >= 0 && launchAt >= 0 && claimAt < launchAt, 'step 3 claims before it launches');
     assert.ok(step3.indexOf('--agent-id', launchAt) > launchAt, 'step 3 stamps the agent after it launches it');
-    assert.ok(step3.includes('Any other task: launch `Agent(run_in_background)` + `menu task start <id>`'),
+    assert.ok(step3.includes('Any other task: launch `Agent(run_in_background)` + `menu task start <id> --agent-id <the harness agent id>`'),
       'step 3 keeps the plain recipe for every other task');
 
     const work = collapse(sectionBody(raw, /^### WORK dispatch \(turn recipe\)/m));

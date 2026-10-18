@@ -1099,6 +1099,9 @@ describe('four-defects s18 — a task next action is a plain read-only route', (
       'validate {stage}/{file}.md': ['validate functional/LH1.md', 'its confirm screen names only stage words, never the plan it approves'],
       'inbox cleanup': ['inbox cleanup', 'leads to the cleanup confirmation and override'],
       'inbox answer {id} --stdin': [`inbox answer ${QUESTION_ID} --stdin`, 'records an answer'], // slice 9's row
+      'menu task sweep': ['menu task sweep', 'the sweep is a task route the session runs itself, not a read-only --next navigation route; its confirm moves builds'],
+      'menu task sweep --confirm {plan}@{token},…': ['menu task sweep --confirm a@b', 'the sweep is a task route the session runs itself, not a read-only --next navigation route; its confirm moves builds'],
+      'menu task sweep --confirm none': ['menu task sweep --confirm none', 'the sweep is a task route the session runs itself, not a read-only --next navigation route; its confirm moves builds'],
     };
     const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
     const table = md.split('### Navigation Commands')[1].split('\n### ')[0];

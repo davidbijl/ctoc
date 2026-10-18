@@ -1,0 +1,33 @@
+{
+  "ref": "implementation/real-projects-do-not-stall-on-the-menu-s1-settings-route.md",
+  "planMtimeMs": 1792323794709.4336,
+  "questions": [
+    {
+      "id": "q10-forgeable-approval-record-residual-r1792323794709",
+      "prompt": "On macOS an agent holding only editing tools can forge a plan's approval record today: the write protection compares folder names as text while the disk folds letters, so a long-s spelling of the approvals folder lands in the real one. The fix is on another branch and has not shipped. Through such a forged record, the new settings route would create a nested folder's protected settings files and log it as the menu's own write. Build the route now with that gap named, or hold its create half until the spelling fix ships?",
+      "critical": false,
+      "important": true,
+      "topic": "security-posture",
+      "options": [
+        {
+          "key": "1",
+          "label": "Build the route now, with the forging gap named in the plan",
+          "recommended": true,
+          "pros": "The plan judges that the route adds no new way to write: an agent able to forge the record by that spelling trick is not stopped by holding this route, while about 20 plans of a real project stay stalled behind it. Every create still needs a plan that declares the folder's settings file and carries an approval record, copies only the project's own bytes, never overwrites, and is logged with the declaring plan; and the build re-checks whether the spelling fix has shipped and rewords the gap to match, so the residual is tracked rather than forgotten.",
+          "cons": "Until the spelling fix ships, the route's main control, a human-approved plan declaring the file, can be faked on macOS by an agent with only editing tools, and a forged create is logged as the menu's own write, which makes that log look more trustworthy than it is. The shell channel stays open in either case under your 15 October switch.",
+          "description": "Read in plans/implementation/real-projects-do-not-stall-on-the-menu-s1-settings-route.md, Security Review lines 1157-1172 and decision S1-43 at lines 1494-1504; the stalled-plan count is in the parent plan at line 482."
+        },
+        {
+          "key": "2",
+          "label": "Hold the create half until the spelling fix ships",
+          "pros": "Every create the route makes would rest on an approval record that no editing-tool agent can fake, so the log line naming an approved declaring plan means what it says from the first day. The read-only half could still ship and show a nested folder's settings, and the create half would follow the spelling fix with no change to its own code.",
+          "cons": "The real project's roughly 20 plans stay stalled until another branch's fix ships, which this plan does not control, and the gap closes only partly because the shell channel stays open under your 15 October switch. Splitting the slice sends this plan back to be re-planned after its three specification rounds closed."
+        }
+      ]
+    }
+  ],
+  "classification": {
+    "by": "gate-critic",
+    "at": 1792324000000
+  }
+}
