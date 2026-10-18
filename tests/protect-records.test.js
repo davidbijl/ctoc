@@ -1481,4 +1481,20 @@ describe('the write protection compares real files, not spellings (owner, 2026-1
     R.row('agent Bash cd a; cd a; cd a; ls, no preload (control)', () => assertAllowed(run(asAgent(bash(padded)), ro()), 'the control (agent)'));
     R.row('main Bash cd a; cd a; cd a; ls, no preload (control)', () => assertAllowed(run(bash(padded)), 'the control (main session)'));
   });
+
+  rowTest("156 · the main session's own menu call with a long comma-joined --touches value is not read as inside the protected area", () => {
+    // Found on the installed 6.14.130: the shell check resolves every operand; a comma-joined `--touches`
+    // value with the project path in front is one path of over 1,024 bytes that does not exist. macOS
+    // answers such a path with ENAMETOOLONG, not ENOENT, and the old resolver counted that as "inside".
+    const menu = (n) => {
+      const touches = Array.from({ length: n }, (_, i) => `tests/timing/a-timing-test-number-${i}.test.js`).join(',');
+      return { touches, command: `node src/commands/start.js menu task add implement x --touches ${touches}` };
+    };
+    const long = menu(29);
+    assert.ok(path.resolve(project, long.touches).length > 1024, 'the 29 paths make one operand over 1,024 bytes');
+    R.row('main Bash menu task add --touches with 29 paths', () => assertAllowed(run(bash(long.command), ro()),
+      'the long --touches value (main session)'));
+    R.row('main Bash menu task add --touches with 3 paths (control)', () => assertAllowed(run(bash(menu(3).command), ro()),
+      'the short --touches value (main session)'));
+  });
 });
