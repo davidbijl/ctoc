@@ -409,18 +409,32 @@ describe('a background agent: one reading of a command (refused by the security 
       `${MENU} menu task list; node src/commands/start.js stream approve review/x.md`,
       `${MENU} menu task list && true`,
       `${MENU} menu task list | cat`,
-      `${MENU} menu task list $(echo x)`,
-      `${MENU} menu task list \`echo x\``,
       `${MENU} menu task list # note`,
       `${MENU} menu task list\nnode src/commands/start.js stream approve review/x.md`,
-      `${MENU} "menu task list $HOME"`,
-      'node "$P/src/commands/start.js" menu task list',
       `sh -c 'node src/commands/start.js stream approve review/x.md'`,
       'env node src/commands/start.js menu task list',
       'grep -n route src/commands/start.js | head',
       `node -e "require('./src/lib/streaming-precompute')"`,
       `node -e "require('./src/lib/actions').approvePlan('x')"`,
     ]) allowedAgent(command);
+  });
+  // The CTO Chief's rule (2026-10-18, "a background agent's menu call must be one plain call") supersedes the
+  // four expansion forms this case used to allow: the shell can build "sweep --confirm" from any of them.
+  // They are refused only for a background agent, and only with the plain-call sentence.
+  test('82 · a menu call with a shell expansion is refused for a background agent, allowed without an agent id', () => {
+    const plain = "CTOC refused this call because only the human confirms which builds go back to the queue; "
+      + 'report the sweep preview and let the main session ask him. A command that only mentions both words is '
+      + "refused too: search one word at a time, and commit with git commit -F <file>. A background agent's menu "
+      + 'call must also be one plain call: no &&, |, $ or wildcard.';
+    for (const command of [
+      `${MENU} menu task list $(echo x)`,
+      `${MENU} menu task list \`echo x\``,
+      `${MENU} "menu task list $HOME"`,
+      'node "$P/src/commands/start.js" menu task list',
+    ]) {
+      assertRefused(run(agentBash(command)), command, plain);
+      assertAllowed(run(bash(command)), `${command} (main session)`);
+    }
   });
   test('82 · the nearest legitimate commands stay allowed', () => {
     allowedAgent(`${MENU} menu task list`);
@@ -719,6 +733,41 @@ describe('only the human confirms a sweep (owner, 2026-10-18)', () => {
   test('100 · the accepted false positive is pinned: both words in one command are refused, one word is not', () => {
     assertRefused(run(agent(bash('grep -n "sweep --confirm" src/commands/start.md'))), 'grep for both words', REFUSAL_SWEEP_CONFIRM);
     assertAllowed(run(agent(bash('grep -n sweep src/commands/start.md'))), 'grep for one word');
+  });
+
+  const PLAIN = " A background agent's menu call must also be one plain call: no &&, |, $ or wildcard.";
+  const SHELL_BUILT = [
+    `${MENU} menu task sw\${E}eep --confirm none`,
+    `${MENU} menu task sweep $'\\x2d-confirm' none`,
+    `${MENU} menu task sweep --con\${X}firm none`,
+    `node ${path.join(REPO, 'src', 'commands')}/sta*.js menu task sweep --con\${X}firm none`,
+    'node "$S" menu task sw${E}eep --con${X}firm none',
+  ];
+
+  test('102 · a confirmation built by the shell is refused for a background agent, with the plain-call sentence', () => {
+    for (const command of SHELL_BUILT) {
+      assertRefused(run(agent(bash(command))), `${command} (background agent)`, REFUSAL_SWEEP_CONFIRM + PLAIN);
+    }
+  });
+
+  test('103 · the shell-built spellings are allowed from the main session and with an empty agent id', () => {
+    for (const command of SHELL_BUILT) {
+      assertAllowed(run(bash(command)), `${command} (main session)`);
+      assertAllowed(run(agent(bash(command), '')), `${command} (empty agent id)`);
+    }
+  });
+
+  test('104 · ordinary background-agent calls stay allowed', () => {
+    for (const command of [
+      `${MENU} menu task complete t1 --summary "one line"`,
+      `${MENU} menu task complete t1 --summary "costs $5"`,
+      `${MENU} menu task sweep`,
+      `${MENU} menu task sweep --live-agent-ids a,b`,
+      'node --test tests/*.test.js',
+      'node --test tests/menu-screens-coverage.test.js 2>&1 | tail -5',
+      'git add src/lib/menu-screens.js && git commit -F msg',
+      'grep -n x src/commands/start.js | head',
+    ]) assertAllowed(run(agent(bash(command))), `${command} (background agent)`);
   });
 
   test('101 · the fail rule: a crash on a background agent’s sweep confirmation refuses with the sweep sentence', () => {

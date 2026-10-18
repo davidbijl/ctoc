@@ -145,6 +145,7 @@ describe('2 — a staleness orphan inside its bound is shown as not yet eligible
     assert.equal(row.group, 'not-yet');
     assert.equal(row.code, 'files-held');
     assert.doesNotMatch(text, /would go back/);
+    assert.match(text, /1 build shows no sign of life \(it can be named once it is 240 min old\)/);
     assert.ok(inProgressExists(sb, 'beta'), 'its builder may still be editing — the plan stays');
     assert.ok(!todoExists(sb, 'beta'));
   });

@@ -9,48 +9,43 @@
  * the save-failure cases (6 and 9) now assert that no save line can appear. Every other case
  * asserts the same thing as before.
  *
- * `src/lib/menu-screens.js` wrapped `taskReconcile.reconcileState` in a `try` whose `catch`
- * was empty. The comment on it was half right: a reconcile failure must indeed never BRICK
- * the dashboard — but "do not brick" and "say nothing" are different instructions, and only
- * the second one was implemented. When the pass threw, the dashboard rendered the task
- * registry EXACTLY as it would have if the pass had succeeded: same TASKS block, same
- * counts, no orphan line, nothing amiss. That is presenting STALE STATE AS LIVE, and it is
- * worse than a blank section — a blank section prompts a question, a confident wrong
- * section does not.
+ * History: `src/lib/menu-screens.js` once wrapped the render's own reconcile in a `try` whose `catch`
+ * was empty, so a failed check rendered the task registry exactly as a good one would have: same
+ * TASKS block, same counts, nothing amiss. That is presenting STALE STATE AS LIVE, and it is
+ * worse than a blank section — a blank section prompts a question, a confident wrong section
+ * does not. The dashboard now previews instead of reconciling, and these cases pin that a
+ * failed preview is still SAID (the render survives and the line names the failure).
  *
- * Three distinct states mean "the task state on this screen is not trustworthy right now",
- * and none of them had a reader:
+ * Two distinct states mean "the task state on this screen is not trustworthy right now":
  *
- *   the thrown pass        — the check DID NOT RUN at all.
+ *   the thrown preview     — the check DID NOT RUN at all.
  *   `report.corrupt`       — the check ran against an EMPTY view.
- *   `report.saveFailed`    — the check ran and decided, but the decisions are NOT on disk.
  *
- * WHAT IS REACHABLE FROM DISK, verified against the code (recorded here because the plan
- * assumed more was reachable than is):
+ * (A third, `report.saveFailed`, belonged to the render's own reconcile; the dashboard saves
+ * nothing, so cases 6 and 9 assert that no save line can appear.)
+ *
+ * WHAT IS REACHABLE FROM DISK, verified against the code:
  *
  *   • An unparseable `tasks.json` does NOT reach `report.corrupt`. `task-registry.load`
- *     fails OPEN (`JSON.parse` throws → `loadedEmpty()`, task-registry.js:381-386), so
- *     `reconcile` receives a well-formed EMPTY registry and sets no corrupt marker. Case 3
- *     pins that real behaviour rather than asserting a line the code cannot emit.
- *   • `corrupt.reason === 'load-failed'` (task-reconcile.js:609) IS reachable: it needs the
- *     load itself to throw, induced here by replacing `taskRegistry.withRegistry`, so the
- *     failure report is still built by the real code.
- *   • `corrupt.reason === 'malformed-entries-skipped'` (task-reconcile.js:453) is NOT
- *     reachable through `reconcileState`: `normalizeLoadedTask` guarantees a string `id`
- *     and `status` on every loaded task, so `reconcile`'s own `isWellFormed` skip counter
- *     (task-reconcile.js:309) is always 0 on this path. It is a live shape for a direct
- *     `reconcile` caller, so it is injected at the `reconcileState` module boundary.
- *   • A throw mid-pass never delivers a HALF report to the dashboard — the report object
- *     does not escape a throw, so `reconcileReport` is `null`. The two reachable PARTIAL
- *     states are `saveFailed` (decided, not persisted) and `load-failed` (an empty view
- *     returned as though it were clean), and both are asserted below.
+ *     fails OPEN (`JSON.parse` throws → `loadedEmpty()`), so the sweep verdict receives a
+ *     well-formed EMPTY registry and sets no corrupt marker. Case 3 pins that real behaviour
+ *     rather than asserting a line the code cannot emit.
+ *   • `corrupt.reason === 'load-failed'` IS reachable: it needs the load itself to throw,
+ *     induced here by replacing `taskRegistry.load`, so the failure report is still built by
+ *     the real code.
+ *   • `corrupt.reason === 'malformed-entries-skipped'` is NOT reachable through the preview:
+ *     `normalizeLoadedTask` guarantees a string `id` and `status` on every loaded task. It is a
+ *     live shape for a direct `reconcile` caller, so it is injected at the `previewSweep`
+ *     module boundary.
+ *   • A throw mid-preview never delivers a HALF report to the dashboard — the report object
+ *     does not escape a throw.
  *
- * INJECTION SEAMS. `menu-screens` holds `task-reconcile` as a NAMESPACE
- * (`taskReconcile.reconcileState(...)`), the same seam this suite already uses for
- * `stale-detector`, so replacing the collaborator leaves the render under test real. The
- * save failure is induced at its REAL source through the `safe-fs` exports object — a
- * permission-based fixture would have to be skipped on some platform, and a skip is a gate
- * failure under the zero-skipped rule, while a seam behaves identically everywhere.
+ * INJECTION SEAMS. `menu-screens` holds `plan-recovery` as a NAMESPACE
+ * (`planRecovery.previewSweep(...)`), the same seam this suite uses for `stale-detector`, so
+ * replacing the collaborator leaves the render under test real. A save failure is induced at its
+ * REAL source through the `safe-fs` exports object — a permission-based fixture would have to be
+ * skipped on some platform, and a skip is a gate failure under the zero-skipped rule, while a
+ * seam behaves identically everywhere.
  */
 
 'use strict';

@@ -222,46 +222,41 @@ const WEDGE_MESSAGE_CAP = 120;
 const FAILURE_MESSAGE_CAP = 120;
 
 /**
- * Render the reconcile pass's TRUSTWORTHINESS — not its findings.
+ * Render the sweep preview's TRUSTWORTHINESS — not its findings.
  *
- * NOT BRICKING AND NOT SAYING ANYTHING ARE DIFFERENT INSTRUCTIONS. The `catch` around
- * `taskReconcile.reconcileState` below used to be empty, on the reasoning that a reconcile
- * failure must never brick the dashboard. That reasoning is correct and it is only half the
- * job: with the failure discarded, the dashboard rendered the task registry EXACTLY as it
- * would have if the pass had succeeded — same TASKS block, same counts, no orphan line,
- * nothing amiss. The human read a screen asserting the background plane was in a known
- * state when nothing had checked it. That is presenting STALE STATE AS LIVE, and it is
- * worse than a blank section: a blank section prompts a question, a confident wrong section
- * does not. This function changes only whether the failure is REPORTED, never whether it is
- * SURVIVED.
+ * NOT BRICKING AND NOT SAYING ANYTHING ARE DIFFERENT INSTRUCTIONS. The dashboard computes its
+ * sweep line with `planRecovery.previewSweep` (a read: no task change, no plan move). When that
+ * preview throws, the dashboard must still render, but it must also say the check did not run:
+ * a screen that rendered the task registry exactly as it would after a good check would present
+ * STALE STATE AS LIVE, which is worse than a blank section (a blank section prompts a question,
+ * a confident wrong section does not). This function changes only whether the failure is
+ * REPORTED, never whether it is SURVIVED.
  *
- * Three states mean "the task state below is not trustworthy right now", and none of them
- * had a reader. They differ in WHY, and the difference changes what the human should do, so
- * each renders its own line:
+ * Two states mean "the task state below is not trustworthy right now":
  *
- *   `threw`               the check DID NOT RUN — likely a code defect; the counts are stale.
- *   `report.corrupt`      it ran against an EMPTY view — the registry file needs repairing.
+ *   `threw`           the preview DID NOT RUN — likely a code defect; the counts are stale.
+ *   `report.corrupt`  it ran against an EMPTY view — the registry file needs repairing.
  *
- * (A third state, `saveFailed`, belonged to the render's own reconcile. The dashboard saves
- * nothing now, so it has no save to fail; the apply screen and the Doctor message say it where
- * saving happens.) A thrown check renders alone — there is no report to inspect.
+ * Saving belongs to the sweep, not to the dashboard: a failed save is said by the apply screen
+ * (`menu task sweep --confirm …`) and by the Doctor message, where saving happens. A thrown
+ * preview renders alone — there is no report to inspect.
  *
  * WHAT IS REACHABLE, verified against the code rather than assumed. An unparseable
  * registry file does NOT arrive here: `task-registry.load` fails OPEN to an empty registry,
  * so no corrupt marker is set and this function correctly stays silent — a false alarm is
  * the same defect class as a silent failure. `corrupt.reason === 'load-failed'` (the loader
- * itself threw) and `saveFailed` are the two reachable PARTIAL states, and a throw mid-pass
- * never delivers a half report, because the report object does not escape the throw.
+ * itself threw) is the one reachable PARTIAL state, and a throw mid-preview never delivers a
+ * half report, because the report object does not escape the throw.
  *
  * Every interpolated value comes from a registry file, which is attacker-influenceable, so
  * it passes through `stripCtl` AND is length-bounded: a crafted message must not be able to
  * forge an extra dashboard row.
  *
- * Returns '' when the pass ran, parsed and persisted — a healthy project's dashboard is
+ * Returns '' when the preview ran and parsed — a healthy project's dashboard is
  * byte-identical.
  *
- * @param {string|null} threw  the caught reconcile error message, or null.
- * @param {object|null} report  the reconcile report, or null when the pass threw.
+ * @param {string|null} threw  the caught preview error message, or null.
+ * @param {object|null} report  the preview's report, or null when it threw.
  * @returns {string}  zero or more complete newline-terminated lines, or ''.
  */
 function renderReconcileHealth(threw, report) {
@@ -544,22 +539,22 @@ function buildDashboardTable(projectPath, opts = {}) {
   // Second registry read (the TASKS block source). It keeps its empty-registry fallback
   // because the dashboard MUST still render — but an empty registry here is NOT an
   // observed zero, it is a read that FAILED. What stops the human reading it as a checked
-  // zero is `renderReconcileHealth` above: on this exact path the reconcile pass's load
-  // ALSO failed and its `⛔ … could not be read (load-failed) … a floor, not the truth`
-  // line already sits directly beneath the TASKS counts. The coexistence is pinned by test
+  // zero is `renderReconcileHealth` below: on this exact path the preview's own load ALSO
+  // failed and its `⛔ … could not be read (load-failed) … a floor, not the truth` line sits
+  // directly beneath the TASKS counts. The coexistence is pinned by test
   // (dashboard-survives-unreadable-registry, case 4), not left to the ordering argument.
   let taskReg;
   try { taskReg = taskRegistry.load(root); } catch { taskReg = taskRegistry.emptyRegistry(); }
   let tasksBlock = '';
   try { tasksBlock = taskView.renderTasksSection(taskReg); } catch { tasksBlock = ''; }
   if (tasksBlock) out += tasksBlock + '\n';
-  // TRUSTWORTHINESS BEFORE FINDINGS. A human who reads the counts without knowing the check
-  // never ran, ran against an empty view, or could not persist what it decided has been
-  // actively MISLED, not merely under-informed. So this leads every FINDING: above the
-  // orphan line and above every wedge line, asserted by the tests rather than left to
-  // convention. It sits INSIDE the TASKS section, directly beneath the counts it qualifies —
-  // which is why each line says "the task counts ABOVE"; detaching it to sit above the
-  // section header would leave a bare ⛔ line belonging to nothing.
+  // TRUSTWORTHINESS BEFORE FINDINGS. A human who reads the counts without knowing the preview
+  // never ran, or ran against an empty view, has been actively MISLED, not merely
+  // under-informed. So this leads every FINDING: above the sweep line and above every wedge line,
+  // asserted by the tests rather than left to convention. It sits INSIDE the TASKS section,
+  // directly beneath the counts it qualifies — which is why each line says "the task counts
+  // ABOVE"; detaching it to sit above the section header would leave a bare ⛔ line belonging
+  // to nothing.
   out += renderReconcileHealth(previewThrew, preview && preview.report);
   // The ONE line that counts what a sweep would do (builds that would go back to the build
   // queue, dead builds that cannot, builds with no sign of life, other dead tasks, tasks that
@@ -2668,13 +2663,9 @@ function taskList(root) {
 
 // ── menu task sweep ─────────────────────────────────────────────────────────────────
 
-const SWEEP_PLAN_RE = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,199}$/;
 const SWEEP_TOKEN_RE = /^[0-9a-f]{12}$/;
 const SWEEP_USAGE = '`menu task sweep` takes nothing, `--confirm <plan>@<token>,…` from its preview, or ' +
   '`--confirm none`, optionally followed by `--by <name>`; nothing was changed.';
-
-/** Every segment of `v` is safe to put in a command the session will run (TM-04). */
-const safeCommandName = (v) => typeof v === 'string' && v !== '' && v.split('/').every((seg) => seg !== '.' && seg !== '..' && /^[A-Za-z0-9._-]+$/.test(seg));
 
 /**
  * Parse the words after `menu task sweep`. `[]` is the preview; `--confirm none` names nothing;
@@ -2701,7 +2692,7 @@ function parseSweepArgs(words) {
     const at = item.lastIndexOf('@');
     const plan = at === -1 ? '' : item.slice(0, at);
     const stamp = at === -1 ? '' : item.slice(at + 1);
-    if (!SWEEP_PLAN_RE.test(plan) || !SWEEP_TOKEN_RE.test(stamp)) return refuse(item);
+    if (!planRecovery.isSafePlan(plan) || !SWEEP_TOKEN_RE.test(stamp)) return refuse(item);
     if (byPlan.has(plan)) {
       if (byPlan.get(plan) !== stamp) return refuse(item);
       continue;
@@ -2714,7 +2705,7 @@ function parseSweepArgs(words) {
 
 /** The name the human knows a plan by — read from its file only for a plan still being built here. */
 function sweepPlanName(root, plan, inProgress) {
-  if (inProgress.has(plan) && safeCommandName(plan)) {
+  if (inProgress.has(plan) && planRecovery.isSafePlan(plan)) {
     return stripCtl(planNameAt(path.join(root, 'plans', 'in-progress', `${plan}.md`), plan)).slice(0, 80);
   }
   return stripCtl(String(plan)).slice(0, 80);

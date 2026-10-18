@@ -52,6 +52,7 @@ const { extractLiveAgentIds } = require('../src/commands/start');
 const ms = require('../src/lib/menu-screens');
 const taskRegistry = require('../src/lib/task-registry');
 const taskReconcile = require('../src/lib/task-reconcile');
+const planRecovery = require('../src/lib/plan-recovery');
 
 const MENU = path.join(__dirname, '..', 'src', 'commands', 'start.js');
 
@@ -223,10 +224,18 @@ describe('W10-s4 (H8) — live-agent ids threaded through route → reconcile', 
     const specs = Array.from({ length: cap }, (_, i) => ({
       agentTaskId: `a${i + 1}`, ageMinutes: i === 0 ? PAST_STALE_MIN : 0, plan: `p${i + 1}`,
     }));
+    initRepo(root);
     const [t1] = seedRunning(specs);
+    const liveList = specs.map((s) => s.agentTaskId);
+
+    // The preview honors the live set: t1 is alive. Without a1 in the list the same build would go back.
+    const previewRow = (live) => ms.route(['menu', 'task', 'sweep'], root, { liveAgentIds: live }).sweep.builds.find((b) => b.id === t1);
+    assert.deepEqual([previewRow(liveList).group, previewRow(liveList).code], ['never-moved', 'alive']);
+    const without = previewRow(liveList.filter((a) => a !== 'a1'));
+    assert.deepEqual([without.group, without.code], ['would-go-back', 'confirmed-dead']);
 
     // The sweep that names nothing, honoring the live set: t1 must NOT be freed.
-    const swept = ms.route(['menu', 'task', 'sweep', '--confirm', 'none'], root, { liveAgentIds: specs.map((s) => s.agentTaskId) });
+    const swept = ms.route(['menu', 'task', 'sweep', '--confirm', 'none'], root, { liveAgentIds: liveList });
     assert.equal(swept.ok, true, 'the sweep that names nothing must run');
 
     const reg = taskRegistry.load(root);
@@ -244,7 +253,13 @@ describe('W10-s4 (H8) — live-agent ids threaded through route → reconcile', 
   });
 
   it('4. a genuine completion of the live task is accepted, not rejected (scenario 7)', () => {
+    initRepo(root);
     const [t1] = seedRunning([{ agentTaskId: 'a1' }]);
+
+    // The preview with the live set present holds t1 as alive; without a1 in the list it would go back.
+    const rowFor = (live) => ms.route(['menu', 'task', 'sweep'], root, { liveAgentIds: live }).sweep.builds.find((b) => b.id === t1);
+    assert.deepEqual([rowFor(['a1']).group, rowFor(['a1']).code], ['never-moved', 'alive']);
+    assert.deepEqual([rowFor(['other']).group, rowFor(['other']).code], ['would-go-back', 'confirmed-dead']);
 
     // The sweep with the live set present leaves t1 running.
     const swept = ms.route(['menu', 'task', 'sweep', '--confirm', 'none'], root, { liveAgentIds: ['a1'] });
@@ -277,7 +292,12 @@ describe('W10-s4 (H8) — live-agent ids threaded through route → reconcile', 
 
     const beforeStale = JSON.stringify(readTask(stale));
     const beforeYoung = JSON.stringify(readTask(young));
-    ms.route(['menu', 'task', 'sweep', '--confirm', [stale, young].map((id) => `${row(id).plan}@${row(id).token}`).join(',')], root);
+    const applied = planRecovery.applySweep(root, { confirm: [stale, young].map((id) => ({ plan: row(id).plan, token: row(id).token })) });
+    assert.equal(applied.ok, true);
+    assert.deepEqual(applied.notMoved.map((n) => [n.id, n.reason]), [
+      [stale, 'no live agent list was given; 150 min old; its files stay held until it is 240 min old'],
+      [young, 'no live agent list was given; 45 min old; it can be named once it is 240 min old'],
+    ]);
     assert.equal(JSON.stringify(readTask(stale)), beforeStale);
     assert.equal(JSON.stringify(readTask(young)), beforeYoung);
   });

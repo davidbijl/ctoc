@@ -218,7 +218,10 @@ the task's own id that an older version recorded) is unknown, never dead.
   the new preview: show it.
 - `menu task sweep --confirm none` applies only the task changes that move no plan, on his word too.
 - A background agent cannot run `--confirm`: the write protection refuses it. Report the
-  preview and let the main session ask him.
+  preview and let the main session ask him. A background agent's menu call must also be one
+  plain call: no `&&`, `|`, `$` or wildcard. This refusal lives in the hook file
+  `src/hooks/protect-records.js`, which changed: update CTOC and restart Claude Code so the
+  session runs the new copy.
 - The confirmation carries the human's name for the log with `--by <name>`; it is recorded as
   declared, not verified.
 - A sweep's `promote[]` is handled as in the COMPLETION recipe's step 3.
@@ -409,7 +412,7 @@ selected by task id (`t<n>`) as free-text; numbers still open plans only (Rule 1
 A selected board row can be **cancelled** (the two-phase `cancel` transition, C1-2):
 call `cancelTask(root, <taskId>)` → `{ task, agentTaskId }`. The transition is honest
 about liveness: a **`running`** task moves to `cancelling` — a NON-terminal state whose
-files, slot, gitOp and any sync barrier **stay locked until a sweep or Repair state confirms
+files, slot, gitOp and any sync barrier **stay locked until a sweep or Repair state reconciles it and confirms
 the harness agent is gone** (a direct `running → cancelled` is forbidden — it would free
 a live agent's files early). A **`queued`** task (nothing running) moves straight to the
 terminal `cancelled`, freeing its slot at once. Use the returned `agentTaskId` (when

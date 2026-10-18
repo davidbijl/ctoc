@@ -2231,4 +2231,68 @@ typecheck clean on the changed files.
 - Names that are `.` or `..` are refused by the safe-name test in addition to the segment character set.
 - A git status whose worktree folder is missing counts as git failed (fail closed), and a status is
   skipped when a task has no declared file left after the `plans/` entries are dropped (an empty
-  pathspec would list every change).
+  pathspec would list every change). *Superseded by the review round below: that case is now held
+  with "the plan declares no file to check".*
+
+### Review kickback round (the CTO Chief's change list) — red-then-green, merge fixture, decisions
+
+Red evidence (each test written and run first, red for the stated reason; green after the fix):
+1. Hook bypass: case 102 red (exit 0 for `sw${E}eep --confirm none`); 103 and 104 (main session, empty
+   agent id, and the eight must-allow calls) green before and after. Case 4 of the list uses
+   `…/sta*.js menu task sweep --con${X}firm none`: with the literal `sweep --confirm` the old text test
+   already refuses it with the old sentence, so the new sentence could not show.
+2. Work check per task: (a) and (b) red ("would-go-back", no refusal), (c) red (the throw escaped
+   `previewSweep`: `res.sweep` undefined). Green after the per-task try and the empty-files rule.
+3. Worktrees first: (a) red (`would-go-back` with an empty worktree list), (b) red (the detached-HEAD
+   commit was not reached by `--branches`). Green after listing worktrees before the log and passing
+   their HEAD shas.
+4. `core.fsmonitor=false`: the B17 assertion red on the log call; green after.
+5. Timeout words: B17's reason assertion red with the fix switched off ("spawnSync git ETIMEDOUT"),
+   green with it.
+6. Merge records: see the fixture below; (b) red (work found on the merge of main into a branch), (a),
+   (c) green before and after (pins).
+7. Not-moved reasons: (a) red ("its plan is no longer being built here"), (b) red (no restore note).
+8. One name rule: red for the 201-character name and `.hidden` (neither was `unsafe-name`).
+9. Tests unweakened: w10 cases 3-5 and the wiring case 2 now assert the preview row, the contrast,
+   both "not moved" reasons and the dashboard words; each failed once with its input flipped (a build
+   aged 400 minutes; a 60-minute stale build).
+
+MERGE-RECORDS fixture (real git 2.54, the exact log arguments, a pathspec of the declared file and the
+plan's claim glob): a `--no-ff` merge of a branch that changed no declared file is NOT printed at all;
+a `--no-ff` merge into main that brings declared-file changes is printed WITH `M`/`A` lines against its
+first parent; main merged INTO a branch that holds declared-file work is printed with NO name-status
+lines and two parents (the work itself is printed as its own record). So git does print a merge with no
+lines, and the change was made: the format ends with `%P`, and a record with no lines and two parents or
+more is "no change on the first-parent line" (work for nobody); a record with no lines and fewer than two
+parents stays fail-closed. Planned case B20(d) is split by parent count (B20(d) carries one parent and
+is work; the new merge-records (d) holds the two-parent, one-parent and no-parent cases). This is the CTO
+Chief's decision, not a weakening: a merge's work is always printed by the records that hold it.
+
+Correction to the threat-model rows A1 and A2 (recorded here, not in the approved text: editing the
+approved sections moves the specification hash and the residency check refuses the plan, which
+happened once during this round and was reverted):
+- **A1 now:** a background agent's `--confirm` and inline `applySweep` are refused (case 97), and so are
+  the spellings the shell builds (`sw${E}eep --con${X}firm`, `$'\x2d-confirm'`, a wildcard script word) in
+  a command that is not one plain call, with the plain-call sentence (cases 102-104). It can still run the
+  preview.
+- **A2 residual now:** a `cd` into `src` then a relative `commands/…` word, inline code, `git mv`, and a
+  script file run later.
+
+Decisions taken (review round):
+- The hook's new check applies only to a command that is not one plain call AND holds `$`, a backtick,
+  a brace or a wildcard (after `${CLAUDE_PLUGIN_ROOT}` is removed). Without that gate it refused
+  compound menu calls that carry no expansion, which five older cases pin as allowed (the text test
+  reads those exactly). Four older allowed forms of case 82 that hold an expansion
+  (`$(echo x)`, a backtick, `$HOME`, `$P/…`) are now refused for a background agent with the plain-call
+  sentence, because the shell can build `sweep --confirm` from any of them; case 82 states that as a
+  new refusal test and keeps the main-session allowance. That is the CTO Chief's rule, not a weakening.
+- `plan-coverage.js` says `readPlanFiles` has "ONE call site"; that comment is now false (the work check
+  calls it too). The file is not in this plan's `files:`, so it is not edited.
+- `isSafeName` is not exported: after the one plan rule, `menu-screens` has no use for it (ids are
+  judged inside the verdict as `safeId`), and a new export with no live caller fails the dead-export
+  fence. `isSafePlan` is exported and used by `menu-screens` (two places); `SAFE_PLAN_RE`,
+  `SWEEP_PLAN_RE` and `safeCommandName` are deleted.
+- A commit reached only through a linked worktree's HEAD is named "a detached worktree" in the reason
+  (git prints the sha as its source).
+- `recoverOrphanedPlans` without `released` has no production caller; it is kept because existing tests
+  call it. Deleting it is for the owner to schedule.

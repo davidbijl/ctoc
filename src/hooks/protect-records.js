@@ -75,8 +75,11 @@
  *   backslashes removed, holds both `sweep` and `--confirm`, or holds `applySweep`, is refused
  *   with its own sentence: only the human confirms which builds go back to the build queue
  *   (owner, 2026-10-18). When the hook itself fails to run, such a call is refused with the same
- *   sentence. A script file that runs the confirmation, inline code moving a plan by other means,
- *   or text built at run time, is not caught.
+ *   sentence. A spelling the shell builds (`sw${E}eep`, `$'\x2d-confirm'`, a wildcard script word) in a
+ *   command that is not one plain call is refused with that sentence plus "must also be one plain
+ *   call": a runtime's script word that is the menu, names `start.js` or `src/commands`, holds `$` or
+ *   a backtick, or is a wildcard. Not caught: a script file that runs the confirmation, inline code
+ *   moving a plan by other means, `git mv`, or a `cd` into `src` then a relative `commands/…` word.
  *   Nothing else is loaded or run: no plan coverage, no escape phrases, no enforcement
  *   mode, no Iron Loop step gates, no irreversible-command net, no plan-move gate.
  *
@@ -126,6 +129,8 @@ const REFUSAL_UNCHECKED = 'CTOC refused this call because it mentions the approv
 const REFUSAL_SWEEP_CONFIRM = 'CTOC refused this call because only the human confirms which builds go back '
   + 'to the queue; report the sweep preview and let the main session ask him. A command that only '
   + 'mentions both words is refused too: search one word at a time, and commit with git commit -F <file>.';
+const REFUSAL_SWEEP_PLAIN = REFUSAL_SWEEP_CONFIRM
+  + " A background agent's menu call must also be one plain call: no &&, |, $ or wildcard.";
 /** A background agent's sweep confirmation, read fail-closed: quotes and backslashes removed, anywhere in the text. */
 const confirmsSweep = (command) => {
   const flat = command.replace(/["'\\]/g, '');
@@ -600,6 +605,41 @@ function subagentMenuRefusal(command, base) {
 }
 
 /**
+ * A background agent's command that is not one plain call and hands a runtime a script word that
+ * is the menu (resolved from the working directory or a directory it cds into), names start.js or
+ * a src/commands folder, is built with `$` or a backtick, or is a wildcard while the command names
+ * src/commands. Such a spelling (`sw${E}eep --con${X}firm`) would otherwise slip past the text test.
+ * @param {string} command
+ * @param {string} base - the session's working directory
+ * @returns {string|null}
+ */
+function sweepBypassRefusal(command, base) {
+  if (simpleWords(command) !== null) return null;
+  // Text with no expansion can be read as it stands (the sweep test above); only a spelling the
+  // shell builds at run time (`$`, a backtick, a brace or a wildcard) needs this reading.
+  if (!/[$`{*?[]/.test(command.split(PLUGIN_ROOT_TOKEN).join(''))) return null;
+  const words = command.split(/[\s;&|<>()]+/).filter(Boolean);
+  const bare = words.map((w) => w.replace(/['"`]/g, ''));
+  const dirs = [base];
+  for (let i = 0; i < bare.length - 1; i++) {
+    if (bare[i] === 'cd' || bare[i] === 'pushd') dirs.push(path.resolve(dirs[dirs.length - 1], bare[i + 1]));
+  }
+  const namesCommands = COMMANDS_TEXT_RE.test(command);
+  for (let i = 0; i < words.length; i++) {
+    if (!RUNTIME_WORD_RE.test(bare[i].split(/[\\/]/).pop())) continue;
+    const j = bare.findIndex((w, k) => k > i && w !== '' && !w.startsWith('-'));
+    if (j < 0) continue;
+    const raw = words[j];
+    if (/[$`]/.test(raw)) return REFUSAL_SWEEP_PLAIN;
+    if (/start\.js/i.test(bare[j]) || COMMANDS_TEXT_RE.test(bare[j])) return REFUSAL_SWEEP_PLAIN;
+    if (namesCommands && /[*?[]/.test(raw)) return REFUSAL_SWEEP_PLAIN;
+    const real = dirs.map((dir) => resolveLikeNode(dir, bare[j])).find((r) => r !== null && ctocKind(r) === 'menu');
+    if (real) return REFUSAL_SWEEP_PLAIN;
+  }
+  return null;
+}
+
+/**
  * The shell decision, in the plan's order.
  * @param {string} command
  * @param {string} cwdRel - the session's working directory relative to the root, or ''
@@ -613,6 +653,10 @@ const RECORD_REFUSALS_OFF = true;
 function bashRefuses(command, cwdRel, base, bash, subagent = false) {
   // Owner, 2026-10-18: only the human confirms a sweep. Holds whatever RECORD_REFUSALS_OFF says.
   if (subagent && confirmsSweep(command)) return REFUSAL_SWEEP_CONFIRM;
+  if (subagent) {
+    const bypass = sweepBypassRefusal(command, base);
+    if (bypass) return bypass;
+  }
   // Tijn, 15 October 2026: "remove that hook block, it is wrong". The record-write refusal and
   // the background-agent refusal are off; the settings-file refusal below stays.
   if (RECORD_REFUSALS_OFF) {

@@ -793,6 +793,10 @@ describe('the dashboard never sends live work back to the build queue', () => {
       const calls = withSpawn(null, () => { dash(root); }).filter((c) => c.cmd === 'git');
       assert.equal(calls.filter((c) => c.args.includes('log')).length, 1);
       for (const c of calls.filter((x) => x.args.includes('status'))) assert.equal(c.args[0], '--no-optional-locks');
+      for (const c of calls.filter((x) => x.args.includes('status') || x.args.includes('log'))) {
+        const i = c.args.indexOf('core.fsmonitor=false');
+        assert.ok(i > 0 && c.args[i - 1] === '-c', `no filesystem monitor may start: ${c.args.join(' ')}`);
+      }
       assert.equal(calls.filter((c) => c.args.includes('--version')).length, 0);
       for (const c of calls) {
         assert.ok(c.options.timeout <= 5000, `timeout ${c.options.timeout}`);
@@ -806,7 +810,11 @@ describe('the dashboard never sends live work back to the build queue', () => {
     let rows;
     withSpawn((cmd) => (cmd === 'git' ? timeoutAnswer() : undefined), () => { rows = sweep(root, null).sweep.builds; });
     assert.equal(rows.length, 3);
-    for (const r of rows) { assert.equal(r.group, 'never-moved'); assert.equal(r.code, 'git-failed'); }
+    for (const r of rows) {
+      assert.equal(r.group, 'never-moved'); assert.equal(r.code, 'git-failed');
+      assert.match(r.reason, /not checked in time/);
+      assert.doesNotMatch(r.reason, /ETIMEDOUT/);
+    }
     const realNow = Date.now;
     let reads = 0; let clock = realNow();
     Date.now = () => { reads += 1; if (reads > 1) clock += 6000; return clock; };
@@ -886,7 +894,7 @@ describe('the dashboard never sends live work back to the build queue', () => {
       const sha1 = 'a'.repeat(40);
       let rows;
       withSpawn((cmd, args) => (cmd === 'git' && args.includes('log')
-        ? { status: 0, stdout: `\u0001${sha1}\t${ct}\tmain\n\n`, stderr: '' } : undefined),
+        ? { status: 0, stdout: `\u0001${sha1}\t${ct}\tmain\t${'c'.repeat(40)}\n\n`, stderr: '' } : undefined),
       () => { rows = sweep(root, null).sweep.builds; });
       assert.equal(rows.find((r) => r.id === o).code, 'work-found');
       assert.equal(rows.find((r) => r.id === n).group, 'would-go-back');
@@ -972,5 +980,201 @@ describe('the dashboard never sends live work back to the build queue', () => {
     const fresh = run('2.47.1');
     assert.match(fresh.reason, /error: unknown option/);
     assert.doesNotMatch(fresh.reason, /older than/);
+  });
+});
+
+describe('B24. the review kickback round (work check fails closed per task, worktrees first, merges, one name rule)', () => {
+  const planCoverage = require('../src/lib/plan-coverage');
+  const rows = (dir, live) => sweep(dir, live === undefined ? null : live).sweep.builds;
+
+  describe('work check: a plan with nothing to check, or an unreadable one, holds only itself', () => {
+    it('(a) a plan that declares no file at all is held, whatever the working tree holds', () => {
+      seedPlan(root, 'in-progress', 'nf', { files: [] });
+      seedTasks(root, [{ plan: 'nf', startedMin: 300, touches: [] }]);
+      fs.writeFileSync(path.join(root, 'src', 'x.js'), 'x\n');
+      const [r] = rows(root);
+      assert.equal(r.group, 'never-moved');
+      assert.match(r.reason, /the plan declares no file to check/);
+    });
+
+    it('(b) a plan that declares only plan files is held the same way', () => {
+      seedPlan(root, 'in-progress', 'po', { files: ['plans/other.md'] });
+      seedTasks(root, [{ plan: 'po', startedMin: 300, touches: [] }]);
+      fs.writeFileSync(path.join(root, 'src', 'x.js'), 'x\n');
+      const [r] = rows(root);
+      assert.equal(r.group, 'never-moved');
+      assert.match(r.reason, /the plan declares no file to check/);
+    });
+
+    it('(c) a plan whose files: block cannot be read is held; the other plan is still computed', () => {
+      seedPlan(root, 'in-progress', 'ra'); seedPlan(root, 'in-progress', 'rb');
+      seedTasks(root, [{ plan: 'ra', agent: 'gone', startedMin: 300 }, { plan: 'rb', agent: 'gone', startedMin: 300 }]);
+      const real = planCoverage.readPlanFiles;
+      planCoverage.readPlanFiles = function patched(file, content) {
+        if (String(file).endsWith('ra.md')) throw new Error('unreadable files block simulated');
+        return real.call(this, file, content);
+      };
+      let result;
+      try { result = rows(root, ['x']); } finally { planCoverage.readPlanFiles = real; }
+      const a = result.find((r) => r.plan === 'ra');
+      const b = result.find((r) => r.plan === 'rb');
+      assert.equal(a.group, 'never-moved');
+      assert.match(a.reason, /the plan file cannot be read/);
+      assert.equal(b.group, 'would-go-back');
+    });
+  });
+
+  describe('work check: the worktrees are listed first', () => {
+    it('(a) a git that lists no worktree at all holds the build', () => {
+      seedPlan(root, 'in-progress', 'wl');
+      seedTasks(root, [{ plan: 'wl', startedMin: 300 }]);
+      let r;
+      withSpawn((cmd, args) => (cmd === 'git' && args[0] === 'worktree' && args[1] === 'list'
+        ? { status: 0, stdout: '', stderr: '' } : undefined), () => { [r] = rows(root); });
+      assert.equal(r.group, 'never-moved');
+      assert.match(r.reason, /git listed no worktree/);
+    });
+
+    it('(b) a commit made in a linked worktree on a detached HEAD, after the claim, is work', () => {
+      seedPlan(root, 'in-progress', 'dh');
+      seedTasks(root, [{ plan: 'dh', startedMin: 300 }]);
+      const wt = path.join(path.dirname(root), `${path.basename(root)}-dh`);
+      git(root, ['worktree', 'add', '-q', '--detach', wt]);
+      roots.push(wt);
+      fs.mkdirSync(path.join(wt, 'src'), { recursive: true });
+      fs.writeFileSync(path.join(wt, 'src', 'dh.js'), 'dh\n');
+      git(wt, ['add', 'src/dh.js']);
+      git(wt, ['commit', '-q', '-m', 'dh']);
+      const [r] = rows(root);
+      assert.equal(r.group, 'never-moved');
+      assert.equal(r.code, 'work-found');
+      assert.match(r.reason, /commit [0-9a-f]{12} on a detached worktree/);
+    });
+  });
+
+  describe('work check: merge records', () => {
+    const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+    const commitOnMain = () => {
+      fs.writeFileSync(path.join(root, 'main2.txt'), 'm\n');
+      git(root, ['add', 'main2.txt']);
+      git(root, ['commit', '-q', '-m', 'main2']);
+    };
+
+    it('(a) a branch merged with --no-ff that changed no declared file leaves the build going back', () => {
+      seedPlan(root, 'in-progress', 'ma');
+      seedTasks(root, [{ plan: 'ma', startedMin: 300 }]);
+      git(root, ['checkout', '-q', '-b', 'side']);
+      fs.writeFileSync(path.join(root, 'other.txt'), 'o\n');
+      git(root, ['add', 'other.txt']);
+      git(root, ['commit', '-q', '-m', 'other'], daysAgo(60));
+      git(root, ['checkout', '-q', 'main']);
+      commitOnMain();
+      git(root, ['merge', '-q', '--no-ff', 'side', '-m', 'merge side']);
+      assert.equal(rows(root)[0].group, 'would-go-back');
+    });
+
+    it('(b) main merged into a branch that holds declared-file work from before the claim is not work after it', () => {
+      seedPlan(root, 'in-progress', 'mb');
+      seedTasks(root, [{ plan: 'mb', startedMin: 300 }]);
+      git(root, ['checkout', '-q', '-b', 'side']);
+      fs.writeFileSync(path.join(root, 'src', 'mb.js'), 'mb\n');
+      git(root, ['add', 'src/mb.js']);
+      git(root, ['commit', '-q', '-m', 'mb'], daysAgo(60));
+      git(root, ['checkout', '-q', 'main']);
+      commitOnMain();
+      git(root, ['checkout', '-q', 'side']);
+      git(root, ['merge', '-q', '--no-ff', 'main', '-m', 'merge main into side']);
+      const [r] = rows(root);
+      assert.equal(r.group, 'would-go-back', `${r.code}: ${r.reason}`);
+    });
+
+    it('(c) a branch merged with --no-ff that brings declared-file changes after the claim is work', () => {
+      seedPlan(root, 'in-progress', 'mc');
+      seedTasks(root, [{ plan: 'mc', startedMin: 300 }]);
+      git(root, ['checkout', '-q', '-b', 'side']);
+      fs.writeFileSync(path.join(root, 'src', 'mc.js'), 'mc\n');
+      git(root, ['add', 'src/mc.js']);
+      git(root, ['commit', '-q', '-m', 'mc'], daysAgo(60));
+      git(root, ['checkout', '-q', 'main']);
+      commitOnMain();
+      git(root, ['merge', '-q', '--no-ff', 'side', '-m', 'merge side']);
+      const [r] = rows(root);
+      assert.equal(r.group, 'never-moved');
+      assert.equal(r.code, 'work-found');
+    });
+
+    it('(d) a printed record with no lines: a merge (two parents) is work for nobody, any other is work for the builds it follows', () => {
+      seedPlan(root, 'in-progress', 'old3');
+      seedTasks(root, [{ plan: 'old3', startedMin: 300 }]);
+      const ct = Math.floor((Date.now() - 100 * 60_000) / 1000);
+      const run = (parents) => {
+        let r;
+        withSpawn((cmd, args) => (cmd === 'git' && args.includes('log')
+          ? { status: 0, stdout: `\u0001${'a'.repeat(40)}\t${ct}\tmain\t${parents}\n\n`, stderr: '' } : undefined),
+        () => { [r] = rows(root); });
+        return r;
+      };
+      assert.equal(run(['c'.repeat(40), 'd'.repeat(40)].join(' ')).group, 'would-go-back');
+      assert.equal(run('c'.repeat(40)).code, 'work-found');
+      assert.equal(run('').code, 'work-found');
+    });
+  });
+
+  describe('apply: the reasons for a build that did not move', () => {
+    it('(a) an already-dead build whose staleness mark could not be saved says the changes could not be saved', () => {
+      seedPlan(root, 'in-progress', 'sd');
+      const [id] = seedTasks(root, [{ plan: 'sd', status: 'orphaned', startedMin: 300, doneMin: 250,
+        result: { ok: false, orphanReason: 'staleness', summary: 's' } }]);
+      const preview = sweep(root, null);
+      assert.equal(rowOf(preview, id).group, 'would-go-back', `${rowOf(preview, id).code}: ${rowOf(preview, id).reason}`);
+      const real = safeFs.renameSync;
+      safeFs.renameSync = function failing(from, to) {
+        if (String(to).endsWith('tasks.json')) throw new Error('EIO simulated');
+        return real.call(this, from, to);
+      };
+      let res;
+      try { res = sweep(root, null, '--confirm', tokenOf(preview, id)); } finally { safeFs.renameSync = real; }
+      assert.match(res.text, /the task changes could not be saved/);
+      assert.doesNotMatch(res.text, /no longer being built here/);
+      assert.ok(inStage(root, 'in-progress', 'sd'));
+    });
+
+    it('(b) a move that fails when the task could not be read beforehand says the task could not be restored', () => {
+      seedPlan(root, 'in-progress', 'nr');
+      const [id] = seedTasks(root, [{ plan: 'nr', agent: 'gone', startedMin: 30 }]);
+      const preview = sweep(root, ['x']);
+      const realLoad = taskRegistry.load;
+      const realMove = actions.movePlan;
+      let loads = 0;
+      taskRegistry.load = function counting(r) {
+        loads += 1;
+        if (loads === 2) throw new Error('EIO simulated');
+        return realLoad.call(this, r);
+      };
+      actions.movePlan = () => { throw new Error('EBUSY'); };
+      let res;
+      try {
+        res = planRecovery.applySweep(root, { confirm: [{ plan: 'nr', token: rowOf(preview, id).token }], liveAgentIds: ['x'] });
+      } finally { taskRegistry.load = realLoad; actions.movePlan = realMove; }
+      assert.equal(res.ok, true);
+      assert.equal(res.notMoved.length, 1);
+      assert.match(res.notMoved[0].reason, /move failed: EBUSY/);
+      assert.match(res.notMoved[0].reason, /could not be restored: its record could not be read before the sweep/);
+    });
+  });
+
+  describe('one plan-name rule', () => {
+    it('a plan name of 201 characters, or one starting with a dot, is never offered or checked', () => {
+      for (const plan of ['a'.repeat(201), '.hidden']) {
+        const dir = makeProject();
+        seedPlan(dir, 'in-progress', plan);
+        seedTasks(dir, [{ plan, startedMin: 300 }]);
+        const res = sweep(dir, null);
+        const r = res.sweep.builds.find((b) => b.plan === plan);
+        assert.equal(r.group, 'never-moved', plan);
+        assert.equal(r.code, 'unsafe-name', plan);
+        assert.doesNotMatch(Object.values(res.actions || {}).map(String).join('\n'), new RegExp(plan.replace(/\./g, '\\.')));
+      }
+    });
   });
 });

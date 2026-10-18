@@ -93,8 +93,8 @@ const RECLAIM_REASON = 'live registry task — a fresh agent owns this plan';
 const SWEEP_GIT_BUDGET_MS = 5_000;
 /** A task id or plan name segment that is safe to put in a command the session will run. */
 const SAFE_SEGMENT_RE = /^[A-Za-z0-9._-]+$/;
-/** A plan slug the work check will pass to git (fail closed otherwise). */
-const SAFE_PLAN_RE = /^[A-Za-z0-9_][A-Za-z0-9._-]*$/;
+/** THE plan-name rule: safe in a command, in a path and as a pathspec (fail closed otherwise). */
+const PLAN_NAME_RE = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,199}$/;
 /** The minutes a build needs to be old before a sweep may name it with no sign of life. */
 const BUILD_BOUND_MIN = (taskReconcile.DEFAULT_STALE_MS_BY_KIND.implement *
   taskReconcile.DEFAULT_PRESUMED_DEAD_MULTIPLE) / 60_000;
@@ -245,6 +245,11 @@ function isSafeName(v) {
   return v.split('/').every((seg) => seg !== '.' && seg !== '..' && SAFE_SEGMENT_RE.test(seg));
 }
 
+/** Is `v` a plan name every part of the menu may use? One rule: the sweep's parser, the verdict and the work check. */
+function isSafePlan(v) {
+  return typeof v === 'string' && PLAN_NAME_RE.test(v);
+}
+
 /** The fingerprint of a live-agent list: it goes into every token, so a different list is stale. */
 function liveFingerprint(liveAgentIds) {
   if (liveAgentIds == null) return 'none';
@@ -328,7 +333,7 @@ function sweepVerdict(registry, input = {}) {
 
     if (r === 1 && nonTerminalBuilds(t.plan).some((x) => x.id !== t.id)) {
       put('never-moved', 'plan-shared', 'another build of this plan is still recorded as running or queued');
-    } else if (!isSafeName(t.plan)) {
+    } else if (!isSafePlan(t.plan)) {
       put('never-moved', 'unsafe-name', 'its plan name holds characters the menu will not put in a command');
     } else if (o && o.status === 'running') {
       if (live !== null && realId && live.has(String(t.agentTaskId))) {
@@ -380,7 +385,7 @@ function sweepVerdict(registry, input = {}) {
       token,
       wayOut: ['work-found', 'git-failed', 'not-here', 'plan-shared'].includes(code),
       safeId: isSafeName(t.id),
-      safePlan: isSafeName(t.plan),
+      safePlan: isSafePlan(t.plan),
       staleMarker: !!(t.result && t.result.orphanReason === 'staleness'),
     };
   });
@@ -415,6 +420,30 @@ function gitEnv() {
 const firstLine = (v) => stripCtl(String(v == null ? '' : v).split('\n').find((l) => l.trim() !== '') || 'no message').slice(0, 120);
 
 /**
+ * The worktrees `worktree list --porcelain -z` printed: each block's path and HEAD sha. A bare or
+ * prunable block is skipped, and so is a block with no path.
+ * @param {string} stdout
+ * @returns {Array<{path:string, head:(string|null)}>}
+ */
+function parseWorktrees(stdout) {
+  const list = [];
+  let block = [];
+  const flush = () => {
+    if (block.length > 0 && block[0].startsWith('worktree ') && !block.some((f) => f === 'bare' || f.startsWith('prunable'))) {
+      const headField = block.find((f) => f.startsWith('HEAD '));
+      const head = headField ? headField.slice('HEAD '.length) : '';
+      list.push({ path: block[0].slice('worktree '.length), head: /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(head) && !/^0+$/.test(head) ? head : null });
+    }
+    block = [];
+  };
+  for (const field of stdout.split('\0')) {
+    if (field === '') flush(); else block.push(field);
+  }
+  flush();
+  return list;
+}
+
+/**
  * Whether any work came after each task's claim, for ALL candidates of one preview together: one
  * `git log` over every branch, the worktrees' uncommitted changes, one time budget. Fails closed:
  * anything git cannot answer counts as work found. A claim itself (the plan's 100% rename) is never
@@ -438,6 +467,7 @@ function findWorkAfterClaim(root, tasks) {
       cwd, encoding: 'utf8', timeout: remaining, maxBuffer: 64 * 1024 * 1024, windowsHide: true, shell: false, env: gitEnv(),
     });
     if (r.error || r.status !== 0) {
+      if ((r.error && /** @type {NodeJS.ErrnoException} */ (r.error).code === 'ETIMEDOUT') || (r.signal && r.status === null)) return { failed: failed('timeout', 'not checked in time') };
       let detail = firstLine(r.error ? r.error.message : r.stderr);
       if (r.status === 129 && !noProbe) {
         // git's usage-error status: an unknown option. Say which git it is when it is too old.
@@ -457,16 +487,17 @@ function findWorkAfterClaim(root, tasks) {
     const startedMs = Date.parse(task.ts && task.ts.started);
     if (!Number.isFinite(startedMs)) { out[task.id] = failed('no-start', 'the task has no start time'); continue; }
     const plan = task.plan;
-    if (typeof plan !== 'string' || !SAFE_PLAN_RE.test(plan)) { out[task.id] = failed('unsafe-plan', 'the plan name cannot be checked'); continue; }
+    if (!isSafePlan(plan)) { out[task.id] = failed('unsafe-plan', 'the plan name cannot be checked'); continue; }
     const planPath = path.join(root, 'plans', 'in-progress', `${plan}.md`);
-    let content;
-    try { content = safeFs.readFileSync(planPath, 'utf8'); } catch { out[task.id] = failed('unreadable-plan', 'the plan file cannot be read'); continue; }
-
-    const declared = new Set([
-      ...(Array.isArray(task.touches) ? task.touches : []),
-      ...planCoverage.readPlanFiles(planPath, content),
-      ...actions.planDeclaredFiles({ content }),
-    ]);
+    let declared;
+    try {
+      const content = safeFs.readFileSync(planPath, 'utf8');
+      declared = new Set([
+        ...(Array.isArray(task.touches) ? task.touches : []),
+        ...planCoverage.readPlanFiles(planPath, content),
+        ...actions.planDeclaredFiles({ content }),
+      ]);
+    } catch { out[task.id] = failed('unreadable-plan', 'the plan file cannot be read'); continue; }
     const files = [];
     let bad = false;
     for (const f of declared) {
@@ -479,6 +510,8 @@ function findWorkAfterClaim(root, tasks) {
       files.push(norm);
     }
     if (bad) { out[task.id] = failed('unreadable-file', 'a declared file cannot be checked'); continue; }
+    // Nothing declared (the plan's own file is set aside): an empty pathspec would list every change.
+    if (files.length === 0) { out[task.id] = failed('unreadable-file', 'the plan declares no file to check'); continue; }
 
     // Another repository: a non-empty leading part holding its own `.git`.
     let nested = false;
@@ -516,19 +549,26 @@ function findWorkAfterClaim(root, tasks) {
   if (top.failed) { failRest(top.failed); return out; }
   const prefix = top.stdout.trim();
 
-  // Call 2, the commits.
+  // Call 2, the worktrees: where uncommitted changes are looked for, and the commits no branch holds.
+  const wl = runGit(['worktree', 'list', '--porcelain', '-z'], root);
+  if (wl.failed) { failRest(wl.failed); return out; }
+  const worktrees = parseWorktrees(wl.stdout);
+  if (worktrees.length === 0) { failRest(failed('git-failed', 'git listed no worktree')); return out; }
+  const heads = Array.from(new Set(worktrees.map((w) => w.head).filter(Boolean)));
+
+  // Call 3, the commits.
   const minSince = Math.min(...pending.map((p) => p.sinceSec));
   const specs = Array.from(new Set(pending.flatMap((p) => p.specs)));
-  const log = runGit(['--no-replace-objects', '-c', 'log.showSignature=false', '-c', 'core.quotePath=false', 'log',
-    '--branches', '--remotes', '--full-history', '--diff-merges=first-parent', '-M', '--relative', '--name-status', '--no-color',
+  const log = runGit(['--no-replace-objects', '-c', 'log.showSignature=false', '-c', 'core.quotePath=false', '-c', 'core.fsmonitor=false', 'log',
+    '--branches', '--remotes', ...heads, '--full-history', '--diff-merges=first-parent', '-M', '--relative', '--name-status', '--no-color',
     `--since=${new Date((minSince - 86400) * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z')}`,
-    '--format=%x01%H%x09%ct%x09%S', '--', ...specs], root);
+    '--format=%x01%H%x09%ct%x09%S%x09%P', '--', ...specs], root);
   if (log.failed) { failRest(log.failed); return out; }
 
   const workFor = (sha, source) => ({
     found: true,
     ref: sha,
-    detail: `commit ${sha.slice(0, 12)} on ${(source || '').replace(/^refs\/(heads|remotes)\//, '') || 'a local branch'}`,
+    detail: `commit ${sha.slice(0, 12)} on ${/^[0-9a-f]{40,64}$/.test(source || '') ? 'a detached worktree' : (source || '').replace(/^refs\/(heads|remotes)\//, '') || 'a local branch'}`,
   });
   const chunks = log.stdout.split('\u0001').slice(1);
   for (const chunk of chunks) {
@@ -547,8 +587,11 @@ function findWorkAfterClaim(root, tasks) {
     const isClaimOf = (p, parts) => parts[0] === 'R100' && parts.length === 3 && parts[2] === `plans/in-progress/${p.plan}.md`
       && parts[1].startsWith('plans/') && parts[1].endsWith(`/${p.plan}.md`) && parts[1] !== parts[2];
 
-    // 2. No lines left (a merge, or an empty source): work for every remaining task it follows.
+    // 2. No lines left. A merge (two parents or more) changes nothing on its first-parent line: the work
+    // it joins is printed as records of its own, so it is work for nobody. Any other record with no
+    // lines is unreadable: work for every remaining task it follows.
     if (lines.length === 0) {
+      if ((header[3] || '').split(' ').filter(Boolean).length >= 2) continue;
       for (const p of rem) if (follows(p)) out[p.id] = workFor(sha, header[2]);
       continue;
     }
@@ -570,31 +613,15 @@ function findWorkAfterClaim(root, tasks) {
   }
   if (remaining().length === 0) return out;
 
-  // Call 3, the worktrees.
-  const wl = runGit(['worktree', 'list', '--porcelain', '-z'], root);
-  if (wl.failed) { failRest(wl.failed); return out; }
-  const worktrees = [];
-  let block = [];
-  const flush = () => {
-    if (block.length > 0 && block[0].startsWith('worktree ') && !block.some((f) => f === 'bare' || f.startsWith('prunable'))) {
-      worktrees.push(block[0].slice('worktree '.length));
-    }
-    block = [];
-  };
-  for (const field of wl.stdout.split('\0')) {
-    if (field === '') flush(); else block.push(field);
-  }
-  flush();
-
   // Calls 4…, uncommitted changes in each worktree.
-  for (const wt of worktrees) {
+  for (const { path: wt } of worktrees) {
     const left = remaining();
     if (left.length === 0) break;
     const fileSpecs = Array.from(new Set(left.flatMap((p) => p.fileSpecs)));
     if (fileSpecs.length === 0) continue;
     const cwd = path.join(wt, prefix);
     if (!safeFs.existsSync(cwd)) { failRest(failed('git-failed', 'a worktree folder is missing')); break; }
-    const st = runGit(['--no-optional-locks', 'status', '--porcelain', '-z', '--untracked-files=all', '--', ...fileSpecs], cwd);
+    const st = runGit(['--no-optional-locks', '-c', 'core.fsmonitor=false', 'status', '--porcelain', '-z', '--untracked-files=all', '--', ...fileSpecs], cwd);
     if (st.failed) { failRest(st.failed); break; }
     const fields = st.stdout.split('\0');
     const changed = [];
@@ -696,7 +723,8 @@ function applySweep(root, opts = {}) {
   const restoreNote = new Map();
   for (const sk of moved.skipped) {
     const row = go.find((b) => b.plan === sk.plan);
-    if (!row || row.status !== 'running' || !String(sk.reason).startsWith('move failed:') || !before) continue;
+    if (!row || row.status !== 'running' || !String(sk.reason).startsWith('move failed:')) continue;
+    if (!before) { restoreNote.set(sk.plan, ' and its task could not be restored: its record could not be read before the sweep'); continue; }
     const old = before.tasks.find((t) => t.id === row.id);
     if (!old) continue;
     try {
@@ -721,7 +749,7 @@ function applySweep(root, opts = {}) {
     let reason;
     if (b.group !== 'would-go-back') reason = b.reason;
     else if (blocked.includes(b)) reason = 'a plan of the same name already waits in the build queue';
-    else if (b.status === 'running' && report.saveFailed) reason = 'the task changes could not be saved';
+    else if ((b.status === 'running' || (b.status === 'orphaned' && b.staleMarker)) && report.saveFailed) reason = 'the task changes could not be saved';
     else if (b.status === 'running' && !report.orphaned.includes(b.id)) reason = 'judged alive again when the sweep was applied';
     else {
       const sk = moved.skipped.find((x) => x.plan === b.plan) || moved.surfaced.find((x) => x.plan === b.plan);
@@ -736,4 +764,4 @@ function applySweep(root, opts = {}) {
   };
 }
 
-module.exports = { recoverOrphanedPlans, sweepVerdict, previewSweep, applySweep };
+module.exports = { recoverOrphanedPlans, sweepVerdict, previewSweep, applySweep, isSafePlan };
