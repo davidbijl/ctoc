@@ -30,38 +30,37 @@
  * sufficient (the link can sit inside the span the wildcard covers, where there is
  * no literal at all). The target check subsumes the pattern check.
  *
- * THE BOUNDED ANCESTOR WALK. A `Write` that CREATES a file names a path that does
- * not exist yet, and `realpathSync` answers `ENOENT`. Denying that would block the
- * common case. So a missing path walks UP to its nearest EXISTING ancestor, resolves
- * that, and rejoins the unresolved tail. The walk is bounded by a hard iteration cap
- * and terminates when `path.dirname` stops changing, which is the filesystem root on
- * every platform.
+ * THE WALK, AS WRITTEN. A target is walked from the file-system root one segment at
+ * a time, as the kernel walks it: an existing segment is checked with `lstat`, a
+ * link's contents are walked in its place, and `..` is the PHYSICAL parent of the
+ * real path so far. Once a segment does not exist, the rest is the not-yet-existing
+ * tail (a `Write` that creates a file names such a path, and denying it would block
+ * the common case), where a `..` removes the tail's last name. Nothing is tidied by
+ * text first, because `..` after a link is the link's real parent to the file system
+ * (measured 2026-10-15: `src/L/../approvals` with `src/L → ../.ctoc/state` is
+ * `.ctoc/approvals`). Bounded by `MAX_ANCESTOR_WALK` segments walked (links'
+ * contents included), `MAX_LINK_HOPS` links, and the decision deadline.
  *
  * THE TAIL'S GUARANTEE HOLDS ONLY AFTER A DANGLING SEGMENT HAS BEEN EXCLUDED — this
  * paragraph once read "the tail contains no links BECAUSE IT DOES NOT EXIST", and
  * that sentence was FALSE for a segment that exists as a symbolic link whose target
- * does not. `realpathSync` answers ENOENT for TWO DIFFERENT FACTS: the entry is
- * absent, or the entry is there and its TARGET is absent. The walk could not tell
- * them apart, so it pushed a dangling link onto the not-yet-existing tail and
- * reported `<root>/link` — INSIDE the tree — while the write followed the link out
- * of it. `lstat` does not follow links, so it separates the two facts and nothing
- * else does. A dangling segment is REFUSED (`reason: 'dangling'`).
+ * does not. The rule now: a name missing INSIDE a link's contents is a dangling
+ * link and is REFUSED (`reason: 'dangling'`); a name missing in the path as written
+ * starts the tail.
  *
  * That case is not exotic for the guard that matters most: a forged approval record
  * is BY DEFINITION a file that does not exist until it is forged, so the dangling
  * shape is the ORDINARY shape of the attack on the approval ledger.
  *
- * THE REJECTED ALTERNATIVE — FOLLOWING THE LINK ONE HOP with `readlinkSync` and
- * continuing the walk from its target. It is strictly more precise: it would permit
- * a dangling link pointing at a not-yet-existing path INSIDE the tree, which this
- * module refuses. It is rejected because it re-introduces link-following, cycle risk
- * and a hop budget into the exact module whose entire purpose is to not be fooled by
- * links. A refusal is bounded, obvious and fails in the safe direction, and the
- * over-refused shape — an in-repository dangling link — was MEASURED at zero
- * occurrences in this repository outside `node_modules/` and `.git/`. Detection is
- * `lstat` rather than `readlink` for the same reason: it answers the only question
- * that matters (does the entry exist) without the link's CONTENTS entering any
- * decision or any log.
+ * LINKS ARE FOLLOWED BY READING THEM (reversed 2026-10-15). The earlier choice
+ * resolved links with `realpathSync` and refused a dangling one by `lstat`. It is
+ * reversed because the JavaScript `realpathSync` removes `..` by text, inside a
+ * link's contents too, so a `..` after a link was judged where the text says, not
+ * where the file system goes. The walk reads each link (`readlinkSync`) under a
+ * budget of `MAX_LINK_HOPS` links (a cycle is `'loop'`). The link's contents enter
+ * the decision and never a log or a message. The over-refused shape — an
+ * in-repository dangling link — was MEASURED at zero occurrences in this repository
+ * outside `node_modules/` and `.git/`.
  *
  * THE ROOT IS RESOLVED STRICTLY, WITHOUT THE WALK. A root that does not exist has no
  * nearest existing ancestor worth anchoring to: walking up would synthesise a
@@ -78,6 +77,17 @@
  * into consistency with the fail-open reporting checks that neighbour it; the
  * inversion is deliberate and load-bearing.
  *
+ * A DECISION BUDGET. A hook that times out lets the call run (measured, the owner's
+ * trial of 2026-10-15), so a slow walk is an allow. `setDeadline` sets the latest
+ * `Date.now()` at which a walk may still take a step; past it `resolvesUnder` refuses
+ * at its entry, before the root lookup, and every walk returns `'resolve-failed'`,
+ * the refusing value for `resolvesUnder`. A caller that DROPS a check when a walk
+ * faults, with no refusing check behind it in the same decision (the background
+ * agent's shell settings specs in `protect-records.js`, which guard against a
+ * lock-out that way), asks `budgetSpent()` first and keeps the check, so it refuses
+ * at `resolvesUnder`'s entry instead of vanishing. Set once per decision by
+ * `protect-records.js`, a fresh process per call; never set by any other caller.
+ *
  * THE TWO FUNCTIONS FAIL IN OPPOSITE BOOLEAN DIRECTIONS, and both directions mean
  * DENY:
  *   • `escapesRoot`  → `escapes: true`  means DENY (the target left the tree).
@@ -86,10 +96,10 @@
  * They are not inconsistent; they answer opposite questions. Anyone "unifying" them
  * will invert one of them and open the hole again.
  *
- * OPEN RESIDUAL, stated rather than silently absent: HARD links are not addressed.
- * A hard link to a file outside the repository cannot be distinguished by real-path
- * resolution — the resolved path IS inside the tree. Detecting it needs inode
- * comparison, a different check with different cross-platform behaviour.
+ * OPEN RESIDUAL, stated rather than silently absent: a HARD link to a file inside a protected
+ * FOLDER, or to a file outside the repository, is not seen — its real path is where it was
+ * made. `resolvesUnder` compares identities, so a hard link to a protected FILE (the settings
+ * file) is inside; `escapesRoot` compares text only.
  */
 
 const path = require('path');
@@ -101,72 +111,108 @@ const safeFs = require('./safe-fs');
  * path can never turn a permission check into a long loop.
  */
 const MAX_ANCESTOR_WALK = 4096;
+/** The most links one walk follows; past it the path is a loop (Linux's own limit is 40). */
+const MAX_LINK_HOPS = 40;
+/** The path separators of this platform, for splitting a path into segments. */
+const SEPARATORS = path.sep === '\\' ? /[\\/]+/ : /\/+/;
+/** The latest `Date.now()` at which a walk may take a step, or null for none. */
+let deadline = null;
 
 /**
- * Resolve `p` to a real path, tolerating a path that does not exist yet.
+ * Where `p` really leads, walked AS WRITTEN the way the file system walks it, tolerating a
+ * path that does not exist yet. See the header: THE WALK, AS WRITTEN.
  *
- * NEVER THROWS. Every fault is returned as `{ ok: false, reason }` with a
- * fixed vocabulary (`'resolve-failed'` | `'loop'` | `'denied'` | `'dangling'`), so a
- * caller can report WHY without leaking an errno object, a stack trace or an
- * absolute path. No caller branches on a reason for a DECISION — `plan-coverage`
- * discards it and `resolvesUnder` returns a bare boolean, `protect-records.js` reads only `ok` and `real` — so the vocabulary exists
- * so that a security report can name which fault fired, and for nothing else.
+ * NEVER THROWS. Every fault is returned as `{ ok: false, reason }` with a fixed vocabulary
+ * (`'resolve-failed'` | `'loop'` | `'denied'` | `'dangling'` | `'not-a-folder'`), so a caller
+ * can report WHY without leaking an errno object, a stack trace or an absolute path.
+ * `resolvesUnder` branches on two of them (`'not-a-folder'`, `'denied'`: a protected folder
+ * that cannot be one holds nothing); `plan-coverage` discards them; `protect-records.js` reads
+ * only `ok` and `real`.
  *
  * @param {string} p - an absolute or relative path
- * @returns {{ok: boolean, real: (string|null), reason: (string|null)}} a UNIFORM shape,
- *   never a discriminated union: `ok:false` always carries a reason and a null path.
+ * @returns {{ok: boolean, real: (string|null), reason: (string|null), tail: (string[]|null)}} a UNIFORM shape,
+ *   never a discriminated union: `ok:false` always carries a reason, a null path and a null tail; `tail` lists the
+ *   names at the end of `real` that do not exist yet, outermost first (`[]` when the whole path exists).
  */
 function resolveExisting(p) {
+  const fault = (reason) => ({ ok: false, real: null, reason, tail: null });
   try {
-    if (typeof p !== 'string' || p.length === 0) return { ok: false, real: null, reason: 'resolve-failed' };
-    let current = path.resolve(p);
-    /** @type {string[]} the not-yet-existing tail, innermost last */
+    if (typeof p !== 'string' || p.length === 0) return fault('resolve-failed');
+    const abs = path.isAbsolute(p) ? p : `${process.cwd()}${path.sep}${p}`;
+    // The input is cut by its OWN parsed root (`/`, `C:\`, `\\server\share\`, or a rooted `\`
+    // without a drive on Windows); `path.resolve` is asked for the root to start from only, and
+    // the segments are walked as written.
+    const rest = abs.slice(path.parse(abs).root.length);
+    let real = path.parse(path.resolve(abs)).root;
+    /** @type {string[]} the segments still to walk, the next one LAST */
+    const todo = segmentsOf(rest).reverse();
+    /** @type {string[]} names below `real` that do not exist, outermost first */
     const tail = [];
-    for (let i = 0; i < MAX_ANCESTOR_WALK; i++) {
+    let fromLink = 0; // how many of the next segments came out of a link's contents
+    let hops = 0;
+    for (let walked = 0; todo.length > 0; walked++) {
+      if (walked >= MAX_ANCESTOR_WALK || budgetSpent()) return fault('resolve-failed');
+      const seg = /** @type {string} */ (todo.pop());
+      const linked = fromLink > 0;
+      if (linked) fromLink -= 1;
+      if (seg === '..') {
+        // `real` holds no link, so its text parent IS its physical parent.
+        if (tail.length > 0) tail.pop(); else real = path.dirname(real);
+        continue;
+      }
+      if (tail.length > 0) {
+        // Below a name that does not exist nothing exists. Never a segment out of a link here:
+        // a link's segments sit on top of `todo` and are popped before any other, a missing one
+        // returns 'dangling' below before the tail can start, and a link is met only by `lstat`,
+        // which runs only while the tail is empty — so the tail is empty while such segments remain.
+        tail.push(seg);
+        continue;
+      }
+      const next = path.join(real, seg);
+      let st;
       try {
-        const real = safeFs.realpathSync(current);
-        return { ok: true, real: tail.length ? path.join(real, ...tail) : real, reason: null };
+        st = safeFs.lstatSync(next);
       } catch (err) {
         const code = err && /** @type {NodeJS.ErrnoException} */ (err).code;
-        // A LINK CYCLE is the shape an attacker builds to turn a resolver into a
-        // hang or a throw. Its verdict is a returned refusal, never an exception.
-        if (code === 'ELOOP') return { ok: false, real: null, reason: 'loop' };
-        if (code === 'EACCES' || code === 'EPERM') return { ok: false, real: null, reason: 'denied' };
-        // Anything that is not "this path does not exist" is a fault we cannot see
-        // through — including ENOTDIR (an ancestor is a file, so the path is not a
-        // path) and a safe-fs validatePath TypeError (empty / NUL-byte path).
-        if (code !== 'ENOENT') return { ok: false, real: null, reason: 'resolve-failed' };
-        // `realpathSync` answers ENOENT for TWO DIFFERENT FACTS: the entry is absent,
-        // or the entry EXISTS AS A LINK whose target is absent. `lstat` does not
-        // follow links, so a successful `lstat` here means the second — a DANGLING
-        // LINK. Treating it as absent pushes it onto the not-yet-existing tail, and
-        // the tail's guarantee is then false for that segment: the result is reported
-        // as inside the tree while the write follows the link out of it. This runs on
-        // the ENOENT branch ONLY, so a path that EXISTS costs nothing.
-        try {
-          safeFs.lstatSync(current);
-          return { ok: false, real: null, reason: 'dangling' };
-        } catch (lerr) {
-          // ENOENT from `lstat` too means the entry is GENUINELY absent — the
-          // ordinary new-file case. Denying here would deny every `Write`. Any OTHER
-          // fault is one we cannot see through, and a permission check that cannot
-          // look must refuse rather than continue past the segment.
-          const lcode = lerr && /** @type {NodeJS.ErrnoException} */ (lerr).code;
-          if (lcode !== 'ENOENT') return { ok: false, real: null, reason: 'resolve-failed' };
+        if (code === 'ENOENT') {
+          if (linked) return fault('dangling'); // the forged-record shape: see the header
+          tail.push(seg); // the ordinary new file
+          continue;
         }
-        const parent = path.dirname(current);
-        // The filesystem root is its own dirname on every platform: nothing below
-        // this path exists at all, so there is no real ancestor to anchor to.
-        if (parent === current) return { ok: false, real: null, reason: 'resolve-failed' };
-        tail.unshift(path.basename(current));
-        current = parent;
+        if (code === 'EACCES' || code === 'EPERM') return fault('denied');
+        // ENOTDIR (only a file swapped in mid-walk can give it: a file with more to walk is
+        // refused as 'not-a-folder' below before its child is asked), ELOOP, ENAMETOOLONG, a
+        // safe-fs validatePath TypeError (empty / NUL-byte path), … — all refuse.
+        return fault('resolve-failed');
       }
+      if (st.isSymbolicLink()) {
+        hops += 1;
+        // A LINK CYCLE is the shape an attacker builds to turn a resolver into a hang.
+        if (hops > MAX_LINK_HOPS) return fault('loop');
+        const contents = String(safeFs.readlinkSync(next));
+        // An absolute link restarts at its own root, cut off before the names are walked, so a
+        // drive `C:` or a UNC server and share is never walked as a name.
+        const lr = path.parse(contents).root;
+        const parts = segmentsOf(contents.slice(lr.length));
+        if (lr) real = path.parse(path.resolve(contents)).root;
+        for (let i = parts.length - 1; i >= 0; i--) todo.push(parts[i]);
+        fromLink += parts.length;
+        continue;
+      }
+      // A file with more to walk below it (`..` included) is not a path the kernel can open.
+      if (!st.isDirectory() && todo.length > 0) return fault('not-a-folder');
+      real = next;
     }
-    return { ok: false, real: null, reason: 'resolve-failed' };
+    return { ok: true, real: tail.length ? path.join(real, ...tail) : real, reason: null, tail };
   } catch {
     // Total by construction. See the file header: a throw here becomes an ALLOW.
-    return { ok: false, real: null, reason: 'resolve-failed' };
+    return fault('resolve-failed');
   }
+}
+
+/** The segments of a path, without empty and `.` segments. */
+function segmentsOf(s) {
+  return s.split(SEPARATORS).filter((seg) => seg !== '' && seg !== '.');
 }
 
 /**
@@ -260,54 +306,182 @@ function escapesRoot(targetFile, root) {
 }
 
 /**
- * Does `targetFile` REALLY land inside the protected directory
- * `<root>/<protectedDirRelative>`, however it was spelled and whatever links it
- * passed through?
+ * Does `targetFile`, followed AS WRITTEN the way the file system follows it, land inside the
+ * protected directory (or file) `<root>/<protectedDirRelative>`?
  *
- * FAILING DIRECTION — NOTE THE INVERSION relative to {@link escapesRoot}: here
- * `true` means "protected, DENY", so every fault returns `true`. Both functions
- * fail toward DENY; they differ only in which boolean carries it.
+ * The caller asks once per reading: `protect-records.decide()` and the shell's link test also
+ * ask with the TIDIED path (`..` removed by text), what a tool that tidies a path before opening
+ * it would open. This function itself never tidies the target.
  *
- * The one input that returns `false` on a fault is a target that is not a path at
- * all (absent, non-string, empty). That is not a resolver fault — there is nothing
- * to protect — and both call sites already guard `targetFile &&` before asking.
+ * BY FILE IDENTITY, NOT ONLY BY SPELLING (the owner's decision of 2026-10-15). The walk keeps
+ * every existing name AS SPELLED, so on a file system that folds names (macOS APFS, Windows NTFS)
+ * `.ctoc/ſtate/verify` — the long s — opens the real `.ctoc/state/verify` while its real path
+ * reads as a different folder (measured on macOS, 2026-10-15). So the target is inside when:
+ *   • its real path is inside the protected one's real path, in any letter case — the text test
+ *     this function always had, kept so no verdict it gave is lost; or
+ *   • the protected entry's identity (device and inode, `fileIdentity`) is on the target's real
+ *     chain: its deepest existing entry and every ancestor up to the project root's identity.
+ *     A protected entry that does not exist yet has no identity: its nearest existing ancestor's
+ *     identity must be on the chain, followed by the missing names, compared after NFKC and
+ *     lower case. A protected FILE is compared the same way, so a hard link to it is inside;
+ *     a hard link to a file inside a protected FOLDER is not seen (the header's residual).
+ *
+ * A PROTECTED FOLDER THAT CANNOT BE ONE — a file (`'not-a-folder'`) or a folder this user cannot
+ * search (`'denied'`) on its path — holds nothing, so a target that resolves is not inside it;
+ * a target whose own path runs into that fault faults itself and is refused. Any other fault on
+ * the protected path (a dangling link, a loop) refuses every target: a dangling link there is
+ * the shape of a record forged at the link's destination.
+ *
+ * FAILING DIRECTION — NOTE THE INVERSION relative to {@link escapesRoot}: here `true` means
+ * "protected, DENY", so every other fault returns `true`. A file system that gives no identity
+ * (inode 0) is not a fault: the text test decides there, as it always did.
+ *
+ * The one input that returns `false` on a fault is a target that is not a path at all
+ * (absent, non-string, empty). That is not a resolver fault — there is nothing to protect —
+ * and every call site guards `targetFile &&` or its equivalent before asking.
  *
  * NEVER THROWS.
  *
- * @param {string} targetFile - the tool-call target (relative or absolute)
- * @param {string} protectedDirRelative - POSIX-relative protected dir, no trailing /
+ * @param {string} targetFile - the tool-call target (relative to `root`, or absolute), as written
+ * @param {string} protectedDirRelative - POSIX-relative protected dir or file, no trailing /
  * @param {string} root - the project root
- * @returns {boolean} true iff the target really lands in the protected dir, OR the
- *   question could not be answered
+ * @returns {boolean} true iff the target really lands in the protected entry, OR the question
+ *   could not be answered
  */
 function resolvesUnder(targetFile, protectedDirRelative, root) {
   try {
     if (typeof targetFile !== 'string' || targetFile.length === 0) return false;
     if (typeof protectedDirRelative !== 'string' || protectedDirRelative.length === 0) return true;
     if (typeof root !== 'string' || root.length === 0) return true;
+    // The decision budget, before the root lookup (`resolveBasis` is not bounded by it).
+    if (budgetSpent()) return true;
 
-    // Strict: the root must EXIST. The protected directory need not — a project
-    // that has never minted an approval has no `.ctoc/approvals` yet, and requiring
-    // one would deny every write in it. Its tail is anchored to a root already
-    // proved real, and a DANGLING protected path refuses via `!ok` below.
+    // Strict: the root must EXIST. The protected directory need not — a project that has never
+    // minted an approval has no `.ctoc/approvals` yet.
     const realRoot = resolveBasis(root);
     if (!realRoot.ok) return true;
-
     const realProtected = resolveExisting(path.join(realRoot.real, protectedDirRelative));
-    if (!realProtected.ok) return true;
+    const holdsNothing = !realProtected.ok
+      && (realProtected.reason === 'not-a-folder' || realProtected.reason === 'denied');
+    if (!realProtected.ok && !holdsNothing) return true;
 
-    const abs = path.isAbsolute(targetFile) ? targetFile : path.join(root, targetFile);
+    // As written: a plain join, never `path.join`, which would remove `..` by text.
+    const abs = path.isAbsolute(targetFile) ? targetFile : `${root}${path.sep}${targetFile}`;
     const realTarget = resolveExisting(abs);
     if (!realTarget.ok) return true;
+    if (holdsNothing) return false;
+    if (isWithin(realTarget.real, realProtected.real)) return true;
 
-    return isWithin(realTarget.real, realProtected.real);
+    const rootId = fileIdentity(realRoot.real);
+    const anchor = anchorOf(realProtected);
+    const chain = rootId === undefined ? null : identityChain(realTarget, rootId);
+    if (anchor === null || chain === null) return true;
+    return passesThrough(chain, anchor);
   } catch {
     return true;
   }
 }
 
-module.exports = {
-  escapesRoot,
-  resolvesUnder,
-  resolveExisting,
-};
+/**
+ * Set the decision budget: walks refuse once `Date.now()` passes `at`. A number sets it; anything
+ * else clears it. Called once per decision by `protect-records.js` (a fresh process per call).
+ * @param {number|null} at
+ */
+function setDeadline(at) {
+  deadline = typeof at === 'number' && Number.isFinite(at) ? at : null;
+}
+
+/**
+ * Has the decision budget run out? The one test every walk, `resolvesUnder` and `identityChain`
+ * use, exported for a caller that would otherwise DROP a check when a walk faults
+ * (`protect-records.fileSpec`): a spent budget must keep the check, so it refuses (Decision 46).
+ * @returns {boolean}
+ */
+function budgetSpent() {
+  return deadline !== null && Date.now() > deadline;
+}
+
+/** One path segment folded for a name compare: NFKC (the long s becomes s), then lower case. */
+function foldSegment(s) {
+  return String(s).normalize('NFKC').toLowerCase();
+}
+
+/**
+ * What `p` names after links, as `'<dev>:<ino>'` from a `bigint` stat (Windows file IDs can pass
+ * 2^53); null when nothing is there (ENOENT, ENOTDIR) or the file system reports inode 0 (FAT
+ * and some network shares, where every file would compare equal); undefined on any other
+ * fault. Never throws. The one identity helper in CTOC.
+ * @param {string} p
+ * @returns {string|null|undefined}
+ */
+function fileIdentity(p) {
+  try {
+    const st = safeFs.statSync(p, { bigint: true });
+    return String(st.ino) === '0' ? null : `${st.dev}:${st.ino}`;
+  } catch (err) {
+    const code = err && /** @type {NodeJS.ErrnoException} */ (err).code;
+    return code === 'ENOENT' || code === 'ENOTDIR' ? null : undefined;
+  }
+}
+
+/** The real path of the deepest existing entry of an `ok` `resolveExisting` result. */
+function existingOf(resolved) {
+  let current = resolved.real;
+  for (let i = 0; i < resolved.tail.length; i++) current = path.dirname(current);
+  return current;
+}
+
+/**
+ * Where a comparison basis is anchored: the identity of its deepest existing entry (null when
+ * the file system gives none) and the folded names below it that do not exist yet ([] when
+ * the basis exists). Null on a fault.
+ * @param {{real: string, tail: string[]}} resolved - an `ok` result of `resolveExisting`
+ * @returns {{id: (string|null), below: string[]}|null}
+ */
+function anchorOf(resolved) {
+  const id = fileIdentity(existingOf(resolved));
+  return id === undefined ? null : { id, below: resolved.tail.map(foldSegment) };
+}
+
+/**
+ * The identity chain of a resolved target, nearest first: its deepest existing entry and every
+ * ancestor, each with its identity (null when the file system gives none) and the folded names
+ * below it, the missing tail included. Stops after the entry whose identity is the project
+ * root's (no protected entry lies above the root), else at the file-system root. Bounded by
+ * MAX_ANCESTOR_WALK and the decision deadline. Null on a fault.
+ * @param {{real: string, tail: string[]}} resolved - an `ok` result of `resolveExisting`
+ * @param {string|null} rootId - the project root's identity
+ * @returns {Array<{id: (string|null), below: string[]}>|null}
+ */
+function identityChain(resolved, rootId) {
+  let current = existingOf(resolved);
+  let below = resolved.tail.map(foldSegment);
+  const chain = [];
+  for (let i = 0; i < MAX_ANCESTOR_WALK; i++) {
+    if (budgetSpent()) return null;
+    const id = fileIdentity(current);
+    if (id === undefined) return null;
+    chain.push({ id, below });
+    const parent = path.dirname(current);
+    if (parent === current || (id !== null && id === rootId)) return chain;
+    below = [foldSegment(path.basename(current))].concat(below);
+    current = parent;
+  }
+  return null;
+}
+
+/**
+ * Does `chain` pass through `anchor`: an entry with the anchor's identity whose folded names
+ * below begin with the anchor's missing names? False when the anchor has no identity — the
+ * text test decides on such a file system.
+ * @param {Array<{id: (string|null), below: string[]}>} chain
+ * @param {{id: (string|null), below: string[]}} anchor
+ * @returns {boolean}
+ */
+function passesThrough(chain, anchor) {
+  if (anchor.id === null) return false;
+  return chain.some((link) => link.id === anchor.id
+    && anchor.below.every((name, i) => link.below[i] === name));
+}
+
+module.exports = { escapesRoot, resolvesUnder, resolveExisting, setDeadline, budgetSpent, fileIdentity, foldSegment };

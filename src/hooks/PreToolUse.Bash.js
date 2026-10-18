@@ -196,15 +196,17 @@ const LEDGER_SEGMENT_RE = /(^|[^a-z0-9._-])\.ctoc\/+approvals(\/|\s|$)/i;
  * Resolve one command token to a POSIX path against the accumulated cwd built up
  * from prior `cd`/`pushd` segments, stripping quotes, wrapping parens, and any
  * leading redirect operators. Matching-only — never used for execution.
+ * `lexical` false keeps the path as written (no `..` removed), for the link test.
  * @param {string} prefix - accumulated cwd ('' = repo root)
  * @param {string} token
+ * @param {boolean} [lexical] - true (default) removes `.`/`..` by text
  * @returns {string}
  */
-function resolveTokenPath(prefix, token) {
+function resolveTokenPath(prefix, token, lexical = true) {
   const t = String(token).replace(/['"`()]/g, '').replace(/^[<>]+/, '');
   if (!t) return '';
-  if (t.startsWith('/')) return path.posix.normalize(t);
-  return path.posix.normalize((prefix ? prefix + '/' : '') + t);
+  const joined = t.startsWith('/') ? t : (prefix ? prefix + '/' : '') + t;
+  return lexical ? path.posix.normalize(joined) : joined;
 }
 
 /** The protected directory, relative to the project root, for real-path resolution. */
@@ -287,19 +289,25 @@ const MAX_CANDIDATE_LEN = 4096;
  * only when the module is ABSENT (degraded: arithmetic-only) or the token is not a
  * path at all — never converting a fault into a permit.
  *
- * @param {string} prefix - accumulated cwd from prior `cd`/`pushd` segments
+ * Resolves the operand TIDIED (the `cd` prefix and `..` read by text, bash's default `cd`) and
+ * AS WRITTEN (a `cd -P`, `set -P`, or bash's own fallback when the tidied folder is missing,
+ * moves through links physically); either landing in the folder refuses.
+ *
+ * @param {string} prefix - accumulated cwd from prior `cd`/`pushd` segments, tidied
  * @param {string} token
  * @param {string} [dir] - the protected folder, relative to the project root
+ * @param {string} [rawPrefix] - the same accumulated cwd as written, no `..` removed
  * @returns {boolean} true iff the operand really lands in the folder (or a fault said so)
  */
-function operandResolvesIntoLedger(prefix, token, dir = LEDGER_DIR_RELATIVE) {
+function operandResolvesIntoLedger(prefix, token, dir = LEDGER_DIR_RELATIVE, rawPrefix = prefix) {
   if (!realPathConfinement) return false; // degraded — the header records this
   const rel = resolveTokenPath(prefix, token);
   if (!rel) return false;
+  const raw = resolveTokenPath(rawPrefix, token, false);
   // A token longer than any real path cannot name a ledger entry; resolving it only
   // manufactures an ENAMETOOLONG fault that fail-closes to a false deny. See the const.
-  if (rel.length > MAX_CANDIDATE_LEN) return false;
-  return realPathConfinement.resolvesUnder(rel, dir, process.cwd());
+  return [...new Set([rel, raw])].some((c) => c.length <= MAX_CANDIDATE_LEN
+    && realPathConfinement.resolvesUnder(c, dir, process.cwd()));
 }
 
 /**
@@ -340,6 +348,7 @@ function operandResolvesIntoLedger(prefix, token, dir = LEDGER_DIR_RELATIVE) {
 function isLedgerWrite(command, spec = LEDGER_SPEC) {
   const segments = String(command).split(/[\n;]|&&|\|\||\|/);
   let prefix = '';
+  let rawPrefix = ''; // the same accumulated cwd as written (no `..` removed), for the link test
   for (const rawSeg of segments) {
     const seg = rawSeg.replace(/^[\s({]+/, '').trim();
     if (!seg) continue;
@@ -383,14 +392,21 @@ function isLedgerWrite(command, spec = LEDGER_SPEC) {
       // Leave the prefix UNCHANGED for an empty operand (a present-but-empty token);
       // a bare `cd` with NO operand at all is `cd $HOME` and keeps its prior reset.
       if (sawOperand && dir === '') continue;
-      if (dir === '' || (dir === '-' && !dirIsAfterSep)) prefix = '';
+      if (dir === '' || (dir === '-' && !dirIsAfterSep)) { prefix = ''; rawPrefix = ''; }
       // A `~`/`~user` home prefix: STRIP only the tilde+user+slash and keep the
       // REMAINDER as a rooted prefix — do NOT discard the whole path. Resetting to
       // '' on any `~` threw away the ledger suffix, so `cd ~/…/.ctoc/approvals && tee
       // evil.json` resolved evil.json to root and slipped the forgery gate.
-      else if (dir.startsWith('~')) prefix = path.posix.normalize(dir.replace(/^~[^/]*\/?/, ''));
-      else if (dir.startsWith('/')) prefix = path.posix.normalize(dir);
-      else prefix = path.posix.normalize((prefix ? prefix + '/' : '') + dir);
+      else if (dir.startsWith('~')) {
+        rawPrefix = dir.replace(/^~[^/]*\/?/, '');
+        prefix = path.posix.normalize(rawPrefix);
+      } else if (dir.startsWith('/')) {
+        rawPrefix = dir;
+        prefix = path.posix.normalize(dir);
+      } else {
+        rawPrefix = (rawPrefix ? rawPrefix + '/' : '') + dir;
+        prefix = path.posix.normalize((prefix ? prefix + '/' : '') + dir);
+      }
       continue;
     }
     // (a) adjacent path anywhere in the normalized segment (literal / quote-split
@@ -414,7 +430,7 @@ function isLedgerWrite(command, spec = LEDGER_SPEC) {
       // arithmetic verdict above stands.
       const candidates = operands.concat(quotedLiterals(seg));
       touches = candidates.slice(0, OPERAND_RESOLUTION_CAP)
-        .some((t) => operandResolvesIntoLedger(prefix, t, spec.dir));
+        .some((t) => operandResolvesIntoLedger(prefix, t, spec.dir, rawPrefix));
     }
     if (touches && !isReadOnlyLedgerCommand(seg)) return true;
   }

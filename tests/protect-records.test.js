@@ -1077,3 +1077,384 @@ describe("a background agent may not change Claude Code's settings files or CTOC
     assertAllowed(run(write(`${project}/src/a/../b.js`), { env: cfgEnv() }), 'an ordinary dot-dot (main session)');
   });
 });
+
+// The owner's decision of 2026-10-15, "Check real file (Recommended)": the loaded hook compares a
+// path with the protected areas by what the file system opens (device and inode), not by spelling,
+// reads `..` after a link where the file system goes, and refuses a decision it cannot finish in
+// time. Every case spawns the real hook with real PreToolUse JSON. A case checks ALL its rows and
+// fails once at the end naming every row that failed, so a red or green record is per row.
+describe('the write protection compares real files, not spellings (owner, 2026-10-15)', () => {
+  const REFUSAL_SETTINGS = "CTOC refused this call because it writes, or could write, the project's settings "
+    + "file or its regulatory profiles, which only CTOC's menu writes; tell the human what you wanted to "
+    + 'change and let the menu change it.';
+  const REFUSAL_AGENT_SETTINGS = "CTOC refused this call because a background agent may not change Claude Code's "
+    + "settings files or CTOC's .ctoc/settings.json, which decide the hooks, environment and permissions every "
+    + 'later call runs with; report what you wanted to change and let the main session make the change.';
+  const REFUSAL_AGENT_SETTINGS_UNCHECKED = 'CTOC refused this call because it mentions a settings file and '
+    + "CTOC's protection for it failed to run; tell the human that this protection is broken.";
+  const LONG_S = 'ſ'; // U+017F, which NFKC folds to `s` and APFS opens as `s`
+  const FULL_WIDTH_S = 'ｓ'; // U+FF53, a distinct, absent name on APFS
+  const FULL_WIDTH_SOLIDUS = '／'; // U+FF0F, never a path separator
+  const LIGATURE_FI = 'ﬁ'; // U+FB01, which NFKC turns into `fi`
+  const RPC = path.join(REPO, 'src', 'lib', 'real-path-confinement.js');
+
+  let cfg;
+  let R;
+
+  function makeRows() {
+    const failures = [];
+    return {
+      row(label, fn) {
+        try {
+          fn();
+        } catch (err) {
+          failures.push(`${label} => ${String(err && err.message).split('\n')[0]}`);
+        }
+      },
+      done() {
+        assert.equal(failures.length, 0, `${failures.length} row(s) failed:\n${failures.join('\n')}`);
+      },
+    };
+  }
+
+  /** A case body that records every row and fails once, at the end, naming each failed row. */
+  function rowTest(name, fn) {
+    test(name, () => {
+      R = makeRows();
+      fn();
+      R.done();
+    });
+  }
+
+  const rm = (...dirs) => { for (const d of dirs) fs.rmSync(d, { recursive: true, force: true }); };
+  const put = (file, text = '{}') => {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, text);
+  };
+  const asAgent = (input) => ({ ...input, agent_id: 'a1b2c3', agent_type: 'iron-loop-executor' });
+  /** The file's `run()` options with the scratch config folder, so no agent check reads the real home folder. */
+  const ro = (opts = {}) => ({ ...opts, env: { CLAUDE_CONFIG_DIR: cfg, ...(opts.env || {}) } });
+
+  const refusedMain = (input, what, sentence = REFUSAL, opts = {}) => {
+    R.row(`${what} (main session)`, () => assertRefused(run(input, ro(opts)), `${what} (main session)`, sentence));
+  };
+  const refusedAgent = (input, what, sentence = REFUSAL, opts = {}) => {
+    R.row(`${what} (background agent)`, () => assertRefused(run(asAgent(input), ro(opts)), `${what} (background agent)`, sentence));
+  };
+  const refusedBoth = (input, what, sentence = REFUSAL, opts = {}) => {
+    refusedMain(input, what, sentence, opts);
+    refusedAgent(input, what, sentence, opts);
+  };
+  const allowedMain = (input, what, opts = {}) => {
+    R.row(`${what} (main session)`, () => assertAllowed(run(input, ro(opts)), `${what} (main session)`));
+  };
+  const allowedAgent = (input, what, opts = {}) => {
+    R.row(`${what} (background agent)`, () => assertAllowed(run(asAgent(input), ro(opts)), `${what} (background agent)`));
+  };
+  const allowedBoth = (input, what, opts = {}) => {
+    allowedMain(input, what, opts);
+    allowedAgent(input, what, opts);
+  };
+
+  /** Asks the disk whether two spellings open the same file (device and inode); never assumes. */
+  function sameFileOnDisk(real, alias) {
+    try {
+      const a = fs.statSync(real, { bigint: true });
+      const b = fs.statSync(alias, { bigint: true });
+      return a.dev === b.dev && a.ino === b.ino;
+    } catch (err) {
+      if (err.code === 'ENOENT') return false;
+      throw err;
+    }
+  }
+
+  /** A second project-like folder (another copy of the records), real path, made in the tmp folder. */
+  function makeOther(prefix) {
+    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
+    for (const d of [['.ctoc', 'approvals'], ['.ctoc', 'state', 'verify'], ['.ctoc', 'streaming', 'questions', 'pending'], ['src']]) {
+      fs.mkdirSync(path.join(dir, ...d), { recursive: true });
+    }
+    return dir;
+  }
+
+  function copyTree(from, to) {
+    fs.mkdirSync(to, { recursive: true });
+    for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
+      const a = path.join(from, entry.name);
+      const b = path.join(to, entry.name);
+      if (entry.isDirectory()) copyTree(a, b);
+      else if (entry.isFile()) fs.copyFileSync(a, b);
+    }
+  }
+
+  beforeEach(() => {
+    R = makeRows();
+    cfg = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pr-cfg2-')));
+    put(path.join(cfg, 'settings.json'));
+    put(p('.ctoc', 'streaming', 'answers.jsonl'), '{}\n');
+    put(p('.ctoc', 'state', 'verify', 'x.json'));
+    put(p('.ctoc', 'approvals', 'a.json'));
+    put(p('.ctoc', 'settings.yaml'), 'x: 1');
+    put(p('.ctoc', 'regulatory-regimes', 'gdpr.yaml'), 'x: 1');
+    put(p('src', 'e.js'), 'x');
+  });
+  afterEach(() => { rm(cfg); cfg = null; });
+
+  rowTest('139 · the long-s attack: a Write to the answers log or a check record spelled with ſ is refused', () => {
+    for (const [what, real, alias] of [
+      ['answers log', p('.ctoc', 'streaming', 'answers.jsonl'), p('.ctoc', `${LONG_S}treaming`, 'answers.jsonl')],
+      ['check record', p('.ctoc', 'state', 'verify', 'x.json'), p('.ctoc', `${LONG_S}tate`, 'verify', 'x.json')],
+    ]) {
+      // Recorded in the label, not asserted: on this disk the alias is the real file or a different, absent one.
+      refusedBoth(write(alias), `Write ${what} spelled with ſ [sameFileOnDisk=${sameFileOnDisk(real, alias)}]`);
+    }
+  });
+
+  rowTest('140 · the other protected names spelled with ſ, and a hard link to the settings file, are refused', () => {
+    refusedBoth(write(p('.ctoc', `approval${LONG_S}`, 'x.json')), 'Write .ctoc/approvalſ/x.json');
+    refusedBoth(write(p('.ctoc', `${LONG_S}ettings.yaml`)), 'Write .ctoc/ſettings.yaml', REFUSAL_SETTINGS);
+    refusedBoth(write(p('.ctoc', `regulatory-regime${LONG_S}`, 'x.yaml')), 'Write .ctoc/regulatory-regimeſ/x.yaml', REFUSAL_SETTINGS);
+    fs.linkSync(p('.ctoc', 'settings.yaml'), p('src', 'h.yaml'));
+    refusedBoth(write(p('src', 'h.yaml')), 'Write a hard link to the settings file', REFUSAL_SETTINGS);
+  });
+
+  rowTest('141 · the same with no protected folder made yet', () => {
+    rm(p('.ctoc', 'approvals'), p('.ctoc', 'state'), p('.ctoc', 'streaming'), p('.ctoc', 'settings.yaml'),
+      p('.ctoc', 'regulatory-regimes'));
+    refusedBoth(write(p('.ctoc', `${LONG_S}treaming`, 'answers.jsonl')), 'absent: Write .ctoc/ſtreaming/answers.jsonl');
+    refusedBoth(write(p('.ctoc', `${LONG_S}tate`, 'verify', 'x.json')), 'absent: Write .ctoc/ſtate/verify/x.json');
+    refusedBoth(write(p('.ctoc', `approval${LONG_S}`, 'x.json')), 'absent: Write .ctoc/approvalſ/x.json');
+    refusedBoth(write(p('.ctoc', `${LONG_S}ettings.yaml`)), 'absent: Write .ctoc/ſettings.yaml', REFUSAL_SETTINGS);
+    refusedBoth(write(p('.ctoc', `regulatory-regime${LONG_S}`, 'x.yaml')), 'absent: Write .ctoc/regulatory-regimeſ/x.yaml', REFUSAL_SETTINGS);
+  });
+
+  rowTest('142 · upper-case, mixed-case and compatibility look-alikes are refused', () => {
+    refusedBoth(write(p('.CTOC', 'STREAMING', 'answers.jsonl')), 'Write .CTOC/STREAMING/answers.jsonl');
+    refusedBoth(write(p('.Ctoc', 'State', 'Verify', 'x.json')), 'Write .Ctoc/State/Verify/x.json');
+    refusedBoth(write(p('.CTOC', `${LONG_S}TATE`, 'VERIFY', 'x.json')), 'Write .CTOC/ſTATE/VERIFY/x.json');
+    refusedBoth(write(p('.ctoc', `APPROVAL${LONG_S}`, 'x.json')), 'Write .ctoc/APPROVALſ/x.json');
+    refusedBoth(write(p('.CTOC', `${LONG_S}ETTINGS.YAML`)), 'Write .CTOC/ſETTINGS.YAML', REFUSAL_SETTINGS);
+    refusedBoth(write(p('.ctoc', `${FULL_WIDTH_S}treaming`, 'answers.jsonl')), 'Write .ctoc/ｓtreaming/answers.jsonl (full-width s)');
+  });
+
+  rowTest('143 · the waiting folder stays writable under every folded spelling of its name', () => {
+    const pending = (...parts) => p('.ctoc', ...parts, 'implementation__x.md.json');
+    allowedBoth(write(pending('streaming', 'questions', 'pending')), 'Write the waiting folder');
+    allowedBoth(write(pending(`${LONG_S}treaming`, 'questions', 'pending')), 'Write .ctoc/ſtreaming/questions/pending/');
+    allowedBoth(write(pending('streaming', `que${LONG_S}tions`, 'pending')), 'Write .ctoc/streaming/queſtions/pending/');
+    allowedBoth(write(`${p('.ctoc', 'streaming', 'questions')}${path.sep}pending${FULL_WIDTH_SOLIDUS}implementation__x.md.json`),
+      'Write .ctoc/streaming/questions/pending／implementation__x.md.json (full-width solidus)');
+    // The project-folder row: a project whose own folder name NFKC changes.
+    const lig = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `pr-${LIGATURE_FI}-`)));
+    try {
+      for (const d of [['.ctoc', 'approvals'], ['.ctoc', 'state', 'verify'], ['.ctoc', 'streaming', 'questions', 'pending'], ['src'], ['plans', 'review']]) {
+        fs.mkdirSync(path.join(lig, ...d), { recursive: true });
+      }
+      allowedBoth(write(path.join(lig, '.ctoc', 'streaming', 'questions', 'pending', 'implementation__x.md.json'), lig),
+        'Write the waiting folder of a project whose folder name holds a ligature', { cwd: lig });
+    } finally {
+      rm(lig);
+    }
+  });
+
+  rowTest('144 · a link inside the waiting folder, or put in its place, opens nothing in the loaded hook', () => {
+    const questions = p('.ctoc', 'streaming', 'questions');
+    const pending = path.join(questions, 'pending');
+    fs.symlinkSync(p('.ctoc', 'streaming', 'answers.jsonl'), path.join(pending, 'l.json'));
+    refusedMain(write(path.join(pending, 'l.json')), '6(a) Write a file link in the waiting folder to the answers log');
+    rm(pending);
+    fs.symlinkSync(questions, pending, 'junction');
+    refusedMain(write(path.join(pending, 'y.json')), '6(b) Write into the waiting folder made a link to the store');
+    refusedMain(write(path.join(questions, 'review__x.md.json')), '6(b) Write a live question file');
+  });
+
+  rowTest('145 · a link, then `..`: the target lands where the file system goes', () => {
+    fs.symlinkSync(p('.ctoc', 'state'), p('src', 'L'), 'junction');
+    // Absolute targets are built as text: path.join would remove the `..` by name.
+    const viaL = (rest) => `${project}/src/L/../${rest}`;
+    refusedBoth(write(viaL('approvals/y.json')), 'Write src/L/../approvals/y.json');
+    refusedBoth(write(viaL('state/verify/y.json')), 'Write src/L/../state/verify/y.json');
+    refusedBoth(write(viaL('streaming/answers.jsonl')), 'Write src/L/../streaming/answers.jsonl');
+    refusedBoth(write(viaL('settings.yaml')), 'Write src/L/../settings.yaml', REFUSAL_SETTINGS);
+    refusedBoth(bash('echo x > src/L/../settings.yaml'), 'Bash echo x > src/L/../settings.yaml', REFUSAL_SETTINGS);
+    refusedBoth(bash('echo x > src/L/../regulatory-regimes/x.yaml'), 'Bash echo x > src/L/../regulatory-regimes/x.yaml', REFUSAL_SETTINGS);
+    refusedMain(bash('cd src/L && echo x > ../settings.yaml'), 'Bash cd src/L && echo x > ../settings.yaml', REFUSAL_SETTINGS);
+    refusedMain(bash('cd -P src/L/.. && echo x > settings.yaml'), 'Bash cd -P src/L/.. && echo x > settings.yaml', REFUSAL_SETTINGS);
+    refusedMain(write(`${project}/src/L/missing/../../approvals/y.json`), 'Write src/L/missing/../../approvals/y.json');
+
+    // Two links: src/K holds the relative contents M/../approvals (a junction to the tidied path on Windows).
+    fs.symlinkSync(p('.ctoc', 'state'), p('src', 'M'), 'junction');
+    if (process.platform === 'win32') fs.symlinkSync(`${project}/src/M/../approvals`, p('src', 'K'), 'junction');
+    else fs.symlinkSync('M/../approvals', p('src', 'K'), 'dir');
+    refusedMain(write(p('src', 'K', 'y.json')), 'Write src/K/y.json (two links)');
+
+    // The tidied reading: as written it leads to <other>/deep/N/y.json, tidied to src/N/y.json.
+    const other = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pr-oth3-')));
+    try {
+      fs.mkdirSync(path.join(other, 'deep', 'sub'), { recursive: true });
+      fs.symlinkSync(path.join(other, 'deep', 'sub'), p('src', 'X'), 'junction');
+      fs.symlinkSync(p('.ctoc', 'approvals'), p('src', 'N'), 'junction');
+      refusedMain(write(`${project}/src/X/../N/y.json`), 'Write src/X/../N/y.json (the tidied reading)');
+    } finally {
+      rm(other);
+    }
+
+    fs.mkdirSync(p('src', 'a'));
+    allowedBoth(write(`${project}/src/a/../b.js`), 'Write src/a/../b.js (a real folder)');
+    allowedBoth(write(`${project}/src/new/../b.js`), 'Write src/new/../b.js (an absent folder)');
+    allowedBoth(write(`${project}/src/L/missing/../x.json`), 'Write src/L/missing/../x.json (not a record)');
+    allowedBoth(bash('echo x > src/a/../b.js'), 'Bash echo x > src/a/../b.js');
+  });
+
+  rowTest('146 · a link whose target is spelled with ſ is refused', () => {
+    const target = p('.ctoc', `${LONG_S}tate`, 'verify');
+    fs.symlinkSync(target, p('src', 'l'), 'junction');
+    refusedBoth(write(p('src', 'l', 'y.json')),
+      `Write through a link to .ctoc/ſtate/verify [sameFileOnDisk=${sameFileOnDisk(p('.ctoc', 'state'), p('.ctoc', `${LONG_S}tate`))}]`);
+  });
+
+  rowTest("147 · another copy's records: a look-alike spelling and a link from this project are refused", () => {
+    const other = makeOther('pr-oth-');
+    try {
+      put(path.join(other, '.ctoc', 'state', 'verify', 'x.json'));
+      refusedBoth(write(path.join(other, '.ctoc', `${LONG_S}tate`, 'verify', 'x.json')), "Write another copy's .ctoc/ſtate/verify/x.json");
+      fs.symlinkSync(path.join(other, '.ctoc', 'state', 'verify'), p('src', 'o'), 'junction');
+      refusedBoth(write(p('src', 'o', 'y.json')), "Write through a link to another copy's check records");
+    } finally {
+      rm(other);
+    }
+  });
+
+  rowTest('148 · ordinary files stay allowed', () => {
+    allowedBoth(write(p('src', 'x.js')), 'Write src/x.js');
+    allowedBoth(payload('Edit', { file_path: p('src', 'e.js'), old_string: 'x', new_string: 'y' }), 'Edit src/e.js');
+    allowedBoth(write(p('src', 'e.js')), 'Write over src/e.js');
+    allowedBoth(write(p('.ctoc', `${LONG_S}tate`, 'notes.md')), 'Write .ctoc/ſtate/notes.md');
+    allowedBoth(write(p('.ctoc', 'state', 'verify-notes.md')), 'Write .ctoc/state/verify-notes.md');
+    allowedBoth(write(p('src', `${LONG_S}treaming.js`)), 'Write src/ſtreaming.js');
+    allowedBoth(write(p('src', 'streaming', 'answers.jsonl')), 'Write src/streaming/answers.jsonl');
+    allowedBoth(bash('echo x > src/x.js'), 'Bash echo x > src/x.js');
+    allowedBoth(bash(`ls .ctoc/${LONG_S}tate`), 'Bash ls .ctoc/ſtate');
+  });
+
+  rowTest("149 · the shell's link test compares by identity", () => {
+    const aliasSame = sameFileOnDisk(p('.ctoc', 'settings.yaml'), p('.ctoc', `${LONG_S}ettings.yaml`));
+    const longS = bash(`echo x > .ctoc/${LONG_S}ettings.yaml`);
+    if (aliasSame) refusedBoth(longS, 'Bash echo x > .ctoc/ſettings.yaml [sameFileOnDisk=true]', REFUSAL_SETTINGS);
+    else allowedBoth(longS, 'Bash echo x > .ctoc/ſettings.yaml [sameFileOnDisk=false]');
+    fs.linkSync(p('.ctoc', 'settings.yaml'), p('src', 'h.yaml'));
+    refusedBoth(bash('echo x > src/h.yaml'), 'Bash echo x > a hard link to the settings file', REFUSAL_SETTINGS);
+    put(p('.claude', 'settings.json'));
+    fs.linkSync(p('.claude', 'settings.json'), p('src', 'h.json'));
+    refusedAgent(bash('echo x > src/h.json'), 'Bash echo x > a hard link to an agent settings file', REFUSAL_AGENT_SETTINGS);
+    allowedMain(bash('echo x > src/h.json'), 'Bash echo x > a hard link to an agent settings file');
+  });
+
+  rowTest('150 · a file or an unreadable folder where a protected folder is expected locks nothing out', () => {
+    const state = p('.ctoc', 'state');
+    const threeAnswers = (label) => {
+      allowedBoth(write(p('src', 'x.js')), `${label}: Write src/x.js`);
+      refusedMain(write(p('.ctoc', 'state', 'verify', 'x.json')), `${label}: Write .ctoc/state/verify/x.json`);
+      refusedMain(write(p('src', 'V', 'x.json')), `${label}: Write src/V/x.json (its own path runs into it)`);
+    };
+    // (i) .ctoc/state is a file.
+    rm(state);
+    fs.writeFileSync(state, 'x');
+    fs.symlinkSync(p('.ctoc', 'state', 'verify'), p('src', 'V'), 'junction');
+    threeAnswers('(i) .ctoc/state a file');
+    // (ii) .ctoc/state is a folder this user cannot search (a no-op where chmod does not stop a search).
+    rm(state);
+    fs.mkdirSync(p('.ctoc', 'state', 'verify'), { recursive: true });
+    fs.chmodSync(state, 0o000);
+    try {
+      threeAnswers('(ii) .ctoc/state unsearchable');
+    } finally {
+      fs.chmodSync(state, 0o755);
+    }
+    // (iii) .ctoc itself is a file; the project root is still found because plans/ stands beside it.
+    rm(p('.ctoc'));
+    fs.writeFileSync(p('.ctoc'), 'x');
+    allowedBoth(write(p('src', 'x.js')), '(iii) .ctoc a file: Write src/x.js');
+    allowedBoth(bash('rm -f src/x.js'), '(iii) .ctoc a file: Bash rm -f src/x.js');
+    allowedBoth(bash('npm test'), '(iii) .ctoc a file: Bash npm test');
+    refusedMain(write(p('.ctoc', 'approvals', 'x.json')), '(iii) .ctoc a file: Write .ctoc/approvals/x.json');
+    refusedMain(bash('echo x > .ctoc/settings.yaml'), '(iii) .ctoc a file: Bash echo x > .ctoc/settings.yaml', REFUSAL_SETTINGS);
+  });
+
+  rowTest('151 · a decision the hook cannot finish within its budget is refused', () => {
+    // A deadline already past whenever decide() sets one: the wrapper lands on the instance the hook uses.
+    const preload = p('budget-spent.js');
+    fs.writeFileSync(preload, [
+      `const c = require(${JSON.stringify(RPC)});`,
+      'const set = c.setDeadline;',
+      "c.setDeadline = (at) => { if (typeof set === 'function') set(typeof at === 'number' ? Date.now() - 1 : at); };",
+      '',
+    ].join('\n'));
+    R.row('Write src/x.js through the budget-spent preload', () => assertRefused(spawnSync(process.execPath, ['--require', preload, ENTRY], {
+      cwd: project, input: JSON.stringify(write(p('src', 'x.js'))), encoding: 'utf8',
+    }), 'a Write decided past its budget'));
+    R.row('control: the same Write without the preload', () => assertAllowed(run(write(p('src', 'x.js'))), 'the control'));
+  });
+
+  rowTest('152 · a release missing the resolver still runs the shell\'s settings text rules', () => {
+    const plugin = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pr-nores-')));
+    try {
+      copyTree(path.join(REPO, 'src'), path.join(plugin, 'src'));
+      fs.rmSync(path.join(plugin, 'src', 'lib', 'real-path-confinement.js'));
+      const opts = { entry: path.join(plugin, 'src', 'hooks', 'protect-records.js'), env: { CLAUDE_CONFIG_DIR: cfg } };
+      R.row('main Bash echo x > .ctoc/settings.yaml', () => assertRefused(run(bash('echo x > .ctoc/settings.yaml'), opts),
+        'main Bash write to the settings file', REFUSAL_SETTINGS));
+      R.row('main Bash cat .ctoc/settings.yaml', () => assertAllowed(run(bash('cat .ctoc/settings.yaml'), opts), 'main Bash read of the settings file'));
+      R.row('agent Bash echo x > .claude/settings.json', () => assertRefused(run(asAgent(bash('echo x > .claude/settings.json')), opts),
+        'agent Bash write to a Claude Code settings file', REFUSAL_AGENT_SETTINGS_UNCHECKED));
+      R.row('main Write .ctoc/approvals/a.json', () => assertRefused(run(write(p('.ctoc', 'approvals', 'a.json')), opts),
+        'main Write of an approval record'));
+      R.row('main Write src/x.js', () => assertAllowed(run(write(p('src', 'x.js')), opts), 'main Write of an ordinary file'));
+    } finally {
+      rm(plugin);
+    }
+  });
+
+  rowTest('153 · a broken link of another name, reached through a link and `..`, cannot create a settings file', () => {
+    fs.mkdirSync(p('.claude', 'agents'), { recursive: true });
+    put(p('.claude', 'settings.json'));
+    fs.symlinkSync(p('.claude', 'agents'), p('src', 'y'), 'junction');
+    fs.symlinkSync(p('.claude', 'settings.local.json'), p('.claude', 'foo'));
+    refusedBoth(write(`${project}/src/y/../foo`), 'Write src/y/../foo (absolute)');
+    refusedBoth(write('src/y/../foo'), 'Write src/y/../foo (relative)');
+    refusedBoth(bash('echo x > src/y/../foo'), 'Bash echo x > src/y/../foo', REFUSAL_SETTINGS);
+    allowedBoth(write(`${project}/src/y/../fresh.txt`), 'Write src/y/../fresh.txt (the control)');
+    // Another copy's settings file through a link of another name (Decision 40).
+    const other = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pr-oth2-')));
+    try {
+      put(path.join(other, '.claude', 'settings.json'));
+      fs.mkdirSync(path.join(other, 'sub'));
+      fs.symlinkSync(path.join(other, '.claude', 'settings.json'), path.join(other, 'bar'));
+      fs.symlinkSync(path.join(other, 'sub'), p('src', 'w'), 'junction');
+      refusedAgent(write(`${project}/src/w/../bar`), "Write src/w/../bar (another copy's settings file)", REFUSAL_AGENT_SETTINGS);
+      allowedMain(write(`${project}/src/w/../bar`), "Write src/w/../bar (another copy's settings file)");
+    } finally {
+      rm(other);
+    }
+  });
+
+  rowTest("154 · a spent budget cannot switch off the background agent's shell settings check", () => {
+    // The first call through the module's EXPORT spends the budget (on a Bash payload that is the
+    // agent specs' root lookup); every call then delegates to the real function.
+    const preload = p('budget-spent-at-lookup.js');
+    fs.writeFileSync(preload, [
+      `const c = require(${JSON.stringify(RPC)});`,
+      'const resolve = c.resolveExisting;',
+      'let first = true;',
+      "c.resolveExisting = (q) => { if (first) { first = false; if (typeof c.setDeadline === 'function') c.setDeadline(Date.now() - 1); } return resolve(q); };",
+      '',
+    ].join('\n'));
+    const spawned = (input) => spawnSync(process.execPath, ['--require', preload, ENTRY], {
+      cwd: project, env: { ...process.env, CLAUDE_CONFIG_DIR: cfg }, input: JSON.stringify(input), encoding: 'utf8',
+    });
+    R.row('agent Bash echo x > src/x.js, budget spent at the root lookup', () => assertRefused(spawned(asAgent(bash('echo x > src/x.js'))),
+      'the agent shell settings check with a spent budget', REFUSAL_AGENT_SETTINGS));
+    R.row('main Bash echo x > src/x.js, same preload', () => assertAllowed(spawned(bash('echo x > src/x.js')), 'the main session with the preload'));
+    R.row('agent Bash echo x > src/x.js, no preload', () => assertAllowed(run(asAgent(bash('echo x > src/x.js')), ro()), 'the control without the preload'));
+  });
+});

@@ -174,6 +174,9 @@ const REFUSAL_SETTINGS = "CTOC refused this call because it writes, or could wri
   + "file or its regulatory profiles, which only CTOC's menu writes; tell the human what you wanted to "
   + 'change and let the menu change it.';
 
+/** The longest one decision may walk the file system (Claude Code lets a call run when its hook times out). */
+const DECISION_BUDGET_MS = 5000;
+
 /** The settings file or the profile folder as a path segment anywhere in an absolute path. */
 const REGIME_SEGMENT_RE = /(^|\/)\.ctoc\/+(settings\.yaml|regulatory-regimes)(\/|$)/i;
 /** The same two, relative to the project root, for the real-path (symbolic link) test. */
@@ -209,13 +212,14 @@ const STREAM_SUFFIX_RE = /:(\$i30)?:\$(data|index_allocation)$/iu;
 
 /**
  * Is an editing tool's absolute target the settings file or inside the profile folder — by
- * name in any letter case with `\` read as `/`, or through a symbolic link? The real-path
- * test refuses on any fault, as it does for the check records.
+ * name, Unicode-folded, on the path and on its real path, or by file identity
+ * (`resolvesUnder`) — or through a symbolic link? The real-path test refuses on any fault, as
+ * it does for the check records.
  * @param {string} abs
  * @returns {boolean}
  */
 function isRegimeFile(abs) {
-  if (REGIME_SEGMENT_RE.test(abs.replace(/\\/g, '/'))) return true;
+  if (namesProtected(abs, REGIME_SEGMENT_RE)) return true;
   const confinement = require('../lib/real-path-confinement');
   return REGIME_TARGETS.some((rel) => confinement.resolvesUnder(abs, rel, process.cwd()));
 }
@@ -269,9 +273,6 @@ function configDir() {
   }
 }
 
-/** A path segment folded for a name compare. */
-const foldSegment = (s) => s.normalize('NFKC').toLowerCase();
-
 /**
  * The files a background agent may not change, absolute — one list for both channels: the
  * project's `.claude/settings.json`, `.claude/settings.local.json` and `.ctoc/settings.json`;
@@ -282,6 +283,7 @@ const foldSegment = (s) => s.normalize('NFKC').toLowerCase();
  * @returns {string[]}
  */
 function protectedSettingsFiles(root) {
+  const { foldSegment } = require('../lib/real-path-confinement');
   const files = [
     path.join(root, '.claude', 'settings.json'),
     path.join(root, '.claude', 'settings.local.json'),
@@ -296,24 +298,6 @@ function protectedSettingsFiles(root) {
       path.join(path.dirname(claudeFolder), '.ctoc', 'settings.json'));
   }
   return files;
-}
-
-/**
- * What `p` names after links, as `'<dev>:<ino>'` from a `bigint` stat (Windows file IDs can pass
- * 2^53); null when nothing is there (ENOENT, ENOTDIR) or the file system reports inode 0 (FAT
- * and some network shares, where every file would compare equal); undefined on any other
- * fault. Never throws.
- * @param {string} p
- * @returns {string|null|undefined}
- */
-function fileIdentity(p) {
-  try {
-    const st = require('../lib/safe-fs').statSync(p, { bigint: true });
-    return String(st.ino) === '0' ? null : `${st.dev}:${st.ino}`;
-  } catch (err) {
-    const code = err && /** @type {NodeJS.ErrnoException} */ (err).code;
-    return code === 'ENOENT' || code === 'ENOTDIR' ? null : undefined;
-  }
 }
 
 /**
@@ -342,6 +326,7 @@ function isAbsentOrRegularFile(p) {
  * @returns {boolean}
  */
 function sameFileAsSettings(p, protectedFiles) {
+  const { fileIdentity } = require('../lib/real-path-confinement');
   const id = fileIdentity(p);
   if (id === undefined) return true;
   if (id !== null) return protectedFiles.some((file) => fileIdentity(file) === id);
@@ -355,7 +340,7 @@ function sameFileAsSettings(p, protectedFiles) {
  * Is an editing tool's target a file a background agent may not change? Any one of: the target
  * exists and is the same file (device and inode) as a protected file that exists — every
  * spelling the file system folds, every link, every hard link; the folded name of its lexical
- * path or of its real path is a protected name (`.claude/settings(.local).json`,
+ * path or of its real path (its real path read on the path collapsed by name and as written) is a protected name (`.claude/settings(.local).json`,
  * `.ctoc/settings.json`, or the config folder's `settings.json`, lexical or real); or a settings
  * file name reached through a `..` (Claude Code may resolve `link/..` physically, not by name).
  * A stat fault on the target other than "does not exist", or a fault of its real path, refuses;
@@ -388,8 +373,12 @@ function isAgentSettingsTarget(target, abs, raw = abs) {
   };
   if (names(abs)) return true;
   if (PARENT_SEGMENT_RE.test(String(target).normalize('NFKC')) && SETTINGS_NAME_RE.test(foldedName(target))) return true;
-  const real = confinement.resolveExisting(abs);
-  return !real.ok || names(real.real);
+  // Both readings, as the records checks: a link of another name reached through `link/..`
+  // leads where the as-written path goes, not where the name says (Decision 40).
+  return [...new Set([abs, raw])].some((form) => {
+    const real = confinement.resolveExisting(form);
+    return !real.ok || names(real.real);
+  });
 }
 
 /**
@@ -410,12 +399,14 @@ function unicodeLiteral(s, rx) {
  * (both NFKC-folded, escaped, flags `iu`), and a `dir` for the link test only when the file's
  * path relative to the root is a relative path whose real path resolves — mirroring what
  * `resolvesUnder` resolves — and is absent or a regular file (never a folder or a device such as
- * `/dev/null`), so no configuration can make the link test fault on, or contain, every operand. A file in a folder with no name (a filesystem
+ * `/dev/null`), so no configuration can make the link test fault on, or contain, every operand;
+ * once the decision budget is spent the `dir` is kept, so the link test refuses instead of being
+ * dropped. A file in a folder with no name (a filesystem
  * root) gets no spec.
  * @param {string} file - the protected file, absolute
  * @param {string} root - the project root (the working directory after `chdir`)
  * @param {{ok: boolean, real: (string|null)}} base - `resolveExisting(root)`
- * @param {{resolveExisting: function(string): {ok: boolean, real: (string|null)}}} confinement
+ * @param {{resolveExisting: function(string): {ok: boolean, real: (string|null)}, budgetSpent: function(): boolean}} confinement
  * @param {{escapeRegExp: function(string): string, safeRegExp: function(string, string): RegExp}} rx
  * @returns {Readonly<{dir?: string, segmentRe: RegExp, resolvedRe: RegExp}>|null}
  */
@@ -430,9 +421,12 @@ function fileSpec(file, root, base, confinement, rx) {
     resolvedRe: rx.safeRegExp(`(^|\\/)${f}\\/+${n}$`, 'iu'),
   };
   const rel = path.relative(root, file);
-  if (base.ok && rel !== '' && !path.isAbsolute(rel)) {
-    const real = confinement.resolveExisting(path.join(base.real, rel));
-    if (real.ok && isAbsentOrRegularFile(real.real)) spec.dir = rel;
+  if (rel !== '' && !path.isAbsolute(rel)) {
+    const real = base.ok ? confinement.resolveExisting(path.join(base.real, rel)) : null;
+    // Past the decision budget every walk faults: keep the link test, which then refuses at
+    // `resolvesUnder`'s entry, rather than drop it (Decision 46). Asked after the walk, which
+    // may itself run the budget out.
+    if (confinement.budgetSpent() || (real !== null && real.ok && isAbsentOrRegularFile(real.real))) spec.dir = rel;
   }
   return Object.freeze(spec);
 }
@@ -448,6 +442,22 @@ function agentSettingsSpecs() {
   const root = process.cwd();
   const base = confinement.resolveExisting(root);
   return protectedSettingsFiles(root).map((file) => fileSpec(file, root, base, confinement, rx)).filter(Boolean);
+}
+
+/**
+ * Does `abs`, or where it really leads, name a protected area by `re` once Unicode-folded
+ * (`foldedName`: NFKC, `\` as `/`, Windows trailing dots, spaces and stream suffixes dropped,
+ * `..` removed by text, lower case)? Root-independent, so another copy's areas count — a
+ * worktree's main checkout reached by a look-alike spelling or through a link. A real path that
+ * cannot be resolved adds nothing here: the identity checks beside this one refuse it.
+ * @param {string} abs
+ * @param {RegExp} re
+ * @returns {boolean}
+ */
+function namesProtected(abs, re) {
+  if (re.test(foldedName(abs))) return true;
+  const real = require('../lib/real-path-confinement').resolveExisting(abs);
+  return real.ok && re.test(foldedName(real.real));
 }
 
 /** A record area as a path segment anywhere in an absolute path; the waiting folder is excluded. */
@@ -937,6 +947,11 @@ function bashRefuses(command, cwdRel, base, bash, subagent = false) {
  */
 function decide(payload) {
   const { findProjectRoot } = require('../lib/project-root');
+  // The decision budget. A resolver that fails to load leaves no walk to bound and must never turn
+  // this line into a throw before the shell branch (Decision 35); the catch states what it absorbs.
+  let budgetResolver = null;
+  try { budgetResolver = require('../lib/real-path-confinement'); } catch { budgetResolver = null; }
+  if (budgetResolver !== null) budgetResolver.setDeadline(Date.now() + DECISION_BUDGET_MS);
   const root = findProjectRoot(payload.cwd || process.cwd());
   process.chdir(root); // the reused checks measure against process.cwd()
   const tool = payload.tool_name;
@@ -945,10 +960,13 @@ function decide(payload) {
     const target = edit.getTargetFile(payload);
     if (!target) return null;
     const abs = path.resolve(payload.cwd || root, target);
-    if (edit.isProtectedLedgerPath(abs) || edit.isProtectedVerifyPath(abs)
-      || edit.targetsStreamingLive(abs) || RECORD_SEGMENT_RE.test(abs.replace(/\\/g, '/'))) return REFUSAL;
-    if (isRegimeFile(abs)) return REFUSAL_SETTINGS;
+    // As written: `..` after a link is the link's real parent to the file system. Tidied (`abs`):
+    // what a tool that tidies the path before opening it would open. Either refusal refuses.
     const raw = path.isAbsolute(target) ? target : `${payload.cwd || root}${path.sep}${target}`;
+    const forms = raw === abs ? [abs] : [abs, raw];
+    if (forms.some((form) => edit.isProtectedLedgerPath(form) || edit.isProtectedVerifyPath(form)
+      || edit.targetsStreamingLive(form) || namesProtected(form, RECORD_SEGMENT_RE))) return REFUSAL;
+    if (forms.some(isRegimeFile)) return REFUSAL_SETTINGS;
     if (isSubagent(payload) && isAgentSettingsTarget(target, abs, raw)) return REFUSAL_AGENT_SETTINGS;
     return null;
   }

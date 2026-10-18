@@ -279,7 +279,9 @@ function isProtectedVerifyPath(filePath) {
  * the quarantine and is therefore DENIED, not laundered through the carve-out.
  *
  * The quarantine carve-out is decided by NAME arithmetic ONLY (`isUnderProtectedDir`
- * on the normalized path): a path we cannot normalize (`norm === null`) is never
+ * on the normalized path, on the project-relative path Unicode-folded (NFKC) before its last
+ * tidying, so a look-alike spelling of the waiting folder stays writable and one of the store
+ * does not): a path we cannot normalize (`norm === null`) is never
  * carved out, and it short-circuits BEFORE the real-path check so a legitimate new
  * pending file — which really DOES land under `.ctoc/streaming/` — is not denied by
  * `resolvesUnder`.
@@ -296,19 +298,28 @@ function isProtectedVerifyPath(filePath) {
  * fault direction conflicts with keeping legitimate new pending writes working;
  * planting that symlink already requires a prior filesystem write the tool hooks do
  * not grant. Left as a bounded residual per the plan's Decisions Taken Under Ambiguity.
+ * The loaded hook (`protect-records.js`) refuses such a link all the same: its
+ * root-independent test reads the target's real path, which names the live store.
  *
  * @param {string} filePath - the tool-call target (relative or absolute)
  * @returns {boolean} true iff the normalized path is under .ctoc/streaming/ but not
  *   under the pending/ quarantine (DENY), or the question could not be answered
  */
 function targetsStreamingLive(filePath) {
-  const norm = normalizeForProtection(filePath);
+  // Unicode-folded (NFKC: the long s is an s; `isUnderProtectedDir` folds letter case), so a
+  // look-alike spelling of the waiting folder stays writable and one of the store does not.
+  // Folded BEFORE the last tidying: a full-width solidus or full stop folds to `/` or `.`, so
+  // `pending／..／x` folds to `pending/../x` and is tidied out of pending. The fold runs on the
+  // project-relative path, never on the absolute one, so a project folder whose own name NFKC
+  // changes still relativizes (Decision 33).
+  const rel = normalizeForProtection(filePath);
+  const folded = rel === null ? null : normalizeForProtection(rel.normalize('NFKC'));
   // The gate-critic's ONE sanctioned write target — carved out by name so the
   // quarantine stays writable. `pending/../x` has already normalized out of pending.
-  if (isUnderProtectedDir(norm, STREAMING_PENDING_DIR)) return false;
+  if (isUnderProtectedDir(folded, STREAMING_PENDING_DIR)) return false;
   // Everything else under .ctoc/streaming/ (live questions file, answers log) is
   // denied. Arithmetic OR real-path, exactly like the ledger/verify guards.
-  return isUnderProtectedDir(norm, STREAMING_DIR)
+  return isUnderProtectedDir(folded, STREAMING_DIR)
     || (realPathConfinement !== null
       && realPathConfinement.resolvesUnder(filePath, STREAMING_DIR, process.cwd()));
 }
