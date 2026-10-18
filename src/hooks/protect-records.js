@@ -610,26 +610,33 @@ function subagentMenuRefusal(command, base) {
 }
 
 /**
- * A background agent's command that is not one plain call and hands a runtime a script word that
- * is the menu (resolved from the working directory or a directory it cds into), names start.js or
- * a src/commands folder, is built with `$` or a backtick, or is a wildcard while the command names
- * src/commands. Such a spelling (`sw${E}eep --con${X}firm`) would otherwise slip past the text test.
- * @param {string} command
- * @param {string} base - the session's working directory
- * @returns {string|null}
- */
-/**
- * The command without the body of a quoted here-document whose line names `start.js` as its script:
- * that body is the menu script's own standard input (an owner's reply, say), data the shell never
- * expands. Any other here-document (`bash <<'EOF'`, `node <<'EOF'`) feeds a program that may run it,
- * so its body stays in the text that is read.
+ * The command without the body of the menu's own reply call: exactly
+ * `node <path>/src/commands/start.js inbox answer <id> --stdin <<'TAG'`, body, `TAG`, and nothing
+ * else (no word before or after on the first line, no pipe, no second command, no text after the
+ * closing line, no `TAG` line inside the body). That body is the menu script's own standard input
+ * (an owner's reply), data no shell expands. Every other here-document (`bash <<'EOF'`,
+ * `echo start.js; bash <<'EOF'`) feeds a program that may run it, so its body stays in the text read.
  * @param {string} command
  * @returns {string}
  */
 function withoutMenuStdin(command) {
-  return command.replace(/^([^\n]*start\.js[^\n]*<<-?\s*'([A-Za-z_][\w.-]*)'[^\n]*)\n[\s\S]*?\n\2[ \t]*(?=\n|$)/gm, '$1');
+  const head = /^(\s*node\s+(?:"[^"\n]*\/src\/commands\/start\.js"|[\w.~/-]*\/src\/commands\/start\.js)\s+inbox\s+answer\s+[\w.-]+\s+--stdin\s+<<'([A-Za-z_][\w.-]*)'[ \t]*)\n/.exec(command);
+  if (!head) return command;
+  const lines = command.slice(head[0].length).replace(/\n$/, '').split('\n');
+  const isTag = (line) => line.replace(/[ \t]+$/, '') === head[2];
+  // The closing line must be the LAST line: a tag line earlier ends the body, so text follows it.
+  return lines.findIndex(isTag) === lines.length - 1 ? head[1] : command;
 }
 
+/**
+ * A background agent's command that is not one plain call and hands a runtime a script word that
+ * is the menu (resolved from the working directory or a directory it cds into), names start.js or
+ * a src/commands folder, is built with `$` or a backtick, or is a wildcard while the command names
+ * src/commands. Such a spelling (`sw${E}eep --con${X}firm`) would otherwise slip past the text test.
+ * @param {string} rawCommand
+ * @param {string} base - the session's working directory
+ * @returns {string|null}
+ */
 function sweepBypassRefusal(rawCommand, base) {
   if (simpleWords(rawCommand) !== null) return null;
   const command = withoutMenuStdin(rawCommand);

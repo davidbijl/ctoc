@@ -767,6 +767,26 @@ describe('only the human confirms a sweep (owner, 2026-10-18)', () => {
     assertRefused(run(agent(bash(shell))), 'shell here-document body', REFUSAL_SWEEP_CONFIRM + PLAIN);
   });
 
+  test('103c · the here-document exemption holds only when the menu answer call is the whole command', () => {
+    const B = 'node src/commands/start.js menu task sw${E}eep --con${E}firm none';
+    const ans = `${MENU} inbox answer 1 --stdin`;
+    const shapes = [
+      `echo start.js; bash <<'EOF'\n${B}\nEOF`,
+      `: start.js && bash <<'EOF'\n${B}\nEOF`,
+      `bash -s start.js <<'EOF'\n${B}\nEOF`,
+      `bash /dev/stdin start.js <<'EOF'\n${B}\nEOF`,
+      `sh -c 'cat | sh' start.js <<'EOF'\n${B}\nEOF`,
+      `${ans} <<'A'; bash <<'B'\nx\nA\n${B}\nB`,
+      `${ans} <<'EOF' | bash\nx $(${B})\nEOF`,
+      `${ans} <<'EOF'\nx\nEOF\nbash <<'EOF'\n${B}\nEOF`,
+      `${ans} <<'EOF'\nx\nEOF\n${B}`,
+      `${ans} <<'EOF'\nx\nEOF\n${B}\nEOF`,
+    ];
+    for (const command of shapes) {
+      assertRefused(run(agent(bash(command))), command, REFUSAL_SWEEP_CONFIRM + PLAIN);
+    }
+  });
+
   test('104 · ordinary background-agent calls stay allowed', () => {
     for (const command of [
       `${MENU} menu task complete t1 --summary "one line"`,
