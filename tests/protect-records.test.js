@@ -683,3 +683,53 @@ describe("the regulatory settings and profiles are protected like the records (o
     assertAllowed(run(write(p('.ctoc', 'settings.yaml.example'))), 'a different file name');
   });
 });
+
+describe('only the human confirms a sweep (owner, 2026-10-18)', () => {
+  const REFUSAL_SWEEP_CONFIRM = 'CTOC refused this call because only the human confirms which builds go back '
+    + 'to the queue; report the sweep preview and let the main session ask him. A command that only '
+    + 'mentions both words is refused too: search one word at a time, and commit with git commit -F <file>.';
+  const MENU = 'node "${CLAUDE_PLUGIN_ROOT}/src/commands/start.js"';
+  const agent = (input, id = 'a1b2c3') => ({ ...input, agent_id: id, agent_type: 'iron-loop-executor' });
+  const CONFIRMS = [
+    `${MENU} menu task sweep --confirm p1@0123456789ab`,
+    `${MENU} menu task sweep --confirm none`,
+    `${MENU} 'menu' 'task' 's'w'eep' --con"firm" none`,
+    `${MENU} menu task SWEEP --CONFIRM none`,
+    `node -e "require('./src/lib/plan-recovery').applySweep(process.cwd(),{confirm:[]})"`,
+  ];
+
+  test('97 · a background agent cannot confirm a sweep, however it is quoted or cased', () => {
+    for (const command of CONFIRMS) {
+      assertRefused(run(agent(bash(command))), `${command} (background agent)`, REFUSAL_SWEEP_CONFIRM);
+    }
+  });
+
+  test('98 · the same commands from the main session, and from an empty agent id, are allowed', () => {
+    for (const command of CONFIRMS) {
+      assertAllowed(run(bash(command)), `${command} (main session)`);
+      assertAllowed(run(agent(bash(command), '')), `${command} (empty agent id)`);
+    }
+  });
+
+  test('99 · a background agent may run the preview', () => {
+    assertAllowed(run(agent(bash(`${MENU} menu task sweep`))), 'preview');
+    assertAllowed(run(agent(bash(`${MENU} menu task sweep --live-agent-ids a,b`))), 'preview with a live list');
+  });
+
+  test('100 · the accepted false positive is pinned: both words in one command are refused, one word is not', () => {
+    assertRefused(run(agent(bash('grep -n "sweep --confirm" src/commands/start.md'))), 'grep for both words', REFUSAL_SWEEP_CONFIRM);
+    assertAllowed(run(agent(bash('grep -n sweep src/commands/start.md'))), 'grep for one word');
+  });
+
+  test('101 · the fail rule: a crash on a background agent’s sweep confirmation refuses with the sweep sentence', () => {
+    const missing = path.join(os.tmpdir(), `ctoc-no-such-folder-${process.pid}-${Date.now()}`);
+    const crashing = [
+      payload('Bash', { command: `${MENU} menu task sweep --confirm none`, description: 'd' }, missing),
+      payload('Bash', { command: ['menu task sweep --confirm none'], description: 'd' }),
+    ];
+    for (const call of crashing) {
+      assertRefused(run(agent(call)), 'crash, background agent', REFUSAL_SWEEP_CONFIRM);
+      assertAllowed(run(call), 'crash, main session');
+    }
+  });
+});

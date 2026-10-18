@@ -65,6 +65,15 @@
  *   • RETENTION NEVER SEVERS A LIVE EDGE (R3-B item 9). A terminal task still referenced by
  *     a surviving task's `blockedBy` is NOT swept, however old: sweeping it would make the
  *     next pass fail its dependent as `dep-missing` even though the dependency SUCCEEDED.
+ *   • THE SWEEP'S TWO OPTIONS AND THE PLACEHOLDER RULE (owner, 2026-10-18). `menu task sweep`
+ *     (plan-recovery.sweepVerdict / applySweep) calls this pure core with `releaseBuilds` (a
+ *     RUNNING implement build with a plan is HELD — never terminated — unless its id is named
+ *     there) and `onePass` (an age-only orphaning whose age already passed the presumed-dead
+ *     bound is released in the same pass instead of waiting for the next). Both are inert when
+ *     absent. An agent id equal to the task's own id is the placeholder `menu task start`
+ *     recorded up to 6.14.130: `isRealAgentId` reads it as UNKNOWN, never as evidence of death.
+ *     Opening the dashboard never calls `reconcileState`; only a confirmed sweep and the
+ *     Doctor "Repair state" key do.
  *   • UNSATISFIABLE SURFACING (C1-1/C1-7). A queued task that can NEVER run — a dead dep
  *     (failed/orphaned/cancelled/missing) or a blockedBy cycle, per
  *     task-registry.unsatisfiableTasks — is marked `failed` with a loud result and pushed
@@ -216,6 +225,19 @@ function cloneTask(t) {
   return copy;
 }
 
+/**
+ * A real agent id: a non-empty string that is not the task's own id. An id equal to the task id is
+ * the placeholder `menu task start` recorded up to 6.14.130 — read as UNKNOWN, never as evidence
+ * of death (owner, 2026-10-18). Pure; the one encoding the reconcile, the sweep and `menu task
+ * start` share.
+ * @param {unknown} agentId
+ * @param {string} taskId
+ * @returns {boolean}
+ */
+function isRealAgentId(agentId, taskId) {
+  return typeof agentId === 'string' && agentId !== '' && agentId !== taskId;
+}
+
 // ── pure reconcile ──────────────────────────────────────────────────────────────
 
 /**
@@ -244,6 +266,13 @@ function cloneTask(t) {
  *   file quarantine is released once its total age (now − ts.started) reaches this multiple of
  *   the kind-aware staleness floor, even with the live list absent forever. Default
  *   DEFAULT_PRESUMED_DEAD_MULTIPLE (2×).
+ * @param {Array<string>|Set<string>|null} [opts.releaseBuilds]  the sweep's hold: when PRESENT,
+ *   a `running` implement task with a plan is never terminated unless its id is in this list
+ *   (empty list ⇒ every such build is held). Absent ⇒ today's behaviour, byte for byte.
+ * @param {boolean} [opts.onePass]  the sweep's single pass: an age-only orphaning whose age
+ *   already reached presumedDeadMultiple × the kind floor (or whose start is unparseable) is
+ *   recorded as `presumed-dead` and listed in `report.quarantineReleased` at once, instead of
+ *   carrying the `staleness` marker until the next pass.
  * @returns {{tasks:{version:number, generation?:number, seq:number, tasks:Array<object>}, report:ReconcileReport}}
  */
 function reconcile(tasks, opts = {}) {
@@ -304,6 +333,11 @@ function reconcile(tasks, opts = {}) {
     ? null
     : new Set(Array.from(opts.liveAgentIds, x => String(x)));
 
+  // The sweep's hold on builds (null ⇒ no hold, today's behaviour).
+  const releaseBuilds = opts.releaseBuilds == null
+    ? null
+    : new Set(Array.from(opts.releaseBuilds, String));
+
   const kept = [];
   let skipped = 0;
 
@@ -320,7 +354,7 @@ function reconcile(tasks, opts = {}) {
       // about this task (R3-B item 5). With no recorded id, "not in the live list" is
       // MISSING INFORMATION, not evidence of death — so such a task falls to the staleness
       // backstop even when a live list IS present.
-      const hasRecordedId = t.agentTaskId != null;
+      const hasRecordedId = isRealAgentId(t.agentTaskId, t.id);
       const hasLive = live !== null && hasRecordedId && live.has(String(t.agentTaskId));
       const startedMs = parseTs(t.ts && t.ts.started);
       const ageMs = now - startedMs;
@@ -349,11 +383,14 @@ function reconcile(tasks, opts = {}) {
         }
       }
 
+      // A running build the sweep was not told to release is HELD, never terminated.
+      const held = releaseBuilds !== null && t.status === 'running' && t.kind === 'implement' &&
+        t.plan != null && !releaseBuilds.has(t.id);
       let terminate = deadlineForced;
       let stalenessBased = false;
       if (deadlineForced) {
         terminate = true;                     // the deadline beats liveness (see above)
-      } else if (hasLive) {
+      } else if (hasLive || held) {
         terminate = false;                    // live agent confirmed → leave as-is
       } else if (young) {
         terminate = false;                    // just-dispatched race → grace window
@@ -383,12 +420,24 @@ function reconcile(tasks, opts = {}) {
             // reserves the files of every orphaned task still marked `orphanReason:'staleness'`,
             // and the across-passes branch below flips it to `confirmed-dead` (releasing the
             // files) only once the harness confirms the agent gone.
-            t.result = {
-              ok: false,
-              orphanReason: 'staleness',
-              summary: 'orphaned on staleness alone — the agent was never confirmed dead ' +
-                'and may still be editing its files'
-            };
+            // The sweep's single pass (`onePass`): an age that already passed the presumed-dead
+            // bound releases the files now, with the same record the across-passes branch writes.
+            const presumed = opts.onePass === true &&
+              (!Number.isFinite(startedMs) || ageMs >= kindThreshold * presumedDeadMultiple);
+            t.result = presumed
+              ? {
+                  ok: false,
+                  orphanReason: 'presumed-dead',
+                  summary: 'orphaned — the agent was never confirmed alive and the orphan aged past ' +
+                    'the presumed-dead bound; its files are released so the queue can make progress'
+                }
+              : {
+                  ok: false,
+                  orphanReason: 'staleness',
+                  summary: 'orphaned on staleness alone — the agent was never confirmed dead ' +
+                    'and may still be editing its files'
+                };
+            if (presumed) report.quarantineReleased.push(t.id);
             // Loud detail so the inbox can warn "orphaned on staleness alone — may still
             // be alive" (C1-5). Only the backstop path; confirmed-absent is not here.
             report.stalenessOrphaned.push({
@@ -426,7 +475,7 @@ function reconcile(tasks, opts = {}) {
       // The marker is flipped so a later pass does not re-reserve the freed files (which would
       // re-strand new queued work) — confirmed-dead records the stronger evidence and takes
       // precedence over presumed-dead when both hold.
-      const hasRecordedId = t.agentTaskId != null;
+      const hasRecordedId = isRealAgentId(t.agentTaskId, t.id);
       const confirmedDead = live !== null && hasRecordedId && !live.has(String(t.agentTaskId));
       const startedMs = parseTs(t.ts && t.ts.started);
       const presumedDeadMs = staleThresholdFor(t.kind) * presumedDeadMultiple;
@@ -795,6 +844,7 @@ function msgOf(err) {
 
 module.exports = {
   reconcile,
+  isRealAgentId,
   reconcileState,
   applyQuarantine,
   sweepTempArtifacts,

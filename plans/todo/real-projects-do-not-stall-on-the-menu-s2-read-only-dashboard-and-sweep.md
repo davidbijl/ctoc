@@ -2156,3 +2156,79 @@ wiring table, and the owner's "only the human confirms" against cases 97–101. 
 the one `if` in `bashRefuses`, the one fail-rule branch and the header sentences; that `git diff
 -- src/lib/actions.js` is the one export line; that the documented counts match disk; and that
 the merge notes still match the local main lines they name.
+
+## Execution Record
+
+### Step 8 TEST — red results (before any source change, origin/main 6.14.130)
+
+- `tests/the-dashboard-never-sends-live-work-back.test.js`: 41 of 42 red, 1 green (B20f, which
+  pins "a malformed preview prints no sweep line", true on origin/main for lack of a preview).
+  - **B0** red for the right reason: "the live build's plan must still be in the building folder
+    (it was thrown back to the build queue)"; the recorded agent id was `'t1'`.
+  - **B1** red: "a render changed the tree" — the render deleted the old temporary file, rewrote
+    `tasks.json`, moved a plan to `todo/`, wrote `cleanup.json` and the plan index.
+  - **B3/B5**: "actual 't1', expected null"; "--agent-id <task id> accepted, expected refusal".
+  - **B10**: no sweep route (`res.ok` not true; "Unknown task subcommand: sweep").
+  - **B2, B4, B6–B9, B11–B14, B16–B23**: no `menu task sweep` route (`Cannot read properties of
+    undefined (reading 'builds')` / `refused` undefined). **B8**'s fixture part (the five real
+    claims through `startAgent`, in the order of `todo-order.json`) passed on origin/main; only
+    the sweep part was red.
+  - **B12/B13**: the render still orphaned the build and printed no sweep line.
+  - **B17**: zero git calls (the work check did not exist).
+- `tests/protect-records.test.js` 97, 100, 101 red (exit 0 instead of 2); 98 and 99 green, as the plan says.
+- `tests/menu-protocol.test.js` scenario 2.12: five red (start.md lacks the stamps, the guard
+  finds `menu task start <taskId>` after a launch, the sweep row and section are absent).
+- Replaced cases, red against origin/main: `plan-recovery-wiring` 1, 2, 4, 5; `dashboard-wedge-reports`
+  (age-alone line); `dashboard-wedge-fault` (3 cases); `dashboard-reconcile-failure` 1, 4, 5, 6, 8, 9,
+  10, 11; `menu-screens-coverage` (the 3-hour task line); `tab-modules` six Doctor "2" cases;
+  `w10-live-agent-reconcile` 1+2, 3, 4, 5, 6, 6b.
+
+### Step 9 PREPARE — findings (scratch repository under /private/tmp/claude-501/, not the project)
+
+- `git version 2.54.0 (Apple Git-157)`, above the 2.36 minimum.
+- Confirmed by running: `--diff-merges=first-parent` (a merge prints its changes against the first
+  parent as ordinary lines); `-c core.quotePath=false` prints `src/café.js` verbatim (default prints
+  `"src/caf\303\251.js"`); a pathspec-limited `-M` log (`:(glob)plans/*/p.md` plus a source file) prints
+  the claim as one `R100\tplans/todo/p.md\tplans/in-progress/p.md` line; `%S` prints the ref name
+  (`main`, `other-b`); `--no-optional-locks status --porcelain -z --untracked-files=all` prints
+  ` M src/café.js` NUL-terminated; `git worktree list --porcelain -z` prints NUL-separated fields with an
+  empty field ending each block; `rev-parse --show-prefix` prints an empty line at the top; an unknown
+  option makes `worktree list` exit 129. The log format also prints one empty line between a record's
+  header and its name-status lines, which the parser drops.
+- All line ranges the plan cites were found where it says. The settings-file protection branch is
+  already part of 6.14.130 in `protect-records.js` (cases 90–96 exist), so cases 97–101 follow case 96.
+
+### Step 10 IMPLEMENT — files changed
+
+`src/lib/task-reconcile.js`, `src/lib/plan-recovery.js`, `src/lib/actions.js` (one export line),
+`src/lib/menu-screens.js`, `src/tabs/tools.js`, `src/hooks/protect-records.js`, `src/commands/start.md`,
+`docs/ENFORCEMENT.md`; tests: the new file, `w10-live-agent-reconcile`, `plan-recovery-wiring`,
+`dashboard-wedge-reports`, `dashboard-wedge-fault`, `dashboard-reconcile-failure`,
+`menu-screens-coverage`, `tab-modules`, `menu-protocol`, `protect-records`. `CLAUDE.md` and `README.md`
+are left for Step 15 (the count is set from disk). Affected test files: 600 tests, 0 failed; lint and
+typecheck clean on the changed files.
+
+## Decisions Taken Under Ambiguity (build)
+
+- **The unreadable-plan half of B11(e) cannot use a folder named like the plan.** `readPlans` skips an
+  entry whose read fails, so the build's plan is absent from the in-progress listing and the row reads
+  `not-here`, never `the plan file cannot be read`. The case instead makes the work check's second read
+  of the plan file fail (the listing's read succeeds), which is the path the plan means.
+- **A corrupt `tasks.json` (`{not json`) does not print `could not be read (load-failed)`.** The loader
+  fails open (no throw), so the preview sees an empty view and, as in the kept case 3 of
+  `dashboard-reconcile-failure`, stays quiet; the agent status line speaks. B1 asserts that and that
+  the only files changed are `.ctoc/logs/` entries holding only `registry_load_failed` events. The
+  `load-failed` line is printed when the loader throws, as the plan says.
+- **Step 3 and step 5 of the record reading test claim lines against every candidate of the check, not
+  only the tasks undecided when the record is reached.** B8 requires it: the log lists newest first, so
+  the commit that holds four claims is read after two of those four builds were already decided as
+  having work, and "undecided only" read the batch as work for the other two. A decision is still taken
+  only for undecided tasks.
+- Rows carry two internal fields the plan does not list (`staleMarker`, and `liveHash` on the verdict)
+  so the apply can tell an already-orphaned build that still carried the staleness marker, and can log
+  the live list's fingerprint without recomputing it. The sweep screen's `sweep.builds` entries carry only
+  the plan's listed fields.
+- Names that are `.` or `..` are refused by the safe-name test in addition to the segment character set.
+- A git status whose worktree folder is missing counts as git failed (fail closed), and a status is
+  skipped when a task has no declared file left after the `plans/` entries are dropped (an empty
+  pathspec would list every change).

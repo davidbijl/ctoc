@@ -182,16 +182,21 @@ function mockSync(mocks = {}) {
   };
 }
 
-// Mock task-reconcile module (the doctor "Repair state" action).
-// Default: a healthy reconcile that changed nothing.
-function mockReconcile(mocks = {}) {
+// Mock plan-recovery module (the doctor "Repair state" action is the sweep that names nothing).
+// Contract replaced 2026-10-18 (owner): Repair state no longer reconciles and moves plans; it
+// applies only the task changes that move no plan, and a dead build waits for the human to name
+// it in `menu task sweep` — plan real-projects-do-not-stall-on-the-menu-s2. No tab requires
+// task-reconcile any more, so its mock is gone.
+// Default: a healthy sweep that changed nothing.
+function mockPlanRecovery(mocks = {}) {
   return {
-    reconcileState: mocks.reconcileState || (() => ({
+    applySweep: mocks.applySweep || (() => ({
+      ok: true,
       report: {
         orphaned: [], swept: [], cancelled: [], unsatisfiable: [],
         quarantineReleased: [], corrupt: null
       },
-      promote: []
+      waiting: 0
     }))
   };
 }
@@ -259,8 +264,8 @@ function loadTabWithMocks(tabName, mocks = {}) {
     if (id === '../src/lib/sync' || id.endsWith('/lib/sync')) {
       return mockSync(mocks.sync);
     }
-    if (id === '../src/lib/task-reconcile' || id.endsWith('/lib/task-reconcile')) {
-      return mockReconcile(mocks.reconcile);
+    if (id === '../src/lib/plan-recovery' || id.endsWith('/lib/plan-recovery')) {
+      return mockPlanRecovery(mocks.planRecovery);
     }
     if (id === '../src/lib/enforcement-log' || id.endsWith('/lib/enforcement-log')) {
       return mockEnforcementLog(mocks.enforcementLog);
@@ -881,18 +886,19 @@ describe('Tab Modules - handleKey()', () => {
       assert.strictEqual(app.doctorInput, '', 'Must not type the digit into the question box');
     });
 
-    test('2 repairs state via reconcileState and reports what it fixed', () => {
-      let repairPath = null;
+    test('2 repairs state via the sweep that names nothing and reports what it fixed', () => {
+      let call = null;
       const tools = loadTabWithMocks('tools', {
-        reconcile: {
-          reconcileState: (root) => {
-            repairPath = root;
+        planRecovery: {
+          applySweep: (root, opts) => {
+            call = { root, opts };
             return {
+              ok: true,
               report: {
-                orphaned: [{ id: 't1' }, { id: 't2' }], swept: [{ id: 't3' }],
+                orphaned: ['t1', 't2'], swept: ['t3'],
                 cancelled: [], unsatisfiable: [], quarantineReleased: [], corrupt: null
               },
-              promote: []
+              waiting: 0
             };
           }
         }
@@ -902,7 +908,7 @@ describe('Tab Modules - handleKey()', () => {
       const handled = tools.handleKey(createMockKey('2', { sequence: '2' }), app);
 
       assert.strictEqual(handled, true, 'Should handle the key');
-      assert.strictEqual(repairPath, '/test/project', 'Should reconcile the project path');
+      assert.deepStrictEqual(call, { root: '/test/project', opts: { confirm: [] } }, 'Should sweep the project naming no plan');
       assert.ok(app.message.includes('3'), 'Should report 3 repaired issues');
       assert.ok(/repair/i.test(app.message), 'Should mention repair');
       assert.strictEqual(app.doctorInput, '', 'Must not type the digit into the question box');
@@ -910,13 +916,14 @@ describe('Tab Modules - handleKey()', () => {
 
     test('2 reports a single repaired issue in the singular', () => {
       const tools = loadTabWithMocks('tools', {
-        reconcile: {
-          reconcileState: () => ({
+        planRecovery: {
+          applySweep: () => ({
+            ok: true,
             report: {
-              orphaned: [{ id: 't1' }], swept: [], cancelled: [], unsatisfiable: [],
+              orphaned: ['t1'], swept: [], cancelled: [], unsatisfiable: [],
               quarantineReleased: [], corrupt: null
             },
-            promote: []
+            waiting: 0
           })
         }
       });
@@ -929,7 +936,7 @@ describe('Tab Modules - handleKey()', () => {
     });
 
     test('2 reports a healthy state when nothing needed repair', () => {
-      const tools = loadTabWithMocks('tools'); // default reconcile: all empty
+      const tools = loadTabWithMocks('tools'); // default sweep: all empty
 
       const app = createMockApp({ toolMode: '1' });
       tools.handleKey(createMockKey('2', { sequence: '2' }), app);
@@ -939,11 +946,12 @@ describe('Tab Modules - handleKey()', () => {
 
     test('2 surfaces a corrupt task registry legibly', () => {
       const tools = loadTabWithMocks('tools', {
-        reconcile: {
-          reconcileState: () => ({
+        planRecovery: {
+          applySweep: () => ({
+            ok: true,
             report: { orphaned: [], swept: [], cancelled: [], unsatisfiable: [],
               quarantineReleased: [], corrupt: { reason: 'load-failed' } },
-            promote: []
+            waiting: 0
           })
         }
       });
@@ -952,6 +960,55 @@ describe('Tab Modules - handleKey()', () => {
       tools.handleKey(createMockKey('2', { sequence: '2' }), app);
 
       assert.ok(/load-failed/.test(app.message), 'Should name the corruption reason');
+    });
+
+    test('2 says when the task changes could not be saved', () => {
+      const tools = loadTabWithMocks('tools', {
+        planRecovery: {
+          applySweep: () => ({
+            ok: true,
+            report: { orphaned: [], swept: [], cancelled: [], unsatisfiable: [],
+              quarantineReleased: [], corrupt: null, saveFailed: 'disk full' },
+            waiting: 0
+          })
+        }
+      });
+
+      const app = createMockApp({ toolMode: '1' });
+      tools.handleKey(createMockKey('2', { sequence: '2' }), app);
+
+      assert.ok(/could NOT be saved/.test(app.message), app.message);
+      assert.ok(/disk full/.test(app.message), app.message);
+    });
+
+    test('2 says how many builds wait for the human to name them', () => {
+      const tools = loadTabWithMocks('tools', {
+        planRecovery: {
+          applySweep: () => ({
+            ok: true,
+            report: { orphaned: [], swept: [], cancelled: [], unsatisfiable: [],
+              quarantineReleased: [], corrupt: null },
+            waiting: 2
+          })
+        }
+      });
+
+      const app = createMockApp({ toolMode: '1' });
+      tools.handleKey(createMockKey('2', { sequence: '2' }), app);
+
+      assert.ok(/2 builds wait for you to name them: menu task sweep/.test(app.message), app.message);
+    });
+
+    test('2 turns a throw from the sweep into one plain message and still handles the key', () => {
+      const tools = loadTabWithMocks('tools', {
+        planRecovery: { applySweep: () => { throw new Error('boom\u001b[31m'); } }
+      });
+
+      const app = createMockApp({ toolMode: '1' });
+      const handled = tools.handleKey(createMockKey('2', { sequence: '2' }), app);
+
+      assert.strictEqual(handled, true, 'a throw must never crash the TUI');
+      assert.ok(/Repair: the task check could not run \(boom\[31m\)/.test(app.message), app.message);
     });
 
     test('4 views the enforcement log (multiple entries)', () => {

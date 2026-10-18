@@ -478,3 +478,39 @@ describe('SPEC-B — B-ENTRY (dashboardCommands "Background tasks ▸")', () => 
     assert.ok(!labels.some((l) => /Background tasks|board/i.test(l)), 'fail-open: board entry omitted on a corrupt registry');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Scenario 2.12 (plan real-projects-do-not-stall-on-the-menu-s2): every recipe that launches a
+// background agent stamps the harness agent id, because a start without one records no agent.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('scenario 2.12 — the recipes stamp the real agent id', () => {
+  const STAMP = '--agent-id <the harness agent id>';
+
+  it('WORK dispatch stamps the harness id after the launch', () => {
+    const body = sectionBody(readMenuMd(), /^### WORK dispatch \(turn recipe\)/m);
+    assert.ok(body.includes('`menu task start <taskId> ' + STAMP + '`'), 'WORK dispatch step 2 must name the stamp');
+  });
+
+  it('COMPLETION stamps the harness id on every promoted task', () => {
+    const body = sectionBody(readMenuMd(), /^### COMPLETION \(turn recipe\)/m);
+    assert.ok(body.includes('`Agent(run_in_background)` + `menu task start <id> ' + STAMP + '`'), 'COMPLETION step 3 must name the stamp');
+  });
+
+  it('the classify paragraph and Rule 12 stamp the harness id', () => {
+    const md = readMenuMd();
+    assert.ok(md.includes('then `menu task start <id> ' + STAMP + '`'), 'classify paragraph');
+    assert.ok(md.includes('`Agent(run_in_background)` + `menu task start <taskId> ' + STAMP + '`'), 'Rule 12');
+  });
+
+  it('no start follows a launch in one sentence without the id', () => {
+    assert.equal(readMenuMd().match(/run_in_background[^.\n]*?menu task start <[^>]+>(?! --agent-id)/), null);
+  });
+
+  it('the sweep is reachable from the navigation table, and the on-open section is a preview', () => {
+    const md = readMenuMd();
+    assert.match(md, /`menu task sweep --confirm \{plan\}@\{token\},…`/);
+    assert.match(md, /^### ON-OPEN PREVIEW AND THE SWEEP/m);
+    assert.doesNotMatch(md, /^### ON-OPEN RECONCILE/m);
+  });
+});

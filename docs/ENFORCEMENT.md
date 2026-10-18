@@ -366,20 +366,22 @@ unchanged.
 | `stream` with no or an unknown sub-command | the default screen |
 | `plan` with no reference | the default screen |
 | `menu task complete <id> … --continue` | the continuation: crossings, planner and classification tasks, builds started |
+| `menu task sweep …`; and any command whose text, with `'`, `"` and `\` removed, holds both `sweep` and `--confirm`, or holds `applySweep` | the sweep marks tasks dead, frees slots and, on the human's named confirmation, moves plans back to the build queue. The confirmation is refused with its own sentence whatever the 2026-10-15 switch (`RECORD_REFUSALS_OFF`) says ("CTOC refused this call because only the human confirms which builds go back to the queue; report the sweep preview and let the main session ask him. A command that only mentions both words is refused too: search one word at a time, and commit with git commit -F <file>."); the preview is refused only when that switch is off |
 | any route not in the allowed table | fail closed |
 
 | Allowed for a background agent | Why |
 |---|---|
 | `menu task complete <id> [--summary …] [--gate N] [--next <route>] [--b64 …]`, no other word | the build agent's documented completion: in-progress to review and its check record; no approval, no answer, no human gate |
 | `menu task add …`, `start <id>`, `fail <id>`, `cancel <id>`, `list`, `board`, each within its grammar | the task registry only |
-| `menu`, `menu commands`, `dashboard` | the pipeline dashboard: task reconcile and orphan recovery (in-progress back to todo, not a human gate) |
+| `menu`, `menu commands`, `dashboard` | the pipeline dashboard: a preview of `menu task sweep`; it changes no task, moves no plan and logs no clean-up |
 | `tasks`, `task <id>` | read-only task screens |
 | `browse <stage>`, `section <name>`, `stubs <slug>`, `validate <stage>/<file>` | read-only screens |
 | `inbox questions`, `decisions`, `gates`, `escalations`, `migration`, `verify`, `stale`, `cleanup`, `cleanup category`, `cleanup plan <slug>` | read-only screens; `cleanup confirm` and `cleanup override` are refused |
 | `plan <stage>/<file>` | the plan screen: it sweeps the waiting folder (validated promotion) and moves nothing |
 
 A crash on a background agent's call whose tool input mentions `start.js`, `menu-screens` or
-`streaming-gate` refuses with the "protection failed to run" sentence; the same crash on the
+`streaming-gate` refuses with the "protection failed to run" sentence, except a sweep
+confirmation, which gets the sweep sentence (see the fail rule); the same crash on the
 main session's menu call is allowed, so one broken release cannot lock the human out of his
 own menu.
 
@@ -396,7 +398,10 @@ JSON when a hook exits 2 and shows stderr instead, so stderr is what the agent r
 
 **Fail rule.** A crash refuses only a call that mentions the records, with "CTOC refused
 this call because it mentions the approval or check records and CTOC's protection for them
-failed to run; tell the human that this protection is broken.", and allows the rest, so one
+failed to run; tell the human that this protection is broken." A crash on a background
+agent's call whose tool input, with quotes and backslashes removed, holds both `sweep` and
+`--confirm`, or holds `applySweep`, refuses with the sweep sentence above instead (it wins
+over the "protection failed" sentence). The crash rule allows the rest, so one
 broken release cannot stop every tool call in every project. When the payload parsed, only
 its `tool_input` is scanned, so a project whose path contains one of the words is not
 refused on every call; a payload that will not parse is scanned whole. A failure to load

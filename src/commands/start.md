@@ -38,6 +38,7 @@ The command outputs JSON: `{ text, ask, actions }`.
 | `inbox escalations` | Circuit-breaker escalations + deploy-ready notices (read-only) — the door behind the dashboard's ⛔ count |
 | `inbox stale` · `inbox verify` · `inbox cleanup` | Possibly-stale plans: list → verify → human-gated cleanup |
 | `tasks` · `task {id}` | Background task board / task detail |
+| `menu task sweep` · `menu task sweep --confirm {plan}@{token},…` · `menu task sweep --confirm none` | The sweep: a preview naming every build's group and reason, and the human's confirmation that sends named dead builds back to the build queue (the only route that does) |
 
 ### Claude Actions (handle in conversation)
 
@@ -62,7 +63,7 @@ The command outputs JSON: `{ text, ask, actions }`.
 | **Ledger backfill** (maintainer script — NOT a menu action key) | **From the shell, only one form runs:** `node "${CLAUDE_PLUGIN_ROOT}/src/scripts/ledger-backfill.js" --vision` (optionally with `--dry-run`), which ledgers decomposed-vision archives in `plans/done/` as pipeline-kind entries. **Writing approval records by hand is refused.** CTOC's write protection (`src/hooks/protect-records.js`, the one hook Claude Code loads) refuses every other form of this script, every command that writes into `.ctoc/approvals/`, `.ctoc/state/verify/` or the answers store, and any `node -e` one-liner that reaches an approval or check-record writer — that one-liner was the Gate-2/Gate-3 forgery (R3-A). Approvals and recorded answers go through the menu's own routes; migrating a legacy plan with the script's other forms is something the human runs in his own terminal. |
 | `claude:edit-stubs {slug}` | Present stub table, allow user to modify stubs |
 | `claude:add-stub {slug}` | Create a new stub for an in-progress decomposition |
-| `claude:start-agent` | **WORK — an EXPLICIT EXCEPTION to the generic WORK-dispatch recipe: it does NOT call `menu task add`.** Call `startAgent(root, { force: true })` (human-initiated, so `force: true` clears any drain-stop per R2-B). `startAgent` ALREADY records AND claims the task via `addAndClaim` — running `menu task add` for the same plan here would double-enqueue it (C1-8), so NEVER do that on this path. Read the returned shape: `{ started:true, task, plan, skipped, remainingTodo }` → launch the `Agent(run_in_background)` for that plan, THEN `menu task start <task.id> --agent-id <the harness agent id>` to stamp the live id (so the on-open reconcile never falsely orphans it). `{ started:false, queued:true, reason }` → the plan is recorded and waiting on a `file-conflict`; launch no agent, show the queued plan and its `reason`. `{ started:false, drainStopped:true }` cannot occur with `force: true`; `{ started:false, error }` → surface the error. **Always surface the returned `skipped[]`** (`[{plan, reason}]`) to the human — plans the scheduler could not build a spec for (no `files:`, unresolvable dependency); a skip never stalls the plans behind it (C1-4). **The scheduler serializes by FILES, not by kind** (vision F1 — the old kind-based one-implement-at-a-time rule is retired): implement tasks run CONCURRENTLY (up to 5) when their declared `files:` are DISJOINT, and two plans that touch the same file serialize (scheduler reason `file-conflict`). Do NOT run a foreground implement loop; each plan drains as background work and completions promote the next runnable plan. **At a wave boundary** — after enqueuing the wave's implement tasks — call `enqueueWaveSync(root, { blockedBy: <the wave's implement task ids>, label })` to schedule the integration barrier; when the scheduler promotes that `sync` task (it runs ALONE, after the whole wave is done), run the integrated suite + baseline reconcile + commit, then mark it done. See the Two-Plane Protocol. |
+| `claude:start-agent` | **WORK — an EXPLICIT EXCEPTION to the generic WORK-dispatch recipe: it does NOT call `menu task add`.** Call `startAgent(root, { force: true })` (human-initiated, so `force: true` clears any drain-stop per R2-B). `startAgent` ALREADY records AND claims the task via `addAndClaim` — running `menu task add` for the same plan here would double-enqueue it (C1-8), so NEVER do that on this path. Read the returned shape: `{ started:true, task, plan, skipped, remainingTodo }` → launch the `Agent(run_in_background)` for that plan, THEN `menu task start <task.id> --agent-id <the harness agent id>` to stamp the live id (so a sweep never treats it as dead). `{ started:false, queued:true, reason }` → the plan is recorded and waiting on a `file-conflict`; launch no agent, show the queued plan and its `reason`. `{ started:false, drainStopped:true }` cannot occur with `force: true`; `{ started:false, error }` → surface the error. **Always surface the returned `skipped[]`** (`[{plan, reason}]`) to the human — plans the scheduler could not build a spec for (no `files:`, unresolvable dependency); a skip never stalls the plans behind it (C1-4). **The scheduler serializes by FILES, not by kind** (vision F1 — the old kind-based one-implement-at-a-time rule is retired): implement tasks run CONCURRENTLY (up to 5) when their declared `files:` are DISJOINT, and two plans that touch the same file serialize (scheduler reason `file-conflict`). Do NOT run a foreground implement loop; each plan drains as background work and completions promote the next runnable plan. **At a wave boundary** — after enqueuing the wave's implement tasks — call `enqueueWaveSync(root, { blockedBy: <the wave's implement task ids>, label })` to schedule the integration barrier; when the scheduler promotes that `sync` task (it runs ALONE, after the whole wave is done), run the integrated suite + baseline reconcile + commit, then mark it done. See the Two-Plane Protocol. |
 | `claude:stop-agent` | Call stopAgent(). Shows confirmation message. Agent will finish current plan then stop. |
 | `claude:sync` | Run fullPlansSync(), show result |
 | `claude:set-environment {env}` | Persist the chosen CTOC environment: run `node -e "require('${CLAUDE_PLUGIN_ROOT}/src/lib/settings').setSetting('general','environment','{env}')"`, confirm the choice to the user, then continue with the user's pipeline-section choice (or re-open the dashboard if none) — **or, when a 'Stale plans' answer maps to `inbox stale`, navigate there first per Rule 10 (stale-first precedence)**. |
@@ -116,7 +117,7 @@ Resolve the user's reply to an action string `A`, then classify:
 ### WORK dispatch (turn recipe)
 
 1. **Record first.** `node "${CLAUDE_PLUGIN_ROOT}/src/commands/start.js" menu task add K [P] [--touches files] [--gitop] [--blocked ids]` → `{taskId, decision, reason}`. This consults the NB1 scheduler (`canRun`) as it records — the `decision` is `run` or `queue`. **Populate `--touches`** for any file-editing kind (implement, quality, security, review) by deriving the file list from the target plan's `files:` frontmatter, and set `--gitop` for any kind that commits or pushes — **so the scheduler can enforce file-conflict and git-exclusive scheduling.** An empty `--touches` makes NB1's file-conflict rule a no-op, so two parallel file-editing WORK tasks (e.g. quality + security on the same plan) could clobber each other; always derive it from `files:`.
-2. **Dispatch only on `run`.** If `decision === "run"`: launch `Agent(run_in_background)` with a self-contained brief, THEN `menu task start <taskId>`. If `decision === "queue"`: record only — **do not** launch an agent; show the queued task and its `reason`.
+2. **Dispatch only on `run`.** If `decision === "run"`: launch `Agent(run_in_background)` with a self-contained brief, THEN `menu task start <taskId> --agent-id <the harness agent id>` (the id the launch returned; a start without it records no agent, and such a build goes back to the build queue only when the human names it in `menu task sweep`). If `decision === "queue"`: record only — **do not** launch an agent; show the queued task and its `reason`.
 3. **Render now.** `node "${CLAUDE_PLUGIN_ROOT}/src/commands/start.js"` and display the dashboard with a one-line status. **Never `await`** the agent's completion.
 
 **Never launch a background agent before `menu task add` + the `canRun` decision** — the vision §8 split-brain rule forbids an unrecorded agent. The agent brief is self-contained: the `taskId`, the plan path, the ancestry to read (vision → canvas → functional → implementation), and the completion contract — return a one-line summary, STOP at any human gate reporting that the work is waiting for the human's OK (in plain-moment words per [`skills/agent-fragments/plain-gate-words.md`](../../skills/agent-fragments/plain-gate-words.md), never a gate number) plus a nav route, never cross a gate, and make documented reasonable choices (no stubs, no TODOs).
@@ -127,15 +128,16 @@ When a background task fires its task-notification:
 
 1. `menu task complete <id> --continue --summary "…" [--gate N] [--next <navroute>]` (the store rejects a `claude:` `--next`), or `menu task fail <id> --summary "…"` on failure — a failure is surfaced in the inbox, never silently lost. Your call always carries `--continue`, which runs the menu's continuation: plans whose recorded evidence is enough move on, a built plan whose checks passed finishes, planners and the gate critic's classifications are queued, approved plans start building. A build agent completes its own task with `menu task complete <id>` and no flag (the only form a background agent may run); your `--continue` call on that same task then runs only the continuation. Never put `--continue` in an agent's brief.
 2. Emit **ONE** compact, pull-based inbox notice — a **high-level, human-phrased status line** (see "Foreground status plane" below). **Do not** change or hijack the user's current screen — completions pull, they never push.
-3. **Promote.** For each task in the response's `promote[]` (the scheduler's newly-runnable `nextRunnable` set with the concurrent-edit guard applied — that set MINUS the candidates the guard held, never the raw set), launch `Agent(run_in_background)` + `menu task start <id>`. This is the ONLY sanctioned promotion — never start a queued task the scheduler did not return in `promote[]`.
+3. **Promote.** For each task in the response's `promote[]` (the scheduler's newly-runnable `nextRunnable` set with the concurrent-edit guard applied — that set MINUS the candidates the guard held, never the raw set), launch `Agent(run_in_background)` + `menu task start <id> --agent-id <the harness agent id>`. This is the ONLY sanctioned promotion — never start a queued task the scheduler did not return in `promote[]`.
 
 **Every screen that carries `promote[]` is launched the same way.** `stream answer`,
-`stream approve`, `stream check` and `menu task complete <id> --continue` keep the work moving and can return
+`stream approve`, `stream check`, `menu task sweep --confirm …` and `menu task complete <id> --continue` keep the work moving and can return
 `promote[]` too — planners, the gate critic's classifications, and builds the menu already
 claimed. After any such screen, launch each entry exactly as step 3 does, then stamp it:
 `menu task start <id> --agent-id <the harness agent id>`. A claimed build is already running
-with no agent id, and that command records the id; a task that already carries an agent id
-is refused, so a build is never launched twice. A promoted `plan` task whose plan is in
+with no agent id (or the task's own id that an older version recorded, read as no id), and that
+command records the id; a task that already carries an agent id is refused, so a build is never
+launched twice. A promoted `plan` task whose plan is in
 `plans/implementation/` is the `implementation-planner`'s: brief it with the task id and the
 plan path; it decomposes the plan into slices and, as its last act, writes each slice's
 questions to the waiting folder (its own agent file says how).
@@ -182,12 +184,13 @@ refuses it. Read the response:
 - `{ ok: true, completion: { ran: false, reason } }` → the task's `plan` names no plan
   file on disk (a review/decompose task, say). Registry-only completion; report the reason.
 
-### ON-OPEN RECONCILE (NB4)
+### ON-OPEN PREVIEW AND THE SWEEP
 
-On menu open (a NAV render), the dashboard reconciles the task registry against the
-live harness **`TaskList`** before rendering. When the Task tool is available, the
-main loop **MUST** pass the live harness agent-id list into the render as
-`liveAgentIds`, using the flag `start.js` parses:
+Opening the menu changes nothing: no task-registry write and no plan move (the owner's order of
+2026-10-18). The dashboard shows ONE line that counts what a sweep would do, and names
+`menu task sweep`. When the Task tool is available, the main loop **MUST** pass the live
+harness agent-id list on every render and on both sweep commands, using the flag `start.js`
+parses:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/src/commands/start.js" --live-agent-ids <id1>,<id2>,<id3>
@@ -197,23 +200,36 @@ Comma-separated harness agent ids, no spaces (the same ids stamped at
 `menu task start <taskId> --agent-id <harness id>`). **Honesty rule (R3-B): pass the flag
 only when you genuinely queried the live agent list. An EMPTY list means "I could not
 determine liveness" — NOT "nobody is alive".** Omit the flag entirely when the Task tool
-is unavailable, and reconcile falls back to the staleness backstop. Never pass
-`--live-agent-ids` with an empty value to mean "no agents are running": that would falsely
-orphan every live agent.
+is unavailable. Never pass `--live-agent-ids` with an empty value to mean "no agents are
+running": that would make every live build look dead.
 
-Passing the real list is load-bearing: a `running` task with a matching live agent is left
-alone and one with no matching live agent is marked `orphaned` precisely. This is
-is the only thing that prevents a legitimately long-running background agent (e.g. an
-`implement` task running past the staleness threshold) from being falsely orphaned
-and offered for a duplicate re-run. Only when that list genuinely cannot be obtained
-(the `start.js` child process running with no Task-tool access, or a true session
-restart where the harness reports no agents) does the **staleness threshold
-backstop** — a long-`running` task with no confirmable live agent is orphaned, which
-is exactly correct in the restart case where the agent really is gone. An `orphaned` task no longer counts toward the ≤20
-concurrency limit and is **offered for re-run through the scheduler**
-(`canRun`/`nextRunnable`), never a direct launch. A **`failed`** task always surfaces
-in the task plane / inbox (never silently lost). Reconciliation is fully fail-open: a
-corrupt registry or a save failure never blocks navigation — the dashboard still
+Without the flag a build is judged on its age alone, and can be named once it is twice its
+kind's floor old (240 minutes for a build). A build whose agent id was never recorded (or is
+the task's own id that an older version recorded) is unknown, never dead.
+
+- `menu task sweep` lists every build in one of three groups with its reason (would go back to
+  the build queue when named, never moved, not yet eligible), and the task changes that move no
+  plan. It changes no task, moves no plan and logs no clean-up.
+- `menu task sweep --confirm <plan>@<token>,…` is run only with the plans the HUMAN named in his
+  own reply on that preview, each with the token the preview printed. Never on your own
+  initiative, never naming a plan he did not name, always with the EXACT `--live-agent-ids`
+  list passed to that preview, even if the harness list has changed since (every token carries
+  that list's fingerprint; a different list returns the new preview). A changed plan returns
+  the new preview: show it.
+- `menu task sweep --confirm none` applies only the task changes that move no plan, on his word too.
+- A background agent cannot run `--confirm`: the write protection refuses it. Report the
+  preview and let the main session ask him.
+- The confirmation carries the human's name for the log with `--by <name>`; it is recorded as
+  declared, not verified.
+- A sweep's `promote[]` is handled as in the COMPLETION recipe's step 3.
+- A project that is not a git repository can never send a dead build back: the work check
+  cannot answer, and that counts as work found (decision 7). Such a build ends with
+  `menu task complete <id>` or `menu task fail <id>`.
+- The work check needs git 2.36 or newer (believed: `git worktree list --porcelain -z`); on an
+  older git every dead build is held with the reason `git <version> is older than 2.36`.
+
+A **`failed`** task always surfaces in the task plane / inbox (never silently lost). The
+preview is fully fail-open: a corrupt registry never blocks navigation — the dashboard still
 renders.
 
 ### Human gates stay foreground
@@ -352,7 +368,7 @@ The menu records it itself, once per question set, when a plan's question file c
 author (an empty one included) — the same record as
 `menu task add classify '{ref}' --touches '.ctoc/streaming/questions/{ref}'`, which you never
 add yourself. Until it is classified, that plan cannot move on without the human. Launch
-`gate-critic` alone as background WORK, then `menu task start <id>`; its brief: the task id,
+`gate-critic` alone as background WORK, then `menu task start <id> --agent-id <the harness agent id>`; its brief: the task id,
 the plan path, and "classify the questions of `{ref}`" (its section "Classifying the
 questions", which has it read the plan and its parent plan, classify the author's questions
 and add a question for every weighty choice the author left unasked); never the three lens
@@ -393,15 +409,16 @@ selected by task id (`t<n>`) as free-text; numbers still open plans only (Rule 1
 A selected board row can be **cancelled** (the two-phase `cancel` transition, C1-2):
 call `cancelTask(root, <taskId>)` → `{ task, agentTaskId }`. The transition is honest
 about liveness: a **`running`** task moves to `cancelling` — a NON-terminal state whose
-files, slot, gitOp and any sync barrier **stay locked until `task-reconcile` confirms
+files, slot, gitOp and any sync barrier **stay locked until a sweep or Repair state confirms
 the harness agent is gone** (a direct `running → cancelled` is forbidden — it would free
 a live agent's files early). A **`queued`** task (nothing running) moves straight to the
 terminal `cancelled`, freeing its slot at once. Use the returned `agentTaskId` (when
 non-null) to stop that live harness agent — killing the harness-level agent is the
 caller's job; the registry only records the transition. Only the queued-cancel frees a
 slot immediately, so promote the scheduler's next `nextRunnable` set then; a
-running-cancel holds its slot until reconcile confirms death, so nothing new is promoted
-yet. Cancelling never crosses a human gate.
+running-cancel holds its slot until a sweep or Repair state confirms death, so nothing new is
+promoted yet. A cancelling build is not held back from a sweep the way a running one is: the
+human's cancel already names it. Cancelling never crosses a human gate.
 
 ### Rules
 
@@ -420,7 +437,7 @@ yet. Cancelling never crosses a human gate.
 
 11. **Two planes — WORK never runs in the foreground.** Every turn is NAV or WORK (see the Two-Plane Protocol). NAV renders synchronously with minimal reasoning; WORK (implement, plan, review, quality, security, decompose, discuss) records a background task and dispatches an agent — it is NEVER executed in the foreground, so navigation is never blocked and a long work action returns to a menu screen after a short WORK turn — a few tool calls — never a foreground build.
 
-12. **WORK dispatch is record-first (split-brain rule).** A WORK turn calls `menu task add` FIRST and reads the scheduler's `canRun` decision BEFORE any `Agent` launch: `run` → dispatch `Agent(run_in_background)` + `menu task start`; `queue` → record only, no agent. Then render immediately — never `await` the agent. Claude NEVER launches a background agent that has not been recorded and cleared by the scheduler (the vision §8 split-brain rule: never route around the scheduler).
+12. **WORK dispatch is record-first (split-brain rule).** A WORK turn calls `menu task add` FIRST and reads the scheduler's `canRun` decision BEFORE any `Agent` launch: `run` → dispatch `Agent(run_in_background)` + `menu task start <taskId> --agent-id <the harness agent id>`; `queue` → record only, no agent. Then render immediately — never `await` the agent. Claude NEVER launches a background agent that has not been recorded and cleared by the scheduler (the vision §8 split-brain rule: never route around the scheduler).
 
 13. **Completions pull and promote via the scheduler; only the menu's code crosses a gate.** A completion turn calls `menu task complete <id> --continue` (or `menu task fail`), emits ONE compact pull-based inbox notice without hijacking the current screen, and promotes ONLY the tasks the response returns in `promote[]` (the scheduler's `nextRunnable` set, plus the planners, classifications and builds the continuation started) — dispatching each as background work. The session and its agents never auto-cross a gate: a plan crosses only in the menu's own code on recorded evidence, or by the human's approve; a task that needs the human becomes a waiting-for-your-OK inbox item (Rule 4).
 

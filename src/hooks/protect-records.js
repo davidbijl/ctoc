@@ -71,6 +71,12 @@
  *   without `agent_id` is unchanged. Limits: a script written and then run without naming a
  *   menu module, a path held in a variable; and a harmless compound command naming the menu
  *   is refused (fail closed).
+ *   Whatever `RECORD_REFUSALS_OFF` says, a background agent's command whose text, with quotes and
+ *   backslashes removed, holds both `sweep` and `--confirm`, or holds `applySweep`, is refused
+ *   with its own sentence: only the human confirms which builds go back to the build queue
+ *   (owner, 2026-10-18). When the hook itself fails to run, such a call is refused with the same
+ *   sentence. A script file that runs the confirmation, inline code moving a plan by other means,
+ *   or text built at run time, is not caught.
  *   Nothing else is loaded or run: no plan coverage, no escape phrases, no enforcement
  *   mode, no Iron Loop step gates, no irreversible-command net, no plan-move gate.
  *
@@ -117,6 +123,14 @@ const REFUSAL = 'CTOC refused this call because it writes, or could write, the a
   + 'finish your work, report it, and let the menu record the result.';
 const REFUSAL_UNCHECKED = 'CTOC refused this call because it mentions the approval or check records '
   + "and CTOC's protection for them failed to run; tell the human that this protection is broken.";
+const REFUSAL_SWEEP_CONFIRM = 'CTOC refused this call because only the human confirms which builds go back '
+  + 'to the queue; report the sweep preview and let the main session ask him. A command that only '
+  + 'mentions both words is refused too: search one word at a time, and commit with git commit -F <file>.';
+/** A background agent's sweep confirmation, read fail-closed: quotes and backslashes removed, anywhere in the text. */
+const confirmsSweep = (command) => {
+  const flat = command.replace(/["'\\]/g, '');
+  return (/sweep/i.test(flat) && /--confirm/i.test(flat)) || /applysweep/i.test(flat);
+};
 /** The one plain retry sentence for a double-quoted argument the shell would still expand. */
 const REFUSAL_QUOTE = 'Put the summary in single quotes and run the same command again.';
 const REFUSAL_SUBAGENT = "CTOC refused this call because a background agent may not answer CTOC's questions, "
@@ -597,6 +611,8 @@ function subagentMenuRefusal(command, base) {
 const RECORD_REFUSALS_OFF = true;
 
 function bashRefuses(command, cwdRel, base, bash, subagent = false) {
+  // Owner, 2026-10-18: only the human confirms a sweep. Holds whatever RECORD_REFUSALS_OFF says.
+  if (subagent && confirmsSweep(command)) return REFUSAL_SWEEP_CONFIRM;
   // Tijn, 15 October 2026: "remove that hook block, it is wrong". The record-write refusal and
   // the background-agent refusal are off; the settings-file refusal below stays.
   if (RECORD_REFUSALS_OFF) {
@@ -684,7 +700,10 @@ function main() {
       : raw;
     // A background agent's call that reaches for the menu fails closed too; the main
     // session's menu call does not, so one broken release never locks the human out.
-    if (UNCHECKED_SUSPECT_RE.test(scanned) || (parsed && isSubagent(payload) && MENU_MENTION_RE.test(scanned))) {
+    // Owner, 2026-10-18: a background agent's sweep confirmation fails closed with its own sentence.
+    if (parsed && isSubagent(payload) && confirmsSweep(scanned)) {
+      refuse(REFUSAL_SWEEP_CONFIRM);
+    } else if (UNCHECKED_SUSPECT_RE.test(scanned) || (parsed && isSubagent(payload) && MENU_MENTION_RE.test(scanned))) {
       refuse(REFUSAL_UNCHECKED);
     }
     process.exit(0);
