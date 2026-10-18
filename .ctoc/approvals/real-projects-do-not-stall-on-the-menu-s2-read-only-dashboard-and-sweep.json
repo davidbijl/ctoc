@@ -1,0 +1,10 @@
+{
+  "content_sha256": "fa29180a43eb7442e4371286365be0760f3c380d56bffb42cbf67108dbfd3434",
+  "hash_scope": "specification",
+  "stage_from": "implementation",
+  "stage_to": "todo",
+  "approved_at": "2026-10-18T12:23:06.825Z",
+  "advanced_by": "sufficiency",
+  "evidence": "sufficiency: implementation/real-projects-do-not-stall-on-the-menu-s2-read-only-dashboard-and-sweep.md — no questions were computed (0 question(s) computed), 0 answered; 0 unanswered, 0 blocking; attested by: not recorded; enough (no unanswered fork)",
+  "plan_basename": "real-projects-do-not-stall-on-the-menu-s2-read-only-dashboard-and-sweep"
+}
