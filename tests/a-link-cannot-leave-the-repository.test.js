@@ -835,4 +835,42 @@ describe('the protected folder is compared by file identity (owner, 2026-10-15)'
     }
     R.done();
   });
+
+  it('case 26: a spelling the walk cannot follow (/.vol/<device>/<inode>/…, /.nofollow<path>) that the kernel opens is refused, never read as a name still to be made', () => {
+    // macOS opens an existing folder through /.vol/<device>/<inode> and through /.nofollow<absolute path>;
+    // the walk's `lstat` of `.vol` / `.nofollow` answers "no such file". Each row asks the KERNEL first
+    // (writes a file through the spelling into the stand-in folder P, in this test's own temporary folder)
+    // and expects `resolvesUnder` true wherever the kernel reached P. Elsewhere the spelling names nothing,
+    // the kernel does not reach P, and the verdict is false: the platform's true behaviour.
+    const { dir, root } = makeRealProject();
+    const R = makeRows();
+    try {
+      const P = path.join(root, 'P');
+      fs.mkdirSync(P);
+      const sp = fs.statSync(P);
+      const sr = fs.statSync(root);
+      const rows = [
+        ['/.vol/<device>/<inode of P>/x', `/.vol/${sp.dev}/${sp.ino}/x`],
+        ['/.vol/<device>/<inode of the project>/P/x', `/.vol/${sr.dev}/${sr.ino}/P/x`],
+        ['/.nofollow<project>/P/x', `/.nofollow${root}/P/x`],
+      ];
+      for (const [label, spelling] of rows) {
+        let reaches = false;
+        try {
+          fs.writeFileSync(spelling, 'k');
+          reaches = fs.existsSync(path.join(P, 'x'));
+        } catch { reaches = false; }
+        fs.rmSync(path.join(P, 'x'), { force: true });
+        if (process.platform === 'darwin') assert.equal(reaches, true, `the kernel reaches P through ${label} on macOS`);
+        R.row(`${label}: kernel reaches P=${reaches}; resolvesUnder`, () => assert.equal(resolvesUnder(spelling, 'P', root), reaches));
+      }
+      // Controls: a genuinely absent name below an existing folder, and below P, keep their verdicts.
+      R.row('control: <project>/Q/new is not under P', () => assert.equal(resolvesUnder(path.join(root, 'Q', 'new'), 'P', root), false));
+      R.row('control: <project>/P/new/deeper is under P', () => assert.equal(resolvesUnder(path.join(P, 'new', 'deeper'), 'P', root), true));
+      R.row('control: <project>/new/../x.js is not under P', () => assert.equal(resolvesUnder(`${root}/new/../x.js`, 'P', root), false));
+    } finally {
+      rm(dir);
+    }
+    R.done();
+  });
 });

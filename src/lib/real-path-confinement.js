@@ -212,10 +212,55 @@ function resolveExisting(p) {
       if (!st.isDirectory() && todo.length > 0) return fault('not-a-folder');
       real = next;
     }
+    // The walk called a tail absent; the KERNEL has the last word (see kernelAgrees).
+    if (tail.length > 0 && !kernelAgrees(abs, real)) return fault('resolve-failed');
     return { ok: true, real: tail.length ? path.join(real, ...tail) : real, reason: null, tail };
   } catch {
     // Total by construction. See the file header: a throw here becomes an ALLOW.
     return fault('resolve-failed');
+  }
+}
+
+/**
+ * Does the kernel agree with the walk that the names in its tail do not exist? macOS opens a folder
+ * through spellings the segment walk cannot follow (`/.vol/<device>/<inode>/…`: the empty `/.vol`
+ * answers "no such file" for the inode, though the whole path opens), and the walk would call all of
+ * it a name still to be made, so the identity comparison would never meet the protected folder.
+ * So the deepest ancestor of the ORIGINAL spelling that the kernel opens (`stat`, as given, `..` and
+ * links as the kernel takes them) must be the very entry the walk stopped at (`existing`, the walk's
+ * deepest existing path). A different entry is a fault, and so is an answer other than "not there".
+ * A file system that gives no identity (inode 0) is left to the text test, as everywhere else.
+ * Never throws.
+ * @param {string} abs - the absolute path as written
+ * @param {string} existing - the walk's deepest existing real path (the tail's parent)
+ * @returns {boolean}
+ */
+function kernelAgrees(abs, existing) {
+  try {
+    const root = path.parse(abs).root;
+    const names = segmentsOf(abs.slice(root.length));
+    for (let n = names.length; n >= 0; n--) {
+      if (budgetSpent()) return false;
+      const prefix = root + names.slice(0, n).join(path.sep);
+      let st;
+      try {
+        st = safeFs.statSync(prefix, { bigint: true });
+      } catch (err) {
+        const code = err && /** @type {NodeJS.ErrnoException} */ (err).code;
+        // The kernel does not open this prefix (not there, too long for one call, more links than it
+        // follows: macOS 32, the walk 40): a write through it fails, so look higher.
+        if (code === 'ENOENT' || code === 'ENOTDIR' || code === 'ENAMETOOLONG' || code === 'ELOOP') continue;
+        return false;
+      }
+      // A `..` the kernel never reaches (after a name it cannot open) is the walk's own climb, which
+      // cancels the name before it; the kernel has no answer for it.
+      if (String(st.ino) === '0' || names.slice(n).includes('..')) return true;
+      const walked = fileIdentity(existing);
+      return walked === null ? true : walked !== undefined && walked === `${st.dev}:${st.ino}`;
+    }
+    return false;
+  } catch {
+    return false;
   }
 }
 

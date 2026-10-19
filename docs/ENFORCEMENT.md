@@ -349,10 +349,13 @@ settings for every session, the settings files for background agents — calls t
 each operand as written and tidied, so a hard link to `.ctoc/settings.yaml` (or, for a background
 agent, to a protected settings file that has a link test), a spelling the disk opens as one, a
 link then `..`, and a `cd` through a link are refused there. Held by
-`tests/protect-records.test.js` (cases 139–157 and 159) and
-`tests/a-link-cannot-leave-the-repository.test.js` (cases 15–25). A single name too long for the
+`tests/protect-records.test.js` (cases 139–157, 159 and 160) and
+`tests/a-link-cannot-leave-the-repository.test.js` (cases 15–26). A single name too long for the
 file system (over 255 UTF-16 units) that does not exist is not read as protected: it cannot be written
-either. A long whole path is not read that way (see the padded-command item below).
+either. A long whole path is not read that way (see the padded-command item below). The resolver
+confirms an absent tail with the kernel: the deepest ancestor of the path as written that the kernel
+opens must be the entry the walk stopped at, so an alternate spelling the walk cannot follow (macOS
+`/.vol/<device>/<inode>/…`) refuses instead of reading as a name still to be made.
 
 If every write is refused, a protected folder's path (`.ctoc/approvals`, `.ctoc/state/verify`,
 `.ctoc/streaming`, `.ctoc/regulatory-regimes`, or `.ctoc/settings.yaml`) is a dangling symbolic

@@ -1546,4 +1546,32 @@ describe('the write protection compares real files, not spellings (owner, 2026-1
     // The limit is 255 UTF-16 units: 128 emoji are 256, a name that cannot exist, so plain text.
     allowedBoth(bash(`echo ${'😀'.repeat(128)}`), 'echo of a word of 128 emoji (256 UTF-16 units) (control)');
   });
+
+  rowTest('160 · a spelling the walk cannot follow (/.vol/<device>/<inode>/…, /.nofollow<path>) that the kernel opens is refused', () => {
+    // Found by the security scan of d893b72e: macOS opens an existing folder through the inode-addressed volume
+    // form and the /.nofollow prefix; the walk's lstat of `.vol` / `.nofollow` says "no such file". Neither
+    // spelling names a protected folder in its text. The test asks the KERNEL first (a file written into the
+    // folder through the spelling, in this test's own temporary project); where it does not reach (other
+    // platforms), the spelling is an absent path and stays allowed.
+    fs.symlinkSync(p('.ctoc', 'approvals'), p('src', 'L'), 'junction');
+    const st = fs.statSync(p('.ctoc', 'approvals'));
+    // Third field: the kernel must reach the folder (asserted on macOS). The link row is measured to give ELOOP
+    // (the kernel does not follow a link under /.nofollow) and is refused all the same: the hook follows links
+    // itself, and a refusal there is the safe side.
+    for (const [what, spelling, kernelReaches] of [
+      ['/.vol/<device>/<inode of .ctoc/approvals>/x.json', `/.vol/${st.dev}/${st.ino}/x.json`, true],
+      ['/.nofollow<project>/.ctoc/approvals/x.json', `/.nofollow${project}/.ctoc/approvals/x.json`, true],
+      ['/.nofollow<project>/src/L/x.json (src/L is a link to .ctoc/approvals)', `/.nofollow${project}/src/L/x.json`, false],
+    ]) {
+      let reaches = false;
+      try {
+        fs.writeFileSync(spelling, '{}');
+        reaches = fs.existsSync(p('.ctoc', 'approvals', 'x.json'));
+      } catch { reaches = false; }
+      fs.rmSync(p('.ctoc', 'approvals', 'x.json'), { force: true });
+      if (process.platform === 'darwin') assert.equal(reaches, kernelReaches, `the kernel's answer through ${what} on macOS`);
+      (reaches || (process.platform === 'darwin' && !kernelReaches) ? refusedBoth : allowedBoth)(
+        write(spelling), `Write ${what} [kernel reaches=${reaches}]`);
+    }
+  });
 });
