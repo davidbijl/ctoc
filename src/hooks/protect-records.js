@@ -83,8 +83,14 @@
  *   `&&`, `||`, `&`, a newline, and after `$(` or a backtick) holds `$` or a backtick, or is `eval`,
  *   `exec`, `xargs`, `sh`, `bash`, `zsh`, `env`, `command`, `source` or `.`. So `grep -n x
  *   src/commands/*.js | head` and `for f in src/commands/*.js; do wc -l "$f"; done` stay allowed.
- *   Not caught: a script file that runs the confirmation, inline code
- *   moving a plan by other means, `git mv`, or a `cd` into `src` then a relative `commands/…` word.
+ *   Last net, for mistakes and for shell-built spellings (`no\de`, `node --title x …`, `=node`,
+ *   `cd …/command$'s'`, backslash-newline): a command that is not one plain call and holds `$` or
+ *   a backtick (the menu's own here-document body excepted) is refused when, with quotes,
+ *   backslashes and continuations removed, it names a JavaScript runtime as a word anywhere or
+ *   has a wrapper or run-time-built word in command position. Accepted false refusal:
+ *   `for f in tests/*.test.js; do node --test "$f"; done` — write `node --test tests/*.test.js`.
+ *   Not caught: a script file the agent writes and runs, inline code, a file move by other
+ *   means, an alias, or a `cd` into `src` then a relative `commands/…` word.
  *   Nothing else is loaded or run: no plan coverage, no escape phrases, no enforcement
  *   mode, no Iron Loop step gates, no irreversible-command net, no plan-move gate.
  *
@@ -141,6 +147,23 @@ const confirmsSweep = (command) => {
   const flat = command.replace(/["'\\]/g, '');
   return (/sweep/i.test(flat) && /--confirm/i.test(flat)) || /applysweep/i.test(flat);
 };
+const REFUSAL_SWEEP_EXPANSION = REFUSAL_SWEEP_CONFIRM
+  + " A background agent's command that runs node or a wrapper must be one plain call when it uses $ or a backtick.";
+const RUNTIME_ANYWHERE_RE = /(^|[\s;&|(`=/])(node[0-9.]*|nodejs|deno|bun|ts-node|tsx|npx)(\.exe)?(?=\s|$)/im;
+/**
+ * Fail-closed net for a background agent: a command that is not one plain call and holds `$` or a
+ * backtick (outside the menu's own here-document body) may build the confirmation at run time in
+ * ways no parser here can follow (`no\de`, `node --title x …`, `=node`, a `cd` into `command$'s'`).
+ * With quotes, backslashes and continuations removed, it is refused when it names a JavaScript
+ * runtime as a word anywhere or has a word built at run time / a wrapper in command position.
+ */
+function expansionRefusal(command) {
+  if (simpleWords(command) !== null) return null;
+  const body = withoutMenuStdin(command);
+  if (!/[$`]/.test(body.split(PLUGIN_ROOT_TOKEN).join(''))) return null;
+  const flat = body.replace(/\\\r?\n/g, '').replace(/["'\\]/g, '');
+  return RUNTIME_ANYWHERE_RE.test(flat) || hasIndirectCommand(flat) ? REFUSAL_SWEEP_EXPANSION : null;
+}
 /** The one plain retry sentence for a double-quoted argument the shell would still expand. */
 const REFUSAL_QUOTE = 'Put the summary in single quotes and run the same command again.';
 const REFUSAL_SUBAGENT = "CTOC refused this call because a background agent may not answer CTOC's questions, "
@@ -705,7 +728,7 @@ function bashRefuses(command, cwdRel, base, bash, subagent = false) {
   // Owner, 2026-10-18: only the human confirms a sweep. Holds whatever RECORD_REFUSALS_OFF says.
   if (subagent && confirmsSweep(command)) return REFUSAL_SWEEP_CONFIRM;
   if (subagent) {
-    const bypass = sweepBypassRefusal(command, base);
+    const bypass = sweepBypassRefusal(command, base) || expansionRefusal(command);
     if (bypass) return bypass;
   }
   // Tijn, 15 October 2026: "remove that hook block, it is wrong". The record-write refusal and

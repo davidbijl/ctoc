@@ -804,6 +804,50 @@ describe('only the human confirms a sweep (owner, 2026-10-18)', () => {
     ]) assertAllowed(run(agent(bash(command))), `${command} (background agent)`);
   });
 
+  // The shell builds the words `sweep` and `--confirm` at run time ($'\x73weep'), and the runtime or
+  // its script is hidden behind a spelling the hook would have to parse like a shell.
+  const TAIL = () => `${path.join(REPO, 'src', 'commands', 'start.js')} menu task $'\\x73weep' $'\\x2d-confirm' some-plan@0123456789ab`;
+  const SPELLINGS = () => [
+    `no\\de ${TAIL()}`,
+    `node --title x ${TAIL()}`,
+    `node \\\n${TAIL()}`,
+    `cd ${path.join(REPO, 'src', "command$'s'")} && node start menu task $'\\x73weep' $'\\x2d-confirm' some-plan@0123456789ab`,
+    `=node ${TAIL()}`,
+    `node --title x ${path.join(REPO, 'src', 'commands', 'start.js')} $'menu task \\x73weep \\x2d-confirm some-plan@0123456789ab'`,
+  ];
+  const SPELLING_SENTENCE = REFUSAL_SWEEP_CONFIRM
+    + " A background agent's command that runs node or a wrapper must be one plain call when it uses $ or a backtick.";
+
+  test('105 · six shell-built spellings of the confirmation are refused for a background agent', () => {
+    for (const command of SPELLINGS()) {
+      assertRefused(run(agent(bash(command), 'a123')), `${command} (background agent)`, SPELLING_SENTENCE);
+    }
+  });
+
+  test('106 · the six spellings are allowed from the main session and with an empty agent id', () => {
+    for (const command of SPELLINGS()) {
+      assertAllowed(run(bash(command)), `${command} (main session)`);
+      assertAllowed(run(agent(bash(command), '')), `${command} (empty agent id)`);
+    }
+  });
+
+  test('107 · what stays allowed: the owner reply, a plain call with a backtick, and ordinary reads', () => {
+    const reply = `node ${path.join(REPO, 'src', 'commands', 'start.js')} inbox answer q1 --stdin <<'TAG'\nprice is $5\nTAG`;
+    for (const command of [
+      reply,
+      "node -e 'console.log(`x`)'",
+      "grep -n 'a.*b' src/commands/start.js | head",
+      'ls src/commands/*.ts | wc -l',
+      'node --test tests/*.test.js 2>&1 | tail -3',
+    ]) assertAllowed(run(agent(bash(command), 'a123')), `${command} (background agent)`);
+  });
+
+  test('108 · accepted false refusal, pinned: a node loop over "$f" is refused; the rewrite is allowed', () => {
+    assertRefused(run(agent(bash('for f in tests/*.test.js; do node --test "$f"; done'), 'a123')),
+      'node in a loop with $f', REFUSAL_SWEEP_CONFIRM + PLAIN); // the older script-word rule fires first
+    assertAllowed(run(agent(bash('node --test tests/*.test.js'), 'a123')), 'the rewrite');
+  });
+
   test('101 · the fail rule: a crash on a background agent’s sweep confirmation refuses with the sweep sentence', () => {
     const missing = path.join(os.tmpdir(), `ctoc-no-such-folder-${process.pid}-${Date.now()}`);
     const crashing = [
