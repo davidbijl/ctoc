@@ -2368,3 +2368,15 @@ No hook refusal was met. One stray no-op: a shell `python3` heredoc that read no
 
 **Evidence, acceptance criterion (live check on macOS):** results 1 and 2 (long-s refused for both sessions), 3 (ordinary Write allowed), 4 (settings refusal intact) and 5 (inode spelling refused, records folder empty).
 **Evidence, Step 16 live box:** the same five results, exit codes 2, 2, 0, 2, 2, from the logged hook input of one real bypass-mode session. Not exercised in that session: the waiting-folder Write, the planted-link `src/L/../approvals/y.json` and the `src/y/../foo` broken-link rows; those stay covered by the unit and hook cases of Step 8 (unit 18, 26; hook 139–160).
+
+#### The three further live rows (coordinator, 2026-10-19)
+
+Measured by the coordinator in the same scratch project as the section above (evidence: `<scratch>/realfile-live-check/logs/hook.log`, run 1 in `logs/hook-run1.log`). Background agent, the hook at 3981ea9c, bypass mode. Each verdict is the hook's own exit code from the logged hook input.
+
+1. Write `.ctoc/streaming/questions/pending/z.json`: exit 0, allowed, file written. This is the plan's intended verdict: the waiting folder for new questions stays writable for every session. The question-writing agents (the gate critic, the planners) write there with the Write tool, and the menu's sweeper checks what lands there before it reaches the live store (coordinator's statement of the use; the plan's own statement, in the waiting-folder decision, is that the sweeper reads only the one folder `questions/pending`, not recursively, and that the waiting folder is exempt by its folded name).
+2. Write `src/L/../approvals/y.json` with `src/L` a link to `../.ctoc/state`: Claude Code normalized the path before the hook ran. The hook's `tool_input.file_path` was the lexical fold `.../src/approvals/y.json`; exit 0; the file landed at `src/approvals/y.json`; `.ctoc/approvals` stayed empty.
+3. Write `src/y/../foo` with `src/y` a broken link: the same lexical fold; the hook saw `.../src/foo`; exit 0; the file landed at `src/foo`.
+
+**Finding.** Claude Code's Write tool (2.1.300) folds `..` by lexical path normalization before PreToolUse hooks run, so a `..` path through a link never reaches the hook, nor the disk, through the editing tools. The editing-tool "as written" reading is therefore a guard that real sessions do not exercise today; it is kept because a later Claude Code could stop folding. Those two rows matter through Bash, where the plan's hook cases spawn the real hook: the link-then-`..` case (hook case 7) and the broken-link case (hook case 15).
+
+**Verdicts.** Row 1 allowed, as intended. Rows 2 and 3 are not reachable through Write in a real session; they are covered for Bash by tests. The Step 16 live box therefore stands as: waiting-folder Write allowed (measured), the long-s Writes refused (results 1 and 2 above), and the planted-link and `src/y/../foo` rows not reachable through the editing tools on this Claude Code.
