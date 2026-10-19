@@ -126,7 +126,10 @@ function assertStoredQuestionsReadable(root) {
     }
     assert.ok(['ready', 'stale'].includes(st.status), `${ref} must still read as a present, usable file (got ${st.status})`);
     if (st.status === 'ready') {
-      assert.equal(st.attested, false, `${ref} carries no attestation, so it reads unattested`);
+      // Since 2026-10-18 the gate critic writes real attestations into live files, so
+      // "always false" was a proven-wrong premise. Stricter: `attested` must equal the
+      // module's single validity authority applied to the stored bytes.
+      assert.equal(st.attested, precompute.validateAttestation(parsed.attestation).valid, `${ref} must read attested exactly when its stored attestation is valid`);
     }
   }
 }
@@ -269,14 +272,45 @@ describe('COMPATIBILITY — the additive change does not disturb existing caller
     assert.equal(st.attested, false, 'a non-empty list carries its own evidence; it is simply not attested');
   });
 
-  it('the live repository questions files still read cleanly and unattested — no stored data broke', () => {
+  it('the live repository questions files still read cleanly, attested exactly when their attestation is valid', () => {
     // Run against the REAL store. The shipped files are non-empty and carry no
     // attestation. This slice is additive, so reading them must not regress: each
     // still resolves to a PRESENT, parseable, plan-resolvable file (status 'ready' or
     // 'stale' — several are stale because their plans were edited after generation,
     // which predates and is unrelated to this change), never 'invalid'/'not-computed'/
-    // 'unknown-plan'. On the ready path, a file with no attestation reads attested:false.
+    // 'unknown-plan'. On the ready path, `attested` equals whether the stored attestation is valid.
     assertStoredQuestionsReadable(path.resolve(__dirname, '..'));
+  });
+});
+
+describe('the live-store check — attested ready files', () => {
+  /** A sandbox store holding one READY file whose stored attestation is `mutate`d from a valid one. */
+  function readyRoot(mutate) {
+    const root = makeSandbox();
+    const { ref, mtime } = seedPlan(root, 'p1');
+    const res = precompute.writePlanQuestions(root, ref, nonEmptyQuestions(), mtime, validAttestation());
+    assert.equal(res.ok, true, 'fixture must write');
+    if (mutate) {
+      const file = precompute.questionsPath(root, ref);
+      const stored = JSON.parse(fs.readFileSync(file, 'utf8'));
+      mutate(stored);
+      fs.writeFileSync(file, JSON.stringify(stored));
+    }
+    return root;
+  }
+
+  it('a ready file with a VALID attestation passes: the live gate critic writes these', () => {
+    assert.doesNotThrow(() => assertStoredQuestionsReadable(readyRoot()));
+  });
+
+  it('a ready file with an INVALID attestation must read unattested, and does', () => {
+    const root = readyRoot((s) => { s.attestation.lenses.premortem.state = 'CLEAN-PASS'; });
+    assert.doesNotThrow(() => assertStoredQuestionsReadable(root));
+    assert.equal(precompute.planQuestionsStatus(root, 'functional/p1.md').attested, false);
+  });
+
+  it('a ready file with NO attestation must read unattested, and does', () => {
+    assert.doesNotThrow(() => assertStoredQuestionsReadable(readyRoot((s) => { delete s.attestation; })));
   });
 });
 

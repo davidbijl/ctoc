@@ -1314,6 +1314,7 @@ module.exports = {
   hasEnoughInformation,
   isBlockingQuestion,
   isGateCriticClassification,
+  validateAttestation,
   goesToHuman,
   // Live callers: streaming-gate.precomputedQuestionParts / holdQuestion / streamAnswer /
   // nextUnansweredQuestion, which render and record CTOC's Hold and bind every answer.
