@@ -23,9 +23,16 @@
  *
  * A handful of shapes cannot be produced from disk at all — a report entry whose `deps` is
  * absent, a fault object missing `phase` and `dropped`. Those are injected at the same kind
- * of module boundary, by rewiring `taskReconcile.reconcileState` (which `menu-screens`
- * holds as a namespace, exactly the seam `stale-detector` is rewired through elsewhere in
- * this suite). The render under test is still the real one.
+ * of module boundary, by rewiring `planRecovery.previewSweep` (which `menu-screens` holds as
+ * a namespace, exactly the seam `stale-detector` is rewired through elsewhere in this suite).
+ * The render under test is still the real one.
+ *
+ * Contract replaced 2026-10-18 (owner): opening the dashboard changes no task and moves no plan;
+ * a dead build moves only when the human names it in `menu task sweep` — plan
+ * real-projects-do-not-stall-on-the-menu-s2. The report is now the sweep PREVIEW's, so the seam
+ * moves from `taskReconcile.reconcileState` to `planRecovery.previewSweep`, and the three
+ * lines that described a change made at render ("orphaned on age alone") now say what a sweep
+ * would do ("marked dead on age alone"). Every assertion is otherwise as tight as before.
  */
 
 'use strict';
@@ -50,8 +57,8 @@ planCoverage.touchesOverlap = (a, b) => {
 
 // Required AFTER the stub, so task-reconcile's destructured binding picks it up.
 const menuScreens = require('../src/lib/menu-screens');
-const taskReconcile = require('../src/lib/task-reconcile');
-const realReconcileState = taskReconcile.reconcileState;
+const planRecovery = require('../src/lib/plan-recovery');
+const realPreviewSweep = planRecovery.previewSweep;
 
 const MIN = 60_000;
 
@@ -62,7 +69,7 @@ function ago(ageMs) {
 function task(over) {
   return Object.assign({
     id: 't1',
-    kind: 'implement',
+    kind: 'quality',
     label: '',
     plan: null,
     status: 'queued',
@@ -103,7 +110,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   overlapFault = null;
-  taskReconcile.reconcileState = realReconcileState;
+  planRecovery.previewSweep = realPreviewSweep;
   try { fs.rmSync(root, { recursive: true, force: true }); } catch { /* best-effort */ }
 });
 
@@ -114,7 +121,10 @@ function render(tasks) {
 
 /** Render the dashboard against an injected report — for shapes disk cannot produce. */
 function renderReport(report) {
-  taskReconcile.reconcileState = () => ({ report, promote: [] });
+  planRecovery.previewSweep = () => ({
+    report, builds: [],
+    counts: { buildsBack: 0, deadHeld: 0, notYet: 0, otherDead: 0, neverRun: 0, released: 0, old: 0, pending: 0 },
+  });
   return menuScreens.buildDashboardTable(root);
 }
 
@@ -147,7 +157,7 @@ describe('dashboard — the concurrent-edit guard says when it did not run', () 
 
     const fault = text.indexOf('FAILED to run');
     const heldBlock = text.indexOf('held this pass');
-    const results = text.indexOf('orphaned on age alone');
+    const results = text.indexOf('marked dead on age alone');
     assert.ok(fault >= 0 && heldBlock >= 0 && results >= 0,
       'all three lines must be present for this comparison to mean anything');
     assert.ok(fault < heldBlock,
@@ -167,7 +177,7 @@ describe('dashboard — the concurrent-edit guard says when it did not run', () 
     ]);
 
     assert.ok(text.includes('held this pass'), 'the ordinary hold is still shown');
-    assert.ok(text.includes('orphaned on age alone'), 'the ordinary result is still shown');
+    assert.ok(text.includes('marked dead on age alone'), 'the ordinary result is still shown');
     assert.ok(!text.includes('FAILED to run'),
       'the fault line means what it says — a working guard must never trip it');
   });
@@ -210,7 +220,7 @@ describe('dashboard wedge reports — a malformed report degrades, never throws'
   it('renders nothing extra for a null report', () => {
     const text = renderReport(null);
 
-    for (const marker of ['can NEVER run', 'held one pass', 'orphaned on age alone', 'FAILED to run']) {
+    for (const marker of ['can NEVER run', 'held one pass', 'marked dead on age alone', 'FAILED to run']) {
       assert.ok(!text.includes(marker), `a null report must not render "${marker}"`);
     }
   });

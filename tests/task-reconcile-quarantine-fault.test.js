@@ -101,11 +101,18 @@ function ageOnlyOrphan(over = {}) {
   };
 }
 
-/** A queued candidate. An empty `touches` set means it cannot conflict with anything. */
+/**
+ * A queued candidate — a non-build editing task by default (`quality`), because once the
+ * one-build rule (the owner's decision of 2026-10-11) is built, a build orphaned on age
+ * alone will hold the build slot and a build candidate would never reach the quarantine.
+ * The orphan here, `ageOnlyOrphan()`, is still an `implement` task (120-min floor, so
+ * presumed dead only at 240 min); it is the candidate that is non-build. An empty
+ * `touches` set means a candidate cannot conflict with anything.
+ */
 function queued(over = {}) {
   return {
     id: over.id || 'cand1',
-    kind: over.kind || 'implement',
+    kind: over.kind || 'quality',
     label: '',
     plan: 'plans/todo/next.md',
     status: 'queued',
@@ -158,13 +165,15 @@ describe('reconcileState — the concurrent-edit guard fails safe when the overl
     seed([queued({ id: 'cand1', touches: ['src/a.js'] })]);
     overlapFault = 'injected overlap fault';
 
-    const { promote } = rec.reconcileState(root, OPTS);
+    const { report, promote } = rec.reconcileState(root, OPTS);
 
     assert.ok(
       !promote.some(t => t.id === 'cand1'),
       'a candidate the guard could not clear must NOT be promoted — promoting it is ' +
       'exactly how two agents end up editing one file'
     );
+    assert.deepEqual(report.quarantineFaulted.dropped, ['cand1'],
+      'cand1 must be absent because the guard DROPPED it, not because it was never offered');
   });
 
   it('surfaces the drop in report.quarantined with a reason naming the failed check', () => {
@@ -194,6 +203,8 @@ describe('reconcileState — the concurrent-edit guard fails safe when the overl
       'a candidate that was never at risk must not be reported as held'
     );
     assert.ok(!promote.some(t => t.id === 'cand1'), 'the editing candidate is still dropped');
+    assert.deepEqual(report.quarantineFaulted.dropped, ['cand1'],
+      'cand1 was offered and dropped by the guard; readonly1 was never at risk');
   });
 
   it('still returns normally — a guard fault must never brick the render', () => {

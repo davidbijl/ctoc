@@ -14,7 +14,7 @@ const {
   getCategorySchema
 } = require('../lib/settings');
 const { getLastSync, manualSync } = require('../lib/sync');
-const { reconcileState } = require('../lib/task-reconcile');
+const planRecovery = require('../lib/plan-recovery');
 const { readLog } = require('../lib/enforcement-log');
 const claimLedger = require('../lib/claim-ledger');
 const { auditSufficiencyCrossings, formatAuditReport } = require('../lib/sufficiency-audit');
@@ -412,17 +412,28 @@ function handleKey(key, app) {
       return true;
     }
     if (key.sequence === '2') {
-      // Repair state — reconcile the task registry (the canonical, fail-open
-      // state-repair path also run on menu open). Report exactly what it fixed.
-      const { report } = reconcileState(app.projectPath);
-      if (report.corrupt) {
+      // Repair state — the sweep with NO plan named (owner, 2026-10-18): it applies only the task
+      // changes that move no plan; a dead build waits for the human to name it in `menu task sweep`.
+      let res = null;
+      try {
+        res = planRecovery.applySweep(app.projectPath, { confirm: [] });
+      } catch (err) {
+        app.message = `Repair: the task check could not run (${stripCtl(String((err && err.message) || err)).slice(0, 120)})`;
+      }
+      const report = res && res.report;
+      if (report && report.corrupt) {
         app.message = `Repair: could not read task state (${report.corrupt.reason})`;
-      } else {
-        const fixed = ['orphaned', 'swept', 'cancelled', 'unsatisfiable', 'quarantineReleased']
-          .reduce((n, k) => n + report[k].length, 0);
+      } else if (report && report.saveFailed) {
+        app.message = `Repair: the task changes could NOT be saved (${stripCtl(String(report.saveFailed)).slice(0, 120)})`;
+      } else if (report) {
+        const fixed = ['orphaned', 'swept', 'cancelled', 'unsatisfiable'].reduce((n, k) => n + report[k].length, 0)
+          + report.quarantineReleased.filter((id) => !report.orphaned.includes(id)).length;
         app.message = fixed > 0
           ? `✓ Repaired ${fixed} task-state issue${fixed === 1 ? '' : 's'}`
           : '✓ Task state healthy — nothing to repair';
+        if (res.waiting > 0) {
+          app.message += ` · ${res.waiting} build${res.waiting === 1 ? ' waits' : 's wait'} for you to name ${res.waiting === 1 ? 'it' : 'them'}: menu task sweep`;
+        }
       }
       return true;
     }

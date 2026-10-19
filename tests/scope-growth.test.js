@@ -93,7 +93,7 @@ describe('scope-growth — requestScopeGrowth writes a structured, refusable que
     scopeGrowth.requestScopeGrowth(fullRequest(slug, { step: '13' }), root);
     const screen = menuScreens.inboxQuestionsScreen(root);
     assert.ok(screen.text.includes(slug), 'the door must name the source plan');
-    assert.ok(screen.text.includes('step 13'), 'the door must name the source step');
+    assert.ok(screen.text.includes('step: "13"'), 'the door must name the source step');
   });
 
   it('4 · each of the seven missing fields refuses, names the field, and writes NO file', () => {

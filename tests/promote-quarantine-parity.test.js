@@ -112,11 +112,15 @@ function task(over) {
  * The shared conflict seed.
  *
  *   t1 — orphaned on AGE ALONE, reserving `src/lib/target.js`. 10 minutes old, so the
- *        presumed-dead bound (2 × the 120-min `implement` floor) has NOT elapsed and
- *        the reservation is genuinely still live.
- *   t2 — a queued `implement` candidate touching the SAME file. The scheduler WILL
- *        return it (t1 is orphaned and no longer occupies a slot); the quarantine is
- *        what must hold it.
+ *        presumed-dead bound (2 × the 120-min `implement` floor, or 2 × 30 min for a
+ *        non-build orphan) has NOT elapsed and the reservation is genuinely still live.
+ *   t2 — a queued `quality` task (a non-build editing task) touching the SAME file. The
+ *        scheduler WILL return it (t1 is orphaned and occupies no slot, and t2 is not a
+ *        build, so t1's hold on the build slot does not apply); the quarantine is what
+ *        must hold it. Once the one-build rule (the owner's decision of 2026-10-11) is
+ *        built, an age-only orphaned BUILD holds the build slot and no build candidate
+ *        would be offered to the quarantine; `over.orphanKind` / `over.candKind` let one
+ *        case pair a non-build orphan with a build candidate.
  *   t3 — a queued disjoint candidate that must ALWAYS promote.
  *   t4 — running, so fail/cancel/complete have a task to act on. Kind `review` with an
  *        empty touch set and no plan, so completing it is a registry-only settle (no
@@ -126,7 +130,7 @@ function conflictTasks(over = {}) {
   return [
     task({
       id: 't1',
-      kind: 'implement',
+      kind: over.orphanKind || 'implement',
       plan: 'plans/todo/held.md',
       status: 'orphaned',
       touches: [TARGET],
@@ -137,7 +141,7 @@ function conflictTasks(over = {}) {
       },
       ts: { created: ago(30 * MIN), started: ago(10 * MIN), done: ago(1 * MIN) }
     }),
-    task({ id: 't2', kind: 'implement', plan: 'p2', touches: [TARGET] }),
+    task({ id: 't2', kind: over.candKind || 'quality', plan: 'p2', touches: [TARGET] }),
     task({ id: 't3', kind: 'review', plan: 'p3', touches: [] }),
     task({
       id: 't4',
@@ -224,6 +228,18 @@ describe('the concurrent-edit guard runs on every promote path', () => {
     });
   }
 
+  for (const name of ROUTES) {
+    it(`case 1b — the ${name} path holds a BUILD candidate on a file a non-build age-only orphan reserves`, () => {
+      seedConflict(root, { orphanKind: 'quality', candKind: 'implement' });
+      const { promote, quarantined } = runRoute(name, root);
+
+      assert.ok(!ids(promote).includes('t2'), `route "${name}" promoted the build t2 onto a reserved file`);
+      const entry = quarantined.find((q) => q.id === 't2');
+      assert.ok(entry, `route "${name}" must offer the build and REPORT it held, not merely omit it`);
+      assert.equal(entry.reason, 'staleness-orphan-quarantine');
+    });
+  }
+
   it('case 5 — four-way parity: identical seeds promote an identical set on every route', () => {
     const results = ROUTES.map((name) => {
       const r = freshRoot();
@@ -246,12 +262,19 @@ describe('the concurrent-edit guard runs on every promote path', () => {
 
   it('case 6 — a released quarantine promotes on every route', () => {
     for (const name of ROUTES) {
-      const r = freshRoot({ orphanReason: 'confirmed-dead' });
+      // t5: a disjoint queued BUILD. Once the one-build rule is built, a confirmed-dead
+      // orphaned build must release the build slot, so t5 must still promote.
+      const t5 = task({ id: 't5', kind: 'implement', plan: 'p5', touches: ['src/lib/other.js'] });
+      const r = freshRoot({ orphanReason: 'confirmed-dead' }, [t5]);
       try {
         const { promote, quarantined } = runRoute(name, r);
         assert.ok(
           ids(promote).includes('t2'),
           `route "${name}" must promote t2 once the reservation is released (confirmed-dead)`
+        );
+        assert.ok(
+          ids(promote).includes('t5'),
+          `route "${name}" must promote the disjoint build t5 — a confirmed-dead orphan frees the build slot`
         );
         assert.equal(quarantined.length, 0, `route "${name}" must report no quarantine`);
       } finally {

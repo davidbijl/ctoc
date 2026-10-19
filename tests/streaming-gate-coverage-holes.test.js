@@ -219,7 +219,9 @@ describe('streaming-gate — a check that could not run never crosses a plan', (
     // HAS enough information and, with a working predicate, crosses by itself.
     precompute.writePlanQuestions(root, 'functional/would-cross.md', [], mtimeOf(p), undefined, CLASSIFIED);
 
-    const faulted = withBrokenPrecompute(() => streamingGate.pendingGateDecisions(root));
+    // four-defects s23 (ruling 4): the CROSSING pass runs under the fault, so it is the faulted
+    // predicate — not a missing `crossed` flag — that keeps the plan where it is.
+    const faulted = withBrokenPrecompute(() => streamingGate.pendingGateDecisions(root, { crossed: [] }));
 
     const d = faulted.find((x) => x.slug === 'would-cross');
     assert.ok(d, 'a plan whose predicate faulted must still be listed for the human');
@@ -234,7 +236,7 @@ describe('streaming-gate — a check that could not run never crosses a plan', (
 
     // Proof the FAULT — not the fixture — is what withheld the crossing: with the
     // predicate restored, this very plan crosses by sufficiency.
-    const healthy = streamingGate.pendingGateDecisions(root);
+    const healthy = streamingGate.pendingGateDecisions(root, { crossed: [] });
     assert.equal(healthy.some((x) => x.slug === 'would-cross'), false,
       'with a working predicate the same plan crosses and leaves the pending list');
     assert.equal(fs.existsSync(path.join(root, 'plans', 'implementation', 'would-cross.md')), true);

@@ -353,48 +353,94 @@ function workspaceProject(linkAt = 'greet', requireAs = 'greet', extra = {}) {
  * that a reader too fast to time must also be fast, in milliseconds, at four times the size.
  */
 const TIMED_MS = 40;
+/**
+ * What a call must cost under the DEFAULT cost, the processor time. It depends on the platform's processor clock, and a batch is
+ * read to within one tick. Windows ticks at about 15.6 ms: at 40 ms a batch is 2.5 ticks, the sizing batch of `cpuPerCall` could
+ * be read up to 1.5 times too high (3 ticks for 2.5 ticks of work) and the five-run minimum then favours a run read at 2 ticks,
+ * so a reader that is linear could be read as 4 to 4.7 times worse than the bound's 4 and flip the bound of 8; at 160 ms a batch
+ * is 10.3 ticks and one tick is under 10 percent of it. Elsewhere `process.cpuUsage()` advances in steps of a microsecond
+ * (measured on macOS: steps of 1, 2, 3 microseconds; on Linux the user plus system time comes from the scheduler's nanosecond
+ * runtime, believed and not measured), so a batch of 40 ms is read to within 0.0025 percent and 160 ms would only make the
+ * suite slower. A caller's `cost` keeps TIMED_MS: its own clock is not this one.
+ */
+const CPU_TIMED_MS = process.platform === 'win32' ? 160 : 40;
 const NOISE_MS = 2;
+/** The most calls of one batch: the sizing batch of `cpuPerCall` and the batch of `growth` stop here. */
+const MAX_CALLS = 8000;
 /**
  * A timing case in ratio form (the decision at review of 2026-10-09: a bound in milliseconds
  * passed or failed with the machine's load, where a ratio does not). `at(n)` gives the call to
  * time on an input of size `n`, built before it is timed; `cost(call)` runs it and answers
- * what it cost in milliseconds. The call is warmed once; `n` grows until one call costs at
- * least 20 ms or `4n` would pass `limit` (inputs of many megabytes measure the engine's
- * memory, not the reader); an input that cannot grow that far is run several times in a row,
- * so that what is timed still costs about 40 ms. Then the minimum of five runs at `n` and of
+ * what it cost in milliseconds (by default the processor time of this process, see `cpuBatch`). The call is warmed once; `n` grows until one call costs at
+ * least 40 ms (160 ms for the default cost on Windows, see CPU_TIMED_MS) or `4n` would pass `limit` (inputs of many megabytes measure the engine's
+ * memory, not the reader); an input that cannot grow that far is run several times in a row (at most MAX_CALLS),
+ * so that what is timed still costs about as much. Then the minimum of five runs at `n` and of
  * five runs at `4n` is taken. Work that is linear in the input gives a ratio near 4,
  * quadratic work one near 16, and the bound is 8. The one absolute bound is seconds wide and
  * stops a runaway reader early.
  * @param {(n: number) => (() => unknown)} at @param {number} n the first size tried @param {number} limit the largest `4n`
- * @param {(call: () => unknown) => (number|Promise<number>)} [cost] by default the time the call takes
+ * @param {(call: () => unknown) => (number|Promise<number>)} [cost] by default the processor time the call takes, taken
+ * over a batch of calls: this process's own user and system time (`process.cpuUsage()`), read once before the batch and
+ * once after, never per call. A caller's `cost` is run per call and summed. The default cost is for synchronous calls: it
+ * throws when a call returns a promise, which it would time only up to its first await.
  * @returns {Promise<{n: number, small: number, big: number, ratio: number}>}
  */
-async function growth(at, n, limit, cost = wallMs) {
+async function growth(at, n, limit, cost) {
+  const sample = cost || cpuPerCall;
+  const timed = cost ? TIMED_MS : CPU_TIMED_MS;
   let call = at(n);
-  await cost(call); // warm once
-  let once = await cost(call);
-  while (once < TIMED_MS && n * 8 <= limit) {
-    n *= once < TIMED_MS / 4 && n * 16 <= limit ? 4 : 2;
+  await sample(call); // warm once
+  let once = await sample(call);
+  while (once < timed && n * 8 <= limit) {
+    n *= once < timed / 4 && n * 16 <= limit ? 4 : 2;
     call = at(n);
-    once = await cost(call);
+    once = await sample(call);
   }
   assert.ok(once < 5000, `one call at size ${n} took ${once.toFixed(0)} ms`);
-  const times = once < TIMED_MS ? Math.min(Math.ceil(TIMED_MS / Math.max(once, 0.02)), 2000) : 1;
-  const run = async (fn) => {
-    let sum = 0;
-    for (let k = 0; k < times; k++) sum += await cost(fn);
-    return sum;
-  };
+  const times = once < timed ? Math.min(Math.ceil(timed / Math.max(once, 0.02)), MAX_CALLS) : 1;
+  const run = cost
+    ? async (fn) => {
+      let sum = 0;
+      for (let k = 0; k < times; k++) sum += await cost(fn);
+      return sum;
+    }
+    : async (fn) => cpuBatch(fn, times);
   const least = async (fn) => Math.min(await run(fn), await run(fn), await run(fn), await run(fn), await run(fn));
   const small = await least(call);
   const big = await least(at(4 * n));
   return { n, small, big, ratio: big / Math.max(small, NOISE_MS) };
 }
-/** @param {() => unknown} call @returns {number} the time one call takes, in milliseconds */
-function wallMs(call) {
-  const start = process.hrtime.bigint();
-  call();
-  return Number(process.hrtime.bigint() - start) / 1e6;
+/**
+ * The default cost: this process's own processor time (user plus system), not the wall clock. The wall clock
+ * of a call counts the time the process waits for a core, and under the full suite's load that inflated the larger input
+ * more than the smaller one (finding 2c, 2026-10-17: 23 ms at size 32, 288 ms at size 128, a ratio of 12.5 against the
+ * bound of 8, for work that is linear). The processor time of the process is what other processes' load cannot
+ * add to. It is read once before and once after a whole batch, never per call: the processor clock of Windows ticks at
+ * about 15.6 ms, so a reading around one call of under a millisecond is 0 or 15.6, where a batch of calls that costs
+ * about CPU_TIMED_MS (160 ms on Windows, 40 ms elsewhere) is read to within one tick. A call that returns a promise is refused: only its synchronous
+ * part would be timed.
+ * @param {() => unknown} call @param {number} times @returns {number} milliseconds of processor time for `times` calls
+ */
+function cpuBatch(call, times) {
+  const start = process.cpuUsage();
+  for (let k = 0; k < times; k++) {
+    const returned = call();
+    if (returned && typeof returned.then === 'function') {
+      throw new Error('the default cost times a synchronous call; this call returned a promise (asynchronous), so pass a cost that awaits it');
+    }
+  }
+  const used = process.cpuUsage(start);
+  return (used.user + used.system) / 1000;
+}
+/** @param {() => unknown} call @returns {number} the processor time of one call, from a batch of calls (at most MAX_CALLS) long enough to read */
+function cpuPerCall(call) {
+  let times = 1;
+  let ms = cpuBatch(call, times);
+  while (ms < CPU_TIMED_MS && times < MAX_CALLS) {
+    times = Math.min(times * 4, MAX_CALLS);
+    ms = cpuBatch(call, times);
+  }
+  return ms / times;
 }
 /** The change the rules read, built by hand: one file whose lines changed in place. */
 function changeOf(rel, oldText, newText) {

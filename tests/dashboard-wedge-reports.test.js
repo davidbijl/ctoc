@@ -87,7 +87,7 @@ describe('dashboard wedge reports — a project with no wedges is unchanged', ()
     })]);
 
     for (const marker of ['can NEVER run', 'held one pass', 'held this pass',
-      'orphaned on age alone', 'FAILED to run']) {
+      'orphaned on age alone', 'marked dead on age alone', 'would go back', 'FAILED to run']) {
       assert.ok(!text.includes(marker), `a clean project must not render "${marker}"`);
     }
   });
@@ -110,12 +110,12 @@ describe('dashboard wedge reports — a task the concurrent-edit guard held', ()
         },
         ts: { created: ago(11 * MIN), started: ago(10 * MIN), done: ago(1 * MIN) }
       }),
-      task({ id: 't2', touches: ['src/a.js'] })
+      task({ id: 't2', kind: 'quality', touches: ['src/a.js'] })
     ]);
 
     assert.ok(text.includes('held this pass'),
       'a human who never runs a menu task command must still see that work is being held');
-    assert.ok(text.includes('t2'), 'the held candidate must be named');
+    assert.match(text, /^\s+t2 — held/m, 'a line must name t2 as held, not merely mention it');
   });
 });
 
@@ -184,7 +184,11 @@ describe('dashboard wedge reports — deferred and age-only-orphaned work', () =
   it('shows an age-only orphan with its age and the floor that orphaned it', () => {
     const text = render([agingRunner('t1'), task({ id: 't2', blockedBy: ['t1'] })]);
 
-    assert.ok(text.includes('orphaned on age alone'));
+    // Contract replaced 2026-10-18 (owner): opening the dashboard changes no task and moves no plan;
+    // a dead build moves only when the human names it in `menu task sweep` — plan
+    // real-projects-do-not-stall-on-the-menu-s2. The old case asserted "orphaned on age alone"
+    // (a change made at render); the line now says what a sweep WOULD do, with the same detail.
+    assert.ok(text.includes('would be marked dead on age alone'));
     assert.ok(text.includes('(implement)'));
     assert.ok(text.includes('min old'));
     assert.ok(text.includes('the floor for this kind is 120 min'));

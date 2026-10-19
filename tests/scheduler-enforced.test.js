@@ -81,6 +81,7 @@ function writePlan(stage, name, { files = [], dependsOn = null, steps = true } =
 
 describe('R3-B item 1 — guarded start: the ladder is CHECKED, not just defined', () => {
   it('E-FILE: start on a file-conflicting task is REFUSED; the registry is unchanged', () => {
+    writePlan('todo', 'pA', { files: ['src/shared.js'] }); // a build start needs its plan file in todo/ or in-progress/
     const a = ms.route(['menu', 'task', 'add', 'implement', 'pA', '--touches', 'src/shared.js'], root);
     ms.route(['menu', 'task', 'start', a.taskId], root);
     const b = ms.route(['menu', 'task', 'add', 'implement', 'pB', '--touches', 'src/shared.js'], root);
@@ -118,6 +119,7 @@ describe('R3-B item 1 — guarded start: the ladder is CHECKED, not just defined
     // A sync whose dep is still RUNNING is refused by Rule 0 (dep-gate: a sync dep must be
     // SETTLED) — that reason is `blocked-dep`, evaluated before the ladder. The sync-barrier
     // rule proper is: once a sync IS running, NO other candidate may start. Drive that.
+    writePlan('todo', 'pA', { files: ['src/a.js'] }); // the build really runs, so its plan file exists
     const impl = ms.route(['menu', 'task', 'add', 'implement', 'pA', '--touches', 'src/a.js'], root);
     ms.route(['menu', 'task', 'start', impl.taskId], root);
     const sync = ms.route(['menu', 'task', 'add', 'sync', 'wave', '--blocked', impl.taskId], root);
@@ -148,8 +150,10 @@ describe('R3-B item 1 — guarded start: the ladder is CHECKED, not just defined
   });
 
   it('E-FORCE: --force starts anyway, is FLAGGED loudly in the text, and is LOGGED', () => {
+    writePlan('todo', 'pA', { files: ['src/shared.js'] }); // a build start needs its plan file in todo/ or in-progress/
     const a = ms.route(['menu', 'task', 'add', 'implement', 'pA', '--touches', 'src/shared.js'], root);
     ms.route(['menu', 'task', 'start', a.taskId], root);
+    writePlan('todo', 'pB', { files: ['src/shared.js'] }); // the forced build needs its plan file too
     const b = ms.route(['menu', 'task', 'add', 'implement', 'pB', '--touches', 'src/shared.js'], root);
 
     const res = ms.route(['menu', 'task', 'start', b.taskId, '--force'], root);
@@ -168,6 +172,7 @@ describe('R3-B item 1 — guarded start: the ladder is CHECKED, not just defined
   });
 
   it('E-OK: an allowed start still starts (the guard is not a blanket refusal)', () => {
+    writePlan('todo', 'pA', { files: ['src/a.js'] }); // a build start needs its plan file in todo/ or in-progress/
     const a = ms.route(['menu', 'task', 'add', 'implement', 'pA', '--touches', 'src/a.js'], root);
     const res = ms.route(['menu', 'task', 'start', a.taskId], root);
     assert.equal(res.ok, true);
@@ -190,8 +195,8 @@ describe('R3-B item 1 — guarded start: the ladder is CHECKED, not just defined
 
 describe('R3-B items 2+3 — no duplicate task per plan; a ladder-refused head does not stall the walk', () => {
   it('D1: two startAgent calls on a ladder-refused head leave exactly ONE task for that plan', () => {
-    // Occupy src/shared.js with a running task so the head plan is ladder-refused.
-    const occ = ms.route(['menu', 'task', 'add', 'implement', 'blocker', '--touches', 'src/shared.js'], root);
+    // Occupy src/shared.js with a running non-build task so the head plan is file-conflicted.
+    const occ = ms.route(['menu', 'task', 'add', 'quality', 'blocker', '--touches', 'src/shared.js'], root);
     ms.route(['menu', 'task', 'start', occ.taskId], root);
     writePlan('todo', 'head-plan', { files: ['src/shared.js'] });
 
@@ -208,7 +213,7 @@ describe('R3-B items 2+3 — no duplicate task per plan; a ladder-refused head d
   });
 
   it('D2: a disjoint second todo plan CLAIMS even though the head is ladder-refused', () => {
-    const occ = ms.route(['menu', 'task', 'add', 'implement', 'blocker', '--touches', 'src/shared.js'], root);
+    const occ = ms.route(['menu', 'task', 'add', 'quality', 'blocker', '--touches', 'src/shared.js'], root);
     ms.route(['menu', 'task', 'start', occ.taskId], root);
     // head-plan conflicts; free-plan is disjoint. Older mtime = FIFO head.
     const headPath = writePlan('todo', 'a-head-plan', { files: ['src/shared.js'] });
@@ -471,8 +476,11 @@ describe('R3-B item 8 — staleness-freed files are quarantined for one pass', (
     const reg = taskRegistry.load(root);
     const runner = taskRegistry.addTask(reg, { kind: 'implement', plan: 'p1', touches: ['src/shared.js'] });
     taskRegistry.updateTask(reg, runner.id, { status: 'running', ts: { started: old } });
-    const waiter = taskRegistry.addTask(reg, { kind: 'implement', plan: 'p2', touches: ['src/shared.js'] });
-    const free = taskRegistry.addTask(reg, { kind: 'implement', plan: 'p3', touches: ['src/free.js'] });
+    // non-build waiters: once the one-build rule (the owner's decision of 2026-10-11) is built,
+    // a build orphaned on age alone holds the build slot, so a
+    // build waiter would never be offered to the quarantine this case tests
+    const waiter = taskRegistry.addTask(reg, { kind: 'quality', plan: 'p2', touches: ['src/shared.js'] });
+    const free = taskRegistry.addTask(reg, { kind: 'quality', plan: 'p3', touches: ['src/free.js'] });
     taskRegistry.save(root, reg);
 
     const { report, promote } = taskReconcile.reconcileState(root, {}); // no live list → staleness backstop
@@ -542,6 +550,7 @@ describe('R3-B item 10 — cancelling has a deadline', () => {
   });
 
   it('X3: `menu task cancel --force` frees a RUNNING task immediately, loudly', () => {
+    writePlan('todo', 'pA', { files: ['src/a.js'] }); // a build start needs its plan file in todo/ or in-progress/
     const a = ms.route(['menu', 'task', 'add', 'implement', 'pA', '--touches', 'src/a.js'], root);
     ms.route(['menu', 'task', 'start', a.taskId], root);
     const res = ms.route(['menu', 'task', 'cancel', a.taskId, '--force'], root);
@@ -552,6 +561,7 @@ describe('R3-B item 10 — cancelling has a deadline', () => {
   });
 
   it('X4: an ordinary running-cancel stamps ts.cancelRequested (the deadline clock starts)', () => {
+    writePlan('todo', 'pA', { files: ['src/a.js'] }); // a build start needs its plan file in todo/ or in-progress/
     const a = ms.route(['menu', 'task', 'add', 'implement', 'pA', '--touches', 'src/a.js'], root);
     ms.route(['menu', 'task', 'start', a.taskId], root);
     ms.route(['menu', 'task', 'cancel', a.taskId], root);

@@ -163,6 +163,57 @@ function isPathPlausible(token) {
   return FILE_EXTENSIONS.has(token.slice(token.lastIndexOf('.') + 1).toLowerCase());
 }
 
+/**
+ * A PLACEHOLDER as a whole part of a file name: a less-than sign, at least one
+ * character that is neither sign nor a slash or backslash, then a greater-than
+ * sign, at the start of the name or right after a dot, hyphen or underscore, and
+ * followed by the end of the name or a dot, hyphen or underscore.
+ *
+ * Linear: an attempt passes the left boundary only at a less-than sign, and the
+ * run after it stops at the next sign, slash or backslash, so the runs of two
+ * attempts never overlap. No `g` flag, so `.test` keeps no `lastIndex` between
+ * calls.
+ */
+const PLACEHOLDER_PART_RE = /(?:^|[._-])<([^<>\\/]+)>(?:[._-]|$)/;
+
+/**
+ * Inline HTML tag names. A plan written as HTML wraps a path in one of these
+ * (`<code>.eslintrc.json</code>`), the tag lands in the capture, and with the file
+ * name beginning with a dot, underscore or hyphen it would read as a placeholder
+ * and hide a real claim. A one-letter placeholder such as `<b>` is therefore read
+ * as a tag: a false refusal, never a hidden claim.
+ */
+const INLINE_HTML_TAGS = Object.freeze(new Set([
+  'code', 'kbd', 'samp', 'var', 'tt', 'b', 'i', 'em', 'strong', 'span', 'br', 'wbr'
+]));
+
+/**
+ * Does a Pattern 1 or Pattern 2 capture name a file only at run time?
+ *
+ * A plan writes a name that exists only at run time as a placeholder. Slice 7 of
+ * the four-defects round claims a file the answer route makes once per answer, in
+ * a placeholder folder under a placeholder file name, and its completion was
+ * refused for that path (2026-10-12). Such a capture names no file on disk, so it
+ * is not a claim.
+ *
+ * Only the FILE NAME is read. A placeholder in a folder part, an HTML tag glued in
+ * front of a path, or a line-break tag joining two paths still leaves a real file
+ * name at the end of the capture, and that claim is still checked. A lone sign, a
+ * reversed pair, an empty pair and a pair glued inside a word are not placeholders.
+ *
+ * `path.win32.basename` takes the last part after either separator on every
+ * platform, as `declaredFileExistsUnder` and `isPathPlausible` treat both; the
+ * POSIX `path.basename` keeps a backslash-separated folder in the name, and the
+ * same plan would read differently on Windows.
+ *
+ * @param {string} capture - a Pattern 1 or Pattern 2 capture
+ * @returns {boolean} true if the capture's file name holds a whole-part placeholder
+ */
+function isPlaceholderName(capture) {
+  const match = PLACEHOLDER_PART_RE.exec(path.win32.basename(capture));
+  return match !== null && !INLINE_HTML_TAGS.has(match[1].toLowerCase());
+}
+
 // An inline code span that contains a CALL is a citation of code, never a file
 // claim. Only spans containing an open parenthesis are blanked: a span citing a
 // plain path is left visible, so a real claim written in backticks still
@@ -666,6 +717,14 @@ function declaredFileExistsUnder(root, declared) {
  * removes a real refusal observed on this repository's own plans; the teeth are
  * pinned by the `00260 teeth:` cases in `tests/plan-validator.test.js`.
  *
+ * A PLACEHOLDER file name is not a claim either (four-defects slice 17). Pattern 1
+ * and Pattern 2 both pass over, before they record anything, a capture whose file
+ * name holds a part written between a less-than and a greater-than sign
+ * (`isPlaceholderName`), and the placeholder counts only
+ * as a whole part of the name. A placeholder in a folder part changes nothing, and
+ * neither does an inline HTML tag name between the signs. Pinned by the
+ * `four-defects s17` cases in `tests/plan-validator.test.js`.
+ *
  * @param {string} content - the full plan text (untrusted; every pattern here is linear)
  * @param {string} projectPath - repository root the claims resolve against
  * @returns {{errors: string[], warnings: string[], checklist: object}} scan result
@@ -740,6 +799,9 @@ function validateNoContradictions(content, projectPath) {
     // A token that cannot name a file is not a claim about a file.
     if (!isPathPlausible(filePath)) continue;
 
+    // A placeholder file name names no file (isPlaceholderName): not a claim, no checklist entry.
+    if (isPlaceholderName(filePath)) continue;
+
     const fullPath = path.isAbsolute(filePath)
       ? filePath
       : path.join(projectPath, filePath);
@@ -770,6 +832,8 @@ function validateNoContradictions(content, projectPath) {
 
   while ((match = scriptPattern.exec(scanContent)) !== null) {
     const scriptPath = match[1];
+    // A placeholder file name names no script (isPlaceholderName).
+    if (isPlaceholderName(scriptPath)) continue;
     const fullPath = path.isAbsolute(scriptPath)
       ? scriptPath
       : path.join(projectPath, scriptPath);

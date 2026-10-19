@@ -64,6 +64,12 @@ const PRE_BUILD_DESTINATIONS = new Set(
 // ANSI/control sequences or forge screen rows.
 const stripCtl = (s) => String(s).replace(/[\x00-\x1f\x7f-\x9f]/g, '');
 
+// Mirrors `INVISIBLE` in streaming-precompute.js: default-ignorable code points, format
+// characters (zero-width, bidirectional controls), line/paragraph separators and the braille
+// blank. A ready-line name carrying one reads like another plan's name yet compares unequal,
+// which would defeat "when two entries carry the name he gave, ask him which".
+const stripInvisible = (s) => String(s).replace(/[\p{Default_Ignorable_Code_Point}\p{Cf}\p{Zl}\p{Zp}\u2800]/gu, '');
+
 // The three approvePlan gate edges, in furthest-along-FIRST order (review first).
 // Kept aligned with gate-order.GATE_EDGES.
 //
@@ -842,6 +848,30 @@ function composeSufficiencyEvidence(ref, verdict) {
 }
 
 /**
+ * Would the crossing of this plan into `toStage` be refused before it writes anything? The ONE
+ * place the refusals live; crossBySufficiency (the crossing) and movesOnItsOwn (the ready
+ * predicate) both ask it, so a plan one refuses the other never calls ready. True when:
+ * - an approval entry for this plan already has `stage_to === toStage` (the idempotence refusal);
+ * - an entry on the same canonical key records a different `plan_basename` (the approval
+ *   record's case-collision refusal, approval-ledger persistEntry — two files differing only
+ *   by case, so the write would erase the other's provenance);
+ * - the specification cannot be bound (`computeSpecHash(content).ok` is false, for example a
+ *   plan with no `---` frontmatter), where the record refuses to mint an entry;
+ * - a plan file of that name already sits at the destination (movePlan's collision refusal).
+ * Throws on a file name the approval record cannot key; both callers fail soft on that.
+ * If the approval record or movePlan gains a refusal, it is added here in the same change.
+ */
+function crossingBlocked(root, planPath, toStage, content) {
+  const ledger = require('./approval-ledger');
+  const existing = ledger.readEntry(ledger.slugFromPlanPath(planPath), root);
+  if (existing && existing.stage_to === toStage) return true;
+  const ownName = path.basename(planPath).replace(/\.md$/i, '');
+  if (existing && existing.plan_basename !== undefined && existing.plan_basename !== ownName) return true;
+  if (!ledger.computeSpecHash(content).ok) return true;
+  return safeFs.existsSync(path.join(getPlansDir(root), toStage, path.basename(planPath)));
+}
+
+/**
  * X6 — CROSS a plan by SUFFICIENCY: the plan had enough information to be built
  * without guessing, so the pipeline advances it ITSELF and the human approves
  * nothing. Writes a sufficiency ledger entry (advanced_by:'sufficiency', evidence,
@@ -850,9 +880,14 @@ function composeSufficiencyEvidence(ref, verdict) {
  * (todo/) still matches the recorded hash.
  *
  * INVARIANT: entry-and-moved, or NEITHER. The entry is written FIRST; if the move
- * then fails (e.g. a same-basename collision at the destination), the orphan entry is
- * rolled back. IDEMPOTENT (Decision 3): a plan already carrying an entry for this
- * destination is never re-crossed. FAIL-SOFT: any error returns false so a cross
+ * then fails on a write fault (e.g. a permissions error on the rename), the orphan
+ * entry is rolled back. A same-basename collision at the destination is refused before
+ * any entry is written (crossingBlocked), but only when one pass runs alone. When two
+ * continuation passes run at once (for example `stream answer` and a `--continue`
+ * completion), both can pass crossingBlocked; nothing locks the steps from the check
+ * through the write and the move, so the loser's move throws and its rollback can delete
+ * the winner's approval entry. That is listed for the owner; no lock exists today. IDEMPOTENT
+ * (Decision 3): a plan already carrying an entry for this destination is never re-crossed. FAIL-SOFT: any error returns false so a cross
  * failure never bricks the pending-decisions read.
  *
  * @param {string} root project root
@@ -870,12 +905,11 @@ function crossBySufficiency(root, planPath, ref, fromStage, toStage, verdict) {
   try {
     const ledger = require('./approval-ledger');
     const slug = ledger.slugFromPlanPath(planPath);
-    // IDEMPOTENT: an entry already recorded for THIS destination means the plan
-    // already crossed this edge — never write a second one, never re-cross.
-    const existing = ledger.readEntry(slug, root);
-    if (existing && existing.stage_to === toStage) return false;
-
     const content = safeFs.readFileSync(planPath, 'utf8');
+    // IDEMPOTENT and fail-closed: every refusal the crossing has, in one place that the
+    // ready predicate (movesOnItsOwn) shares — see crossingBlocked.
+    if (crossingBlocked(root, planPath, toStage, content)) return false;
+
     // The audit record of a self-crossed gate: composed from the SAME verdict that
     // authorised the crossing, so the numbers describe the exact state the decision
     // was based on. It states the DENOMINATOR (how many questions existed) as well as
@@ -965,12 +999,17 @@ function regimeHold(root, stage) {
 /**
  * The ORDERED list of plans currently sitting at a human gate awaiting a decision.
  *
- * X6 — THE GATE CROSSES ITSELF. This is no longer a pure read: before listing, any
- * plan at a PRE-BUILD gate (implementation, todo) that has ENOUGH INFORMATION to be
+ * X6 — THE GATE CROSSES ITSELF, BUT ONLY ON THE CONTINUATION'S PASS (four-defects s23).
+ * A plan at a PRE-BUILD gate (implementation, todo) that has ENOUGH INFORMATION to be
  * built without guessing AND passes its transition validation is CROSSED here, by a
  * sufficiency ledger entry + the stage move (`crossBySufficiency`), and OMITTED from
  * the returned list — the human is never shown a decision that has already been
- * answered. Everything else is still a pure, fail-soft read: readPlans skips an
+ * answered — but ONLY when `opts.crossed` is an array. A call without it is a READ and
+ * crosses NOTHING: a plan with enough information stays in the RETURNED list, with
+ * `enough: true`, until the next continuation crosses it. The screens leave such a plan
+ * out of the question queue (`askQueue`) and name it on one status line, and its own plan
+ * screen asks him nothing, so the owner is still never asked a decision that needs
+ * nothing from him. Everything is a fail-soft read otherwise: readPlans skips an
  * unreadable plan, a validator that throws degrades that plan to
  * passesValidation:false, and a cross that fails leaves the plan listed.
  *
@@ -990,10 +1029,11 @@ function regimeHold(root, stage) {
  * human name, and `decisionsNotRecorded: true` when its decided-by-default questions could
  * not be written into it), and a BUILT plan in review finishes on its evidence
  * (`crossOnEvidence`) when its transition validation passes, it is not empty, and its
- * questions need nobody (`enough`, or none stored). Every pre-build crossing, on any call,
- * appends the questions it decided by default to the plan (`appendDefaultDecisions`). Without `opts.crossed` — the default
- * screen, the on-open banner, the session-start status — a review plan is listed for the
- * human exactly as before, so nothing finishes when the menu opens.
+ * questions need nobody (`enough`, or none stored). Every pre-build crossing — all of them on
+ * this pass — appends the questions it decided by default to the plan
+ * (`appendDefaultDecisions`). Without `opts.crossed` — the default screen, the on-open
+ * banner, the session-start status — nothing crosses and nothing finishes: every plan is
+ * listed for the human, so nothing moves when the menu opens.
  *
  * ── A REGULATED PROJECT (`regimeHold`) ───────────────────────────────────────────
  * The regime is read once per stage that holds plans. Where it governs the crossing and
@@ -1046,13 +1086,21 @@ function pendingGateDecisions(projectRoot, opts = {}) {
       // ACTS (the cross below) and, if the plan stays, DISPLAYS (pushed into `out`).
       const sufficiency = sufficiencyFor(projectRoot, ref);
 
-      // X6: enough information at a pre-build gate crosses the plan by itself and it
-      // stops being a pending decision. Fail-closed conditions are all short-circuited.
-      if (sufficiency.enough === true && passesValidation && !regime
+      // X6 + four-defects s23: enough information at a pre-build gate crosses the plan by
+      // itself — but ONLY on the continuation's pass (`crossed` present), exactly as the
+      // review→done cross below already requires. A READ MUST NOT CROSS A GATE: without the
+      // `crossed &&` guard, any bare call (the default screen, advanceAfter, the on-open /
+      // session-start banner, precompute) crossed pre-build plans as a side effect, so a
+      // background agent that reached a read through a launcher crossed a gate invisibly.
+      // `crossed &&` is placed FIRST so short-circuit evaluation keeps crossBySufficiency's
+      // side effect (ledger entry + move) from running on a bare read. This closes "a read
+      // crosses a gate"; it does NOT close the explicit write routes a launcher can still
+      // reach (see the plan's residual risk). Fail-closed conditions follow, unchanged.
+      if (crossed && sufficiency.enough === true && passesValidation && !regime
           && PRE_BUILD_DESTINATIONS.has(meta.toStage)
           && crossBySufficiency(projectRoot, plan.path, ref, stage, meta.toStage, sufficiency)) {
-        // Every crossing writes its decided-by-default questions into the plan, whichever
-        // call made it (the default screen crosses pre-build plans too, as before).
+        // Every crossing writes its decided-by-default questions into the plan; every crossing
+        // happens on the continuation's pass; the default screen crosses nothing (four-defects s23).
         const newPath = path.join(plansDir, meta.toStage, `${plan.name}.md`);
         const written = sufficiency.defaults.length > 0 ? appendDefaultDecisions(newPath, sufficiency.defaults) : 0;
         if (crossed) {
@@ -1508,8 +1556,11 @@ function brokenPlanScreen(stage, file, projectRoot, reason) {
  * ride-along pattern — environment, compliance, task board) so that no capability
  * is lost to AskUserQuestion's four-option cap.
  *
- * Pure read: renders only. Nothing here crosses a gate — crossing stays on the
- * explicit `stream approve`, which routes through the gate-safe `approvePlan`.
+ * Not a pure read: for a pre-build plan it calls `sweepPendingQuestions`, which writes the
+ * question store and removes waiting files. It crosses no approval point — crossing stays on the
+ * explicit `stream approve`, which routes through the gate-safe `approvePlan`. A plan the
+ * crossing would accept gets the queue screens' ready line, no detail asked and an Approve
+ * not marked Recommended (four-defects s23).
  *
  * @param {string} ref plan reference ("stage/file.md")
  * @param {string} projectRoot
@@ -1569,8 +1620,30 @@ function planDecisionScreen(ref, projectRoot) {
   const questions = [];
   const actions = {};
 
-  // 1. The PRODUCT question — what the application should do. Always first.
-  const next = nextUnansweredQuestion(projectRoot, ref);
+  // four-defects s23: a plan the crossing would accept needs nothing from the owner, so its own
+  // screen puts nothing to him either: the queue screens' ready line above it, no detail the
+  // critique already settled, and Approve offered without "Recommended". Only a plan at a
+  // pre-build gate can be ready. The gate critic's waiting files are taken in first, as
+  // streamingGateScreen does, so this screen and the queue screens agree; a sweep fault leaves
+  // the store as it was, which can only make the plan read as not ready (a waiting file never
+  // replaces a classified one of the same revision).
+  let readyPlan = null;
+  let sweepFault = '';
+  if (gate && PRE_BUILD_DESTINATIONS.has(gate.toStage)) {
+    try {
+      require('./streaming-questions-sweeper').sweepPendingQuestions(projectRoot);
+    } catch (err) {
+      // Said on the screen, as the default screen says it: never a silent fall-through.
+      sweepFault = `New questions could not be taken in (${stripCtl((err && err.message) || String(err))}).\n\n`;
+    }
+    readyPlan = pendingGateDecisions(projectRoot)
+      .find((d) => d.ref === `${stage}/${file}` && movesOnItsOwn(d, projectRoot)) || null;
+  }
+  if (readyPlan) text = `${stripCtl(readyStatus([readyPlan], projectRoot))}\n\n${text}`;
+  if (sweepFault) text = sweepFault + text;
+
+  // 1. The PRODUCT question — what the application should do. Always first; a ready plan has none to ask.
+  const next = readyPlan ? null : nextUnansweredQuestion(projectRoot, ref);
   if (next !== null) {
     const parts = precomputedQuestionParts(
       next.question,
@@ -1602,7 +1675,9 @@ function planDecisionScreen(ref, projectRoot) {
     // human reads and the send-back/validate actions must stay byte-identical.
     const approve = {
       label: approveLabel,
-      description: 'Recommended — everything checks out. Your answer is recorded as yours.',
+      description: readyPlan
+        ? 'Approve it now yourself; it is recorded as your approval.'
+        : 'Recommended — everything checks out. Your answer is recorded as yours.',
     };
     // `validate <ref>` is the ONLY route to the validation detail screen and to the
     // deliberate `claude:approve --override` force-crossing — the human's own
@@ -1850,7 +1925,7 @@ function nothingPendingScreen(statusLine) {
   let text = '';
   if (statusLine) text += `${stripCtl(statusLine)}\n\n`;
   text += `No gate decisions pending\n${'─'.repeat(40)}\n\n`;
-  text += '  Every plan at a human gate has been decided. Start something new, or\n';
+  text += '  Nothing at a human gate needs a decision from you. Start something new, or\n';
   text += '  open the dashboard for the full pipeline overview.\n\n\n';
   return {
     text,
@@ -1869,6 +1944,74 @@ function nothingPendingScreen(statusLine) {
       'Open the dashboard': 'dashboard',
     },
   };
+}
+
+/**
+ * four-defects s23: does this pending decision need NOTHING from the owner — would the
+ * continuation's crossing pass accept it? The conditions pendingGateDecisions tests are
+ * mirrored here (enough information, passing validation, no regime hold, a pre-build
+ * destination); every refusal crossBySufficiency and movePlan have is shared, not copied:
+ * both call crossingBlocked (an entry already recorded for the destination, a foreign entry
+ * on the same canonical key, a specification that cannot be bound, a plan file of the same
+ * name at the destination). Any fault reads as NOT ready: the plan is asked, never hidden —
+ * the same answer the crossing gives, since crossBySufficiency fails soft on the same faults
+ * (for one: a file name the approval record cannot key, e.g. one with an underscore, throws
+ * in readEntry there and here). Costs, per plan that is otherwise ready, one ledger lookup,
+ * one read of the plan and one existence check on the render path.
+ */
+function movesOnItsOwn(d, root) {
+  if (d.enough !== true || !d.passesValidation || d.regimeHold || !PRE_BUILD_DESTINATIONS.has(d.toStage)) return false;
+  try {
+    // d.slug is a SAFE_PLAN_FILE name: pendingGateDecisions skips every other
+    const planPath = path.join(getPlansDir(root), d.fromStage, `${d.slug}.md`);
+    return !crossingBlocked(root, planPath, d.toStage, safeFs.readFileSync(planPath, 'utf8'));
+  } catch {
+    return false;
+  }
+}
+
+/** The pending list split in two: the decisions the owner is asked, and the plans that need nothing from him. */
+function askQueue(decisions, root) {
+  const asks = [];
+  const ready = [];
+  for (const d of decisions) (movesOnItsOwn(d, root) ? ready : asks).push(d);
+  return { asks, ready };
+}
+
+/**
+ * The one status line naming the ready plans (names capped as the banner caps them), or '' when
+ * there are none. It promises a move only while one will come: a background task that is queued
+ * or running runs the continuation when it finishes, so the plans move on at the next step; with
+ * none, nothing but the owner will move them, and the line says so and that his approve is
+ * recorded as his. task-registry.load never throws for a string root: a registry it cannot read
+ * loads as no tasks, and a task it cannot read cannot be completed through the menu either
+ * (menu-screens.taskComplete refuses an unknown id), so the second form is still true.
+ */
+function readyStatus(ready, root) {
+  if (ready.length === 0) return '';
+  const names = ready.map((d) => stripInvisible(humanPlanName(d.title, d.slug)));
+  let list;
+  try { list = require('./loop-b-driver').summarize(names); } catch { list = names.join(', '); }
+  const busy = require('./task-registry').load(root).tasks.some((t) => t.status === 'queued' || t.status === 'running');
+  if (busy) {
+    return `Ready, moving on by itself at the next step: ${list}. The next step is when a background task finishes`
+      + ' or you answer or approve something; to approve one now yourself, say which.';
+  }
+  return `Ready, but nothing is running that would move it on: ${list}. To approve one now yourself, say which;`
+    + ' approving records it as your approval.';
+}
+
+/** How the session approves one now: one `{ name, approve }` per ready plan, the existing approve route. */
+function withReady(screen, ready) {
+  if (screen && ready.length > 0) {
+    screen.ready = ready.map((d) => ({ name: cappedName(stripInvisible(humanPlanName(d.title, d.slug))), approve: `stream approve ${d.ref}` }));
+  }
+  return screen;
+}
+
+/** One plan name cut the way the ready line cuts it (loop-b-driver's per-name cap); whole when the driver cannot load. */
+function cappedName(name) {
+  try { return require('./loop-b-driver').summarize([name]); } catch { return name; }
 }
 
 /**
@@ -1991,23 +2134,24 @@ function streamingGateScreen(projectRoot, statusLine, opts) {
       sweepFault = `New questions could not be taken in (${stripCtl((err && err.message) || String(err))}).`;
     }
   }
-  // THE ON-OPEN ENGINE BANNER. Compute it BEFORE pendingGateDecisions so
-  // loopBDirective's own before/after snapshot straddles the sufficiency cross (the
-  // same ordering streamAnswer uses at its call site). The banner is added ONCE, here
+  // THE ON-OPEN ENGINE BANNER. loopBDirective no longer takes a before/after snapshot (a
+  // read crosses nothing: four-defects s23), so computing the banner before
+  // pendingGateDecisions is no longer load-bearing; the order is kept because it is
+  // harmless (and matches streamAnswer's call site). The banner is added ONCE, here
   // at the top-level default-screen assembly, so every default entry path shows it and
   // no path double-renders. streamAnswer passes `{ banner: false }` because it appends
   // loopBDirective itself — without the flag its screen would carry loopB twice.
   const withBanner = !opts || opts.banner !== false;
   const banner = withBanner ? engineStatusBanner(projectRoot) : '';
-  const decisions = pendingGateDecisions(projectRoot);
+  const { asks, ready } = askQueue(pendingGateDecisions(projectRoot), projectRoot);
   // Plans left out of the decisions because of their file name are COUNTED on the
   // status line, never hidden.
   const unsafe = countUnsafePlanFiles(projectRoot);
   const notice = unsafe > 0
     ? `${unsafe} plan file(s) have a name CTOC will not pass to a command — rename them.`
     : '';
-  const status = [statusLine, notice, sweepFault].filter((x) => isNonEmptyStr(x)).join('  ');
-  const screen = gateScreenAt(decisions, 0, status || statusLine, projectRoot);
+  const status = [statusLine, notice, sweepFault, readyStatus(ready, projectRoot)].filter((x) => isNonEmptyStr(x)).join('  ');
+  const screen = withReady(gateScreenAt(asks, 0, status || statusLine, projectRoot), ready);
   if (banner && screen && typeof screen.text === 'string') {
     screen.text = banner + screen.text;
   }
@@ -2116,10 +2260,11 @@ function refusedAutoPushLine(root) {
  * after it in the ordered list.
  */
 function advanceAfter(ref, projectRoot, statusLine) {
-  const decisions = pendingGateDecisions(projectRoot);
-  const idx = decisions.findIndex(d => d.ref === ref);
+  const { asks, ready } = askQueue(pendingGateDecisions(projectRoot), projectRoot);
+  const idx = asks.findIndex(d => d.ref === ref);
   const nextIndex = idx >= 0 ? idx + 1 : 0;
-  return gateScreenAt(decisions, nextIndex, statusLine, projectRoot);
+  const status = [statusLine, readyStatus(ready, projectRoot)].filter((x) => isNonEmptyStr(x)).join('  ');
+  return withReady(gateScreenAt(asks, nextIndex, status || statusLine, projectRoot), ready);
 }
 
 /**
@@ -2133,8 +2278,9 @@ function advanceAfter(ref, projectRoot, statusLine) {
  * re-asked first.
  */
 function advanceExcludingSlug(slug, projectRoot, statusLine) {
-  const decisions = pendingGateDecisions(projectRoot).filter(d => d.slug !== slug);
-  return gateScreenAt(decisions, 0, statusLine, projectRoot);
+  const { asks, ready } = askQueue(pendingGateDecisions(projectRoot).filter(d => d.slug !== slug), projectRoot);
+  const status = [statusLine, readyStatus(ready, projectRoot)].filter((x) => isNonEmptyStr(x)).join('  ');
+  return withReady(gateScreenAt(asks, 0, status || statusLine, projectRoot), ready);
 }
 
 /**
@@ -2144,8 +2290,9 @@ function advanceExcludingSlug(slug, projectRoot, statusLine) {
  * override it. Returns the NEXT pending decision with a one-line status.
  *
  * After a successful approve the work keeps moving: `menu-screens.continueAfterCrossing` runs
- * with the plan just crossed, and what it started (a planner, a classification, a build) rides
- * on the screen as `promote` for the session to launch, named in one status sentence.
+ * with the plan just crossed, and what it queued (a planner, a classification, at most one build
+ * for the session to claim), with any other queued task the scheduler now allows, rides on the
+ * screen as `promote` for the session to launch, named in one status sentence.
  */
 function streamApprove(ref, projectRoot) {
   const parsed = parseRef(ref);
@@ -2351,8 +2498,9 @@ function streamAnswer(ref, questionId, optionKey, projectRoot, shownDigest) {
     ? `You are holding ${parsed.file}. Nothing moves it until you release the hold.`
     : released ? `Released the hold on ${parsed.file}.` : `Recorded your answer for ${parsed.file}.`;
 
-  // THE WORK KEEPS MOVING: the continuation crosses what this answer allowed, queues a planner
-  // or a classification, and starts approved builds; the directive names what moved. FAIL-OPEN:
+  // THE WORK KEEPS MOVING: the continuation crosses what this answer allowed, queues a planner,
+  // a classification or at most one build (never claimed here), with any other queued task the
+  // scheduler now allows riding as `promote`; the directive names what moved. FAIL-OPEN:
   // any fault omits the directive but NEVER loses the recorded answer or breaks the screen.
   const cont = continueAfter(projectRoot);
   let directive = '';
@@ -2384,7 +2532,8 @@ module.exports = {
   humanPlanName,
   // Exported as the testable seam for the sufficiency audit record. Both are live
   // internally: `composeSufficiencyEvidence` is called by `crossBySufficiency`, which
-  // is called by `pendingGateDecisions` on every gate-screen render.
+  // is called by `pendingGateDecisions` only on the continuation's pass (`opts.crossed`);
+  // a render crosses nothing.
   composeSufficiencyEvidence,
   crossBySufficiency,
 };

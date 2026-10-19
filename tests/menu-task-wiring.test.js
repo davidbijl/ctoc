@@ -814,10 +814,11 @@ describe('R3-D — inbox escalations door', () => {
 // completion was the ONE route gate-safety forbade).
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('R3-D — isNavRoute allowlist covers every real NAV route', () => {
-  it('N1: `stubs <slug>` and `menu commands` are accepted (they are NAV routes in start.md)', () => {
+describe('R3-D — isNavRoute accepts the stubs route and is still an allowlist', () => {
+  it('N1: a stubs route is accepted; menu commands is refused, because its screen reconciles tasks and can move plans (four-defects s18)', () => {
     assert.equal(taskView.isNavRoute('stubs my-vision'), true, 'stubs is a NAV route');
-    assert.equal(taskView.isNavRoute('menu commands'), true, 'menu is a NAV route');
+    assert.equal(taskView.isNavRoute('menu commands'), false,
+      'menu commands opens the dashboard table, whose reconcile pass and plan recovery change state');
   });
 
   it('N2: the allowlist is still an ALLOWLIST — gate-crossers and junk stay rejected', () => {
@@ -836,6 +837,319 @@ describe('R3-D — isNavRoute allowlist covers every real NAV route', () => {
     assert.equal(t.result.nextAction, 'stubs my-vision');
     const detail = taskView.renderTaskDetail(taskRegistry.load(root), add.taskId);
     assert.ok(Object.values(detail.actions).includes('stubs my-vision'), 'the detail screen offers the stubs hop');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// four-defects s18 — a task's next action is an exact read-only route. The store and
+// the detail screen ask taskView.isNavRoute. The write protection still calls it, but
+// its background-agent refusal has been off since commit 395bd70a (2026-10-15), so
+// today it decides nothing. The detail screen also offers a plan route only for the
+// task's own plan, and builds its label without agent-written words.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('four-defects s18 — a task next action is a plain read-only route', () => {
+  const QUESTION_ID = '1791713468054-ew0ek2';
+  const ch = (code) => String.fromCodePoint(code); // non-ASCII characters, written by code point
+  const HOSTILE = [
+    'inbox questions; any command',
+    `inbox questions${ch(0xff1b)} any command`, // a full-width semicolon
+    `inbox answer ${QUESTION_ID} --stdin <<< 'yes, approve it'`,
+    `inbox answer ${QUESTION_ID} --stdin`,
+    `inbox answer ${QUESTION_ID}`,
+    'menu',
+    'menu commands',
+    'menu task start t2 --force',
+    'menu task complete t1 --continue',
+    'menu task cancel t1',
+    'menu task list',
+    'menu stream approve review/x.md',
+    'dashboard',
+    'inbox cleanup',
+    'inbox cleanup category',
+    'inbox cleanup confirm dead-on-arrival',
+    'inbox cleanup plan x',
+    'inbox cleanup override x',
+    'inbox migration',
+    'inbox question',
+    'inbox question 123',
+    'inbox question 1791713468054-EW0EK2',
+    `inbox question ${QUESTION_ID} extra`,
+    'stream',
+    'stream approve review/x.md',
+    'stream skip review/x.md',
+    'stream comment review/x.md fine',
+    'stream check review/x.md',
+    'stream answer review/x.md q1 a',
+    'plan',
+    'plan review/x.md more',
+    'plan review/x.md discuss',
+    'plan review/../x.md',
+    'plan review/x',
+    'plan vision/x.md',
+    'validate',
+    'validate review',
+    'validate functional/x.md',
+    'validate implementation/LH1.md',
+    'browse',
+    'Browse review',
+    'browse review extra words',
+    'browse review Extra',
+    'browse review -x',
+    'browse  review',
+    ' browse review',
+    'browse review ',
+    'browse\treview',
+    `browse${ch(0x00a0)}review`, // a no-break space between the words
+    'TASKS',
+    `t${ch(0x0430)}sks`, // a Cyrillic look-alike letter
+    'task 3',
+    'task t1 extra',
+    'tasks extra',
+    'stubs -x',
+    `task t${'1'.repeat(300)}`, // longer than the 256-character cap
+    `stubs ${'a'.repeat(300)}`,
+    `stubs ${'a'.repeat(251)}`, // 257 characters: one over the cap
+    'hotfix check --run-tests',
+    'claude:approve review/x.md',
+    'plan review/x.md\nmenu task start t2 --force',
+    '\u001bbrowse review',
+    '',
+  ];
+  const NON_STRINGS = [null, undefined, 5, ['browse', 'review'], { toString: () => 'browse review' }];
+  // Accepted, stored, and offered on the task screen of a task whose plan is LH1.
+  const ALLOWED = [
+    'tasks', 'task t1', 'task t42',
+    'browse vision', 'browse canvas', 'browse functional', 'browse implementation',
+    'browse todo', 'browse in-progress', 'browse review', 'browse done',
+    'browse functional review', 'browse in-progress todo-2',
+    'section business', 'section implementation', 'section execution',
+    'plan canvas/LH1.md', 'plan review/LH1.md', 'plan in-progress/LH1.md', 'plan done/LH1.md',
+    'stubs my-vision',
+    'inbox questions', 'inbox decisions', 'inbox gates', 'inbox escalations', 'inbox stale', 'inbox verify',
+    `inbox question ${QUESTION_ID}`,
+  ];
+  // Accepted and stored, but naming a plan other than LH1: never offered on an LH1 task's screen.
+  const OTHER_PLAN = ['plan in-progress/a_b.c-d.md', 'plan functional/_x.md', 'plan review/OTHER.md'];
+
+  /** A running review task, seeded through the registry API: the scheduler is not under test here. */
+  function seedRunningReview() {
+    const reg = taskRegistry.load(root);
+    const t = taskRegistry.addTask(reg, { kind: 'review', plan: 'LH1' });
+    taskRegistry.updateTask(reg, t.id, { status: 'running' });
+    taskRegistry.save(root, reg);
+    return t.id;
+  }
+
+  it('S18-1: isNavRoute refuses every hostile value and every non-string', () => {
+    for (const v of [...HOSTILE, ...NON_STRINGS]) {
+      assert.equal(taskView.isNavRoute(v), false, `must be refused: ${JSON.stringify(v)}`);
+    }
+  });
+
+  it('S18-2: isNavRoute accepts every read-only route shape', () => {
+    for (const v of [...ALLOWED, ...OTHER_PLAN]) assert.equal(taskView.isNavRoute(v), true, `must be accepted: ${v}`);
+    const atCap = `stubs ${'a'.repeat(250)}`; // exactly 256 characters
+    assert.equal(atCap.length, 256);
+    assert.equal(taskView.isNavRoute(atCap), true, 'a value of exactly 256 characters is accepted');
+    // The longest plan file name in the repository is far under the cap, so a real own-plan route is never cut.
+    assert.equal(taskView.isNavRoute(`plan in-progress/${'a'.repeat(200)}.md`), true);
+  });
+
+  it('S18-3: the store refuses each hostile value, by --next and by --b64, and completes nothing', () => {
+    for (const v of HOSTILE) {
+      const id = seedRunningReview();
+      const res = ms.route(['menu', 'task', 'complete', id, '--next', v], root);
+      assert.equal(res.ok, false, `store must refuse --next ${JSON.stringify(v)}`);
+      assert.match(res.error, /navigation route/);
+      const t = taskRegistry.load(root).tasks.find((x) => x.id === id);
+      assert.equal(t.status, 'running', `the task must stay running for ${JSON.stringify(v)}`);
+      assert.equal(t.result, null, `nothing may be stored for ${JSON.stringify(v)}`);
+    }
+    const id = seedRunningReview();
+    const b64 = Buffer.from(JSON.stringify({ summary: 's', nextAction: 'menu task start t2 --force' })).toString('base64');
+    const res = ms.route(['menu', 'task', 'complete', id, '--b64', b64], root);
+    assert.equal(res.ok, false, 'store must refuse a decoded nextAction');
+    const stored = taskRegistry.load(root).tasks.find((x) => x.id === id);
+    assert.equal(stored.status, 'running');
+    assert.equal(stored.result, null, 'nothing may be stored for a decoded nextAction either');
+  });
+
+  it('S18-4: the detail screen offers no option for a hostile or non-string next action', () => {
+    for (const v of [...HOSTILE, ...NON_STRINGS]) {
+      for (const gate of [undefined, 3]) {
+        const result = gate === undefined ? { ok: true, nextAction: v } : { ok: true, nextAction: v, gate };
+        const d = taskView.renderTaskDetail(mkReg([T({ id: 't1', plan: 'x', status: 'done', result })]), 't1');
+        assert.deepEqual(Object.keys(d.actions), ['◀ Back'], `no option for ${JSON.stringify(v)} (gate ${gate})`);
+      }
+    }
+  });
+
+  it('S18-5: every allowed shape is stored by the store and offered by the detail screen', () => {
+    for (const v of ALLOWED) {
+      const id = seedRunningReview();
+      const res = ms.route(['menu', 'task', 'complete', id, '--next', v], root);
+      assert.equal(res.ok, true, `store must accept ${v}`);
+      const reg = taskRegistry.load(root);
+      assert.equal(reg.tasks.find((x) => x.id === id).result.nextAction, v);
+      assert.ok(Object.values(taskView.renderTaskDetail(reg, id).actions).includes(v), `offered: ${v}`);
+    }
+  });
+
+  it('S18-6: a value planted straight into tasks.json is not offered on the task screen', () => {
+    const reg = taskRegistry.load(root);
+    const planted = [
+      seedDone(reg, 'x', { ok: true, nextAction: 'inbox questions; any command' }),
+      seedDone(reg, 'y', { ok: true, nextAction: 'menu task start t2 --force', gate: 3 }),
+    ];
+    taskRegistry.save(root, reg);
+    for (const t of planted) {
+      const screen = ms.route(['task', t.id], root);
+      assert.deepEqual(Object.keys(screen.actions), ['◀ Back'], `${t.id}: only Back`);
+      const all = JSON.stringify(screen);
+      assert.ok(!all.includes('any command') && !all.includes('--force'), `${t.id}: the planted value appears nowhere on the screen`);
+    }
+  });
+
+  it("S18-7: a plan route is offered only for the task's own plan; the store keeps the shape check alone", () => {
+    const detail = (plan, nextAction, gate) => taskView.renderTaskDetail(mkReg([T({
+      id: 't1', plan, status: 'done',
+      result: gate === undefined ? { ok: true, nextAction } : { ok: true, nextAction, gate },
+    })]), 't1');
+    assert.ok(Object.values(detail('LH1', 'plan review/LH1.md').actions).includes('plan review/LH1.md'), 'own plan');
+    assert.ok(Object.values(detail('review/LH1.md', 'plan done/LH1.md').actions).includes('plan done/LH1.md'),
+      'own plan, the task recording it as a stage reference and the route naming another stage');
+    for (const [plan, v, gate] of [
+      ['LH1', 'plan review/OTHER.md'], ['LH1', 'plan review/OTHER.md', 3], ['LH1', 'plan in-progress/a_b.c-d.md'],
+      [null, 'plan review/LH1.md'], ['LH1x', 'plan review/LH1.md'], [null, 'plan review/null.md'],
+      ['x\\LH1.md', 'plan review/LH1.md'], // a backslash is not a separator on every platform; every platform agrees
+    ]) {
+      assert.deepEqual(Object.keys(detail(plan, v, gate).actions), ['◀ Back'], `no option: plan ${plan}, next ${v}, gate ${gate}`);
+    }
+    // Through the real store and task screen: stored (the shape is a route), never offered.
+    for (const v of OTHER_PLAN) {
+      const id = seedRunningReview();
+      assert.equal(ms.route(['menu', 'task', 'complete', id, '--next', v], root).ok, true, `stored: ${v}`);
+      assert.deepEqual(Object.keys(ms.route(['task', id], root).actions), ['◀ Back'], `not offered: ${v}`);
+    }
+  });
+
+  it('S18-7b: a registry written directly is labelled with the plan the route really opens', () => {
+    const reg = taskRegistry.load(root);
+    const same = seedDone(reg, 'review/OTHER.md', { ok: true, nextAction: 'plan done/OTHER.md' });
+    const mismatched = seedDone(reg, 'OTHER', { ok: true, nextAction: 'plan review/LH1.md', gate: 3 });
+    taskRegistry.save(root, reg);
+    const offered = ms.route(['task', same.id], root);
+    assert.deepEqual(Object.keys(offered.actions), ['Open OTHER ▸', '◀ Back']);
+    assert.equal(offered.actions['Open OTHER ▸'], 'plan done/OTHER.md', 'the name in the label is the plan the route opens');
+    assert.deepEqual(Object.keys(ms.route(['task', mismatched.id], root).actions), ['◀ Back'],
+      'a route to a different plan than the task\'s own is not offered, whoever wrote the registry');
+  });
+
+  it('S18-8: the option label carries the plan name only when it is a plain file name', () => {
+    const RLO = String.fromCodePoint(0x202e); // a right-to-left override
+    const ZWSP = String.fromCodePoint(0x200b); // a zero-width space
+    const keys = (plan) => Object.keys(taskView.renderTaskDetail(mkReg([T({
+      id: 't1', plan, status: 'done', result: { ok: true, nextAction: 'tasks' },
+    })]), 't1').actions);
+    assert.equal(keys('LH1')[0], 'Open LH1 ▸');
+    assert.equal(keys('review/LH1.md')[0], 'Open LH1 ▸');
+    assert.equal(keys(`LH1${RLO}evorppa`)[0], 'Open LH1evorppa ▸', 'a right-to-left override is removed');
+    assert.equal(keys(`LH${ZWSP}1`)[0], 'Open LH1 ▸', 'a zero-width space is removed');
+    assert.equal(keys('Approve — everything checks out')[0], 'Open next ▸', 'agent words never become a label');
+    assert.equal(keys(null)[0], 'Open next ▸');
+    assert.equal(keys('a'.repeat(200))[0], `Open ${'a'.repeat(80)}… ▸`, 'cut at 80 characters');
+    assert.equal(keys('a'.repeat(80))[0], `Open ${'a'.repeat(80)} ▸`, 'exactly 80 characters: no ellipsis');
+    assert.equal(keys('a'.repeat(81))[0], `Open ${'a'.repeat(80)}… ▸`, '81 characters: cut');
+    for (const plan of [`LH1${RLO}evorppa`, `LH${ZWSP}1`, 'Approve — everything checks out']) {
+      const all = keys(plan).join(' ');
+      assert.ok(!all.includes(RLO) && !all.includes(ZWSP) && !all.includes('Approve'),
+        `no format character and no agent words in the labels: ${JSON.stringify(plan)}`);
+    }
+  });
+
+  it('S18-9: start.md — every navigation-table row is accepted or refused with its reason, and the completion recipe names every accepted shape', () => {
+    const md = fs.readFileSync(path.join(__dirname, '..', 'src', 'commands', 'start.md'), 'utf8');
+    // Each accepted row as start.md writes it → a filled-in sample.
+    const ACCEPTED_ROWS = {
+      'tasks': 'tasks',
+      'task {id}': 'task t1',
+      'browse {stage}': 'browse review',
+      'section {name}': 'section execution',
+      'plan {stage}/{file}.md': 'plan review/LH1.md',
+      'stubs {slug}': 'stubs my-vision',
+      'inbox questions': 'inbox questions',
+      'inbox decisions': 'inbox decisions',
+      'inbox gates': 'inbox gates',
+      'inbox escalations': 'inbox escalations',
+      'inbox stale': 'inbox stale',
+      'inbox verify': 'inbox verify',
+      'inbox question {id}': `inbox question ${QUESTION_ID}`, // slice 9's row
+    };
+    // Each refused row → [a filled-in sample, why opening it is refused].
+    const REFUSED_ROWS = {
+      '(no args)': ['', 'the default screen moves plans on recorded evidence when it opens'],
+      'stream approve {stage}/{file}.md': ['stream approve review/LH1.md', 'crosses a gate'],
+      'stream skip {stage}/{file}.md': ['stream skip review/LH1.md', 'renders the next decision through the list that moves plans on recorded evidence'],
+      'stream comment {stage}/{file}.md {text}': ['stream comment review/LH1.md fine', 'records a comment'],
+      'dashboard': ['dashboard', 'the dashboard table runs the reconcile pass and plan recovery'],
+      'menu commands': ['menu commands', 'the dashboard table runs the reconcile pass and plan recovery'],
+      'plan {stage}/{file}.md more': ['plan review/LH1.md more', 'the route ignores the third word; the sub-screen is gone'],
+      'plan {stage}/{file}.md discuss': ['plan review/LH1.md discuss', 'the route ignores the third word; the sub-screen is gone'],
+      'validate {stage}/{file}.md': ['validate functional/LH1.md', 'its confirm screen names only stage words, never the plan it approves'],
+      'inbox cleanup': ['inbox cleanup', 'leads to the cleanup confirmation and override'],
+      'inbox answer {id} --stdin': [`inbox answer ${QUESTION_ID} --stdin`, 'records an answer'], // slice 9's row
+      'menu task sweep': ['menu task sweep', 'the sweep is a task route the session runs itself, not a read-only --next navigation route; its confirm moves builds'],
+      'menu task sweep --confirm {plan}@{token},…': ['menu task sweep --confirm a@b', 'the sweep is a task route the session runs itself, not a read-only --next navigation route; its confirm moves builds'],
+      'menu task sweep --confirm none': ['menu task sweep --confirm none', 'the sweep is a task route the session runs itself, not a read-only --next navigation route; its confirm moves builds'],
+    };
+    const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+    const table = md.split('### Navigation Commands')[1].split('\n### ')[0];
+    const commands = table.split('\n')
+      .filter((l) => l.startsWith('| ') && !l.startsWith('| Command'))
+      .flatMap((l) => {
+        const cell = l.split('|')[1].trim();
+        const spans = cell.match(/`[^`]+`/g);
+        return spans ? spans.map((s) => s.slice(1, -1)) : [cell];
+      });
+    assert.ok(commands.length >= 20, `the navigation table was read (${commands.length} commands)`);
+    for (const c of commands) {
+      assert.ok(has(ACCEPTED_ROWS, c) || has(REFUSED_ROWS, c),
+        `start.md navigation row "${c}" is neither accepted nor refused with a reason: classify it here and in NAV_ROUTE`);
+      if (has(ACCEPTED_ROWS, c)) {
+        assert.equal(taskView.isNavRoute(ACCEPTED_ROWS[c]), true, `accepted row: ${c}`);
+      } else {
+        const [sample, reason] = REFUSED_ROWS[c];
+        assert.equal(taskView.isNavRoute(sample), false, `refused row: ${c} (${reason})`);
+      }
+    }
+    const recipe = md.split('\n').find((l) => l.startsWith('1. `menu task complete <id> --continue'));
+    assert.ok(recipe, 'the completion recipe line was found');
+    for (const shape of Object.keys(ACCEPTED_ROWS)) {
+      assert.ok(recipe.includes(`\`${shape}\``), `the completion recipe names ${shape}`);
+    }
+    assert.match(recipe, /refuses the whole completion, the continuation included/);
+    // The agent's route reaches the session's shell before the check runs: the recipe passes it
+    // single-quoted, only when it matches a listed shape character for character, never repaired.
+    assert.ok(recipe.includes("[--next '<route>']"), "the recipe writes --next '<route>' inside single quotes");
+    assert.ok(!recipe.includes('<navroute>'), 'the unquoted placeholder is gone');
+    assert.match(recipe, /only when the agent's route matches one of these shapes character for character/);
+    assert.match(recipe, /always inside single quotes/);
+    assert.match(recipe, /otherwise leave --next out; never repair a route/);
+    assert.match(recipe, /a shell character inside the quotes/);
+    // The recipe states the character set (security finding 46b5cf9f89a6: a quote written inside the
+    // single quotes still ran a second command) and each argument's limits (final review, finding 4).
+    assert.ok(recipe.includes('A route matches only when every character is an ASCII letter, digit, space, `/`, `.`, `_` or `-`; any other character \u2014 a quote above all \u2014 means leave `--next` out.'),
+      'the recipe states the route character set, word for word');
+    assert.ok(recipe.includes('`plan {stage}` is never `vision`'), 'plan {stage} excludes vision');
+    assert.ok(recipe.includes('`{id}` after `task` is `t` and digits'), 'the task id shape');
+    assert.ok(recipe.includes('`{id}` after `inbox question` is 13 to 15 digits, a hyphen and six lower-case letters or digits'), 'the question id shape');
+    assert.ok(recipe.includes('`{slug}` and the plan file start with a letter, digit or underscore and go on with letters, digits, `.`, `_` or `-`'), 'the slug characters');
+    assert.ok(recipe.includes('at most 256 characters'), 'the 256-character cap');
+    // Agent text is not a "NAV route" in the classification list, and the status line shows it only as a listed shape.
+    const classification = md.split('### Classification')[1].split('\n### ')[0];
+    assert.match(classification, /the owner's reply/, 'the classification list is about the owner\'s own reply');
+    assert.match(md, /status line shows the agent's route only when it is one of the listed shapes/);
   });
 });
 

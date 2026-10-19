@@ -299,11 +299,11 @@ describe('SPEC-B — B-PROMOTE (complete/fail/cancel fold nextRunnable into prom
     // touches make pi2 queue behind pi1 so we can test promotion on completion.
     const a1 = ms.route(['menu', 'task', 'add', 'implement', 'pi1', '--touches', 'src/shared.js'], root);
     assert.equal(a1.decision, 'run', 'first implement runs on an empty registry');
+    seedInProgressPlan('pi1', ['src/shared.js']); // C7: an implement completion must produce evidence
     ms.route(['menu', 'task', 'start', a1.taskId], root);
     const a2 = ms.route(['menu', 'task', 'add', 'implement', 'pi2', '--touches', 'src/shared.js'], root);
     assert.equal(a2.decision, 'queue', 'second, file-OVERLAPPING implement queues (file-conflict)');
 
-    seedInProgressPlan('pi1', ['src/shared.js']); // C7: an implement completion must produce evidence
     const done = ms.route(['menu', 'task', 'complete', a1.taskId, '--summary', 'ok'], root);
     assert.equal(done.status, 'done');
     assert.ok(Array.isArray(done.promote), 'complete returns a promote[] array');
@@ -331,6 +331,7 @@ describe('SPEC-B — B-PROMOTE (complete/fail/cancel fold nextRunnable into prom
 
   it('B-PROMOTE-failcancel(fail): failing a running implement promotes the queued implement', () => {
     const f1 = ms.route(['menu', 'task', 'add', 'implement', 'pi1', '--touches', 'src/shared.js'], root);
+    seedInProgressPlan('pi1', ['src/shared.js']); // a build start needs its plan file in todo/ or in-progress/
     ms.route(['menu', 'task', 'start', f1.taskId], root);
     const f2 = ms.route(['menu', 'task', 'add', 'implement', 'pi2', '--touches', 'src/shared.js'], root);
     const failed = ms.route(['menu', 'task', 'fail', f1.taskId], root);
@@ -345,6 +346,7 @@ describe('SPEC-B — B-PROMOTE (complete/fail/cancel fold nextRunnable into prom
     // harness agent is confirmed gone, so the registry never frees a live agent's
     // files early — the file-conflicting queued implement must stay queued.
     const c1 = ms.route(['menu', 'task', 'add', 'implement', 'pi1', '--touches', 'src/shared.js'], root);
+    seedInProgressPlan('pi1', ['src/shared.js']); // a build start needs its plan file in todo/ or in-progress/
     ms.route(['menu', 'task', 'start', c1.taskId], root);
     const c2 = ms.route(['menu', 'task', 'add', 'implement', 'pi2', '--touches', 'src/shared.js'], root); // conflicts on the file
     const c3 = ms.route(['menu', 'task', 'add', 'review', 'clean'], root); // no touches → cannot conflict
@@ -362,10 +364,10 @@ describe('SPEC-B — B-PROMOTE (complete/fail/cancel fold nextRunnable into prom
 
   it('B-PROMOTE-blocked: a blocked-dep task is excluded while its UNblocked sibling IS promoted (not vacuously empty)', () => {
     const b1 = ms.route(['menu', 'task', 'add', 'implement', 'pi1', '--touches', 'src/a.js'], root);
+    seedInProgressPlan('pi1', ['src/a.js']); // C7: an implement completion must produce evidence
     ms.route(['menu', 'task', 'start', b1.taskId], root);
     const dep = ms.route(['menu', 'task', 'add', 'review', 'depplan'], root); // stays queued (never started)
     const blocked = ms.route(['menu', 'task', 'add', 'implement', 'pi2', '--touches', 'src/b.js', '--blocked', dep.taskId], root);
-    seedInProgressPlan('pi1', ['src/a.js']); // C7: an implement completion must produce evidence
     const done = ms.route(['menu', 'task', 'complete', b1.taskId, '--summary', 'ok'], root);
     assert.ok(!done.promote.some((t) => t.id === blocked.taskId), 'blocked-dep task is excluded from promote');
     // Guard against a vacuous-green "promote always empty": the unblocked sibling (the
@@ -375,6 +377,7 @@ describe('SPEC-B — B-PROMOTE (complete/fail/cancel fold nextRunnable into prom
 
   it('B-PROMOTE-idfilter (LOW): a crafted non-t<n> / control-char registry id is filtered out of promote (defense in depth)', () => {
     const a1 = ms.route(['menu', 'task', 'add', 'implement', 'pi1', '--touches', 'src/a.js'], root);
+    seedInProgressPlan('pi1', ['src/a.js']); // C7: an implement completion must produce evidence
     ms.route(['menu', 'task', 'start', a1.taskId], root);
     // Inject a queued task with a crafted id + control-char plan straight into the store.
     const reg = taskRegistry.load(root);
@@ -385,7 +388,6 @@ describe('SPEC-B — B-PROMOTE (complete/fail/cancel fold nextRunnable into prom
     taskRegistry.save(root, reg);
     // A legit queued task (canonical id) proves promote is not vacuously empty.
     const ok2 = ms.route(['menu', 'task', 'add', 'review', 'clean'], root);
-    seedInProgressPlan('pi1', ['src/a.js']); // C7: an implement completion must produce evidence
     const done = ms.route(['menu', 'task', 'complete', a1.taskId, '--summary', 'ok'], root);
     assert.ok(!done.promote.some((t) => /evil/.test(t.id)), 'crafted non-t<n> id excluded from promote');
     assert.ok(done.promote.some((t) => t.id === ok2.taskId), 'the legit canonical-id task IS promoted (not vacuously empty)');
@@ -476,5 +478,41 @@ describe('SPEC-B — B-ENTRY (dashboardCommands "Background tasks ▸")', () => 
     assert.equal(cmds.ask.questions.length, 1, 'fail-open: no ride-along on a corrupt registry');
     const labels = cmds.ask.questions[0].options.map((o) => o.label);
     assert.ok(!labels.some((l) => /Background tasks|board/i.test(l)), 'fail-open: board entry omitted on a corrupt registry');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Scenario 2.12 (plan real-projects-do-not-stall-on-the-menu-s2): every recipe that launches a
+// background agent stamps the harness agent id, because a start without one records no agent.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('scenario 2.12 — the recipes stamp the real agent id', () => {
+  const STAMP = '--agent-id <the harness agent id>';
+
+  it('WORK dispatch stamps the harness id after the launch', () => {
+    const body = sectionBody(readMenuMd(), /^### WORK dispatch \(turn recipe\)/m);
+    assert.ok(body.includes('`menu task start <taskId> ' + STAMP + '`'), 'WORK dispatch step 2 must name the stamp');
+  });
+
+  it('COMPLETION stamps the harness id on every promoted task', () => {
+    const body = sectionBody(readMenuMd(), /^### COMPLETION \(turn recipe\)/m);
+    assert.ok(body.includes('`Agent(run_in_background)` + `menu task start <id> ' + STAMP + '`'), 'COMPLETION step 3 must name the stamp');
+  });
+
+  it('the classify paragraph and Rule 12 stamp the harness id', () => {
+    const md = readMenuMd();
+    assert.ok(md.includes('then `menu task start <id> ' + STAMP + '`'), 'classify paragraph');
+    assert.ok(md.includes('`Agent(run_in_background)` + `menu task start <taskId> ' + STAMP + '`'), 'Rule 12');
+  });
+
+  it('no start follows a launch in one sentence without the id', () => {
+    assert.equal(readMenuMd().match(/run_in_background[^.\n]*?menu task start <[^>]+>(?! --agent-id)/), null);
+  });
+
+  it('the sweep is reachable from the navigation table, and the on-open section is a preview', () => {
+    const md = readMenuMd();
+    assert.match(md, /`menu task sweep --confirm \{plan\}@\{token\},…`/);
+    assert.match(md, /^### ON-OPEN PREVIEW AND THE SWEEP/m);
+    assert.doesNotMatch(md, /^### ON-OPEN RECONCILE/m);
   });
 });

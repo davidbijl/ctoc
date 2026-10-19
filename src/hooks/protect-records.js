@@ -107,6 +107,33 @@
  *   once the budget is spent (`fileSpec`, Decision 46); and the shell link test of the checks
  *   inside the switch compares by identity on the operand as written and tidied. Once the
  *   budget is spent `isLedgerWrite` refuses even a read-only command.
+ *   Whatever `RECORD_REFUSALS_OFF` says, a background agent's command whose text, with quotes and
+ *   backslashes removed, holds both `sweep` and `--confirm`, or holds `applySweep`, is refused
+ *   with its own sentence: only the human confirms which builds go back to the build queue
+ *   (owner, 2026-10-18). When the hook itself fails to run, such a call is refused with the same
+ *   sentence. A spelling the shell builds (`sw${E}eep`, `$'\x2d-confirm'`, a wildcard script word) in a
+ *   command that is not one plain call is refused with that sentence plus "must also be one plain
+ *   call": a runtime's script word that is the menu, names `start.js` or `src/commands`, holds `$` or
+ *   a backtick, or is a wildcard; and, whatever the runtime word is, any word naming `start.js` or
+ *   `src/commands` when a word in command position (the first word of a segment split on `;`, `|`,
+ *   `&&`, `||`, `&`, a newline, and after `$(` or a backtick) holds `$` or a backtick, or is `eval`,
+ *   `exec`, `xargs`, `sh`, `bash`, `zsh`, `env`, `command`, `source` or `.`. So `grep -n x
+ *   src/commands/*.js | head` and `for f in src/commands/*.js; do wc -l "$f"; done` stay allowed.
+ *   Last net, for mistakes and for shell-built spellings (`no\de`, `node --title x …`, `=node`,
+ *   `cd …/command$'s'`, backslash-newline): a command that is not one plain call and holds `$` or
+ *   a backtick (the menu's own here-document body excepted) is refused when, with quotes,
+ *   backslashes and continuations removed, it names a JavaScript runtime as a word anywhere or
+ *   has a wrapper or run-time-built word in command position. Accepted false refusal:
+ *   `for f in tests/*.test.js; do node --test "$f"; done` — write `node --test tests/*.test.js`.
+ *   Not caught: a script file the agent writes and runs, inline code, a file move by other
+ *   means, an alias, or a `cd` into `src` then a relative `commands/…` word. Also not
+ *   caught, and NOT failing closed: a background agent that reaches the runtime under
+ *   another name (a path glob such as `<node folder>/nod?` or `no[d]e`, or a renamed or
+ *   linked copy of the runtime) together with words the shell builds at run time. Same
+ *   class as the residuals above: a hook that reads command text cannot enforce "only the
+ *   human confirms"; the refusal guards against mistakes and the plain and simply-built
+ *   spellings. Closing it means isolating background agents from the main project's
+ *   records (an open owner question; measured 2026-10-19 by piping hook input only).
  *   Nothing else is loaded or run: no plan coverage, no escape phrases, no enforcement
  *   mode, no Iron Loop step gates, no irreversible-command net, no plan-move gate.
  *
@@ -179,6 +206,33 @@ const REFUSAL = 'CTOC refused this call because it writes, or could write, the a
   + 'finish your work, report it, and let the menu record the result.';
 const REFUSAL_UNCHECKED = 'CTOC refused this call because it mentions the approval or check records '
   + "and CTOC's protection for them failed to run; tell the human that this protection is broken.";
+const REFUSAL_SWEEP_CONFIRM = 'CTOC refused this call because only the human confirms which builds go back '
+  + 'to the queue; report the sweep preview and let the main session ask him. A command that only '
+  + 'mentions both words is refused too: search one word at a time, and commit with git commit -F <file>.';
+const REFUSAL_SWEEP_PLAIN = REFUSAL_SWEEP_CONFIRM
+  + " A background agent's menu call must also be one plain call, built without $, a backtick, a brace or a wildcard.";
+/** A background agent's sweep confirmation, read fail-closed: quotes and backslashes removed, anywhere in the text. */
+const confirmsSweep = (command) => {
+  const flat = command.replace(/["'\\]/g, '');
+  return (/sweep/i.test(flat) && /--confirm/i.test(flat)) || /applysweep/i.test(flat);
+};
+const REFUSAL_SWEEP_EXPANSION = REFUSAL_SWEEP_CONFIRM
+  + " A background agent's command that runs node or a wrapper must be one plain call when it uses $ or a backtick.";
+const RUNTIME_ANYWHERE_RE = /(^|[\s;&|(`=/])(node[0-9.]*|nodejs|deno|bun|ts-node|tsx|npx)(\.exe)?(?=\s|$)/im;
+/**
+ * Fail-closed net for a background agent: a command that is not one plain call and holds `$` or a
+ * backtick (outside the menu's own here-document body) may build the confirmation at run time in
+ * ways no parser here can follow (`no\de`, `node --title x …`, `=node`, a `cd` into `command$'s'`).
+ * With quotes, backslashes and continuations removed, it is refused when it names a JavaScript
+ * runtime as a word anywhere or has a word built at run time / a wrapper in command position.
+ */
+function expansionRefusal(command) {
+  if (simpleWords(command) !== null) return null;
+  const body = withoutMenuStdin(command);
+  if (!/[$`]/.test(body.split(PLUGIN_ROOT_TOKEN).join(''))) return null;
+  const flat = body.replace(/\\\r?\n/g, '').replace(/["'\\]/g, '');
+  return RUNTIME_ANYWHERE_RE.test(flat) || hasIndirectCommand(flat) ? REFUSAL_SWEEP_EXPANSION : null;
+}
 /** The one plain retry sentence for a double-quoted argument the shell would still expand. */
 const REFUSAL_QUOTE = 'Put the summary in single quotes and run the same command again.';
 const REFUSAL_SUBAGENT = "CTOC refused this call because a background agent may not answer CTOC's questions, "
@@ -907,6 +961,87 @@ function subagentMenuRefusal(command, base) {
 }
 
 /**
+ * The command without the body of the menu's own reply call: exactly
+ * `node <path>/src/commands/start.js inbox answer <id> --stdin <<'TAG'`, body, `TAG`, and nothing
+ * else (no word before or after on the first line, no pipe, no second command, no text after the
+ * closing line, no `TAG` line inside the body). That body is the menu script's own standard input
+ * (an owner's reply), data no shell expands. Every other here-document (`bash <<'EOF'`,
+ * `echo start.js; bash <<'EOF'`) feeds a program that may run it, so its body stays in the text read.
+ * @param {string} command
+ * @returns {string}
+ */
+function withoutMenuStdin(command) {
+  const head = /^(\s*node\s+(?:"[^"\n]*\/src\/commands\/start\.js"|[\w.~/-]*\/src\/commands\/start\.js)\s+inbox\s+answer\s+[\w.-]+\s+--stdin\s+<<'([A-Za-z_][\w.-]*)'[ \t]*)\n/.exec(command);
+  if (!head) return command;
+  const lines = command.slice(head[0].length).replace(/\n$/, '').split('\n');
+  const isTag = (line) => line.replace(/[ \t]+$/, '') === head[2];
+  // The closing line must be the LAST line: a tag line earlier ends the body, so text follows it.
+  return lines.findIndex(isTag) === lines.length - 1 ? head[1] : command;
+}
+
+/**
+ * A background agent's command that is not one plain call and hands a runtime a script word that
+ * is the menu (resolved from the working directory or a directory it cds into), names start.js or
+ * a src/commands folder, is built with `$` or a backtick, or is a wildcard while the command names
+ * src/commands. Such a spelling (`sw${E}eep --con${X}firm`) would otherwise slip past the text test.
+ * @param {string} rawCommand
+ * @param {string} base - the session's working directory
+ * @returns {string|null}
+ */
+function sweepBypassRefusal(rawCommand, base) {
+  if (simpleWords(rawCommand) !== null) return null;
+  const command = withoutMenuStdin(rawCommand);
+  // Text with no expansion can be read as it stands (the sweep test above); only a spelling the
+  // shell builds at run time (`$`, a backtick, a brace or a wildcard) needs this reading.
+  if (!/[$`{*?[]/.test(command.split(PLUGIN_ROOT_TOKEN).join(''))) return null;
+  const words = command.split(/[\s;&|<>()]+/).filter(Boolean);
+  const bare = words.map((w) => w.replace(/['"`]/g, ''));
+  const dirs = [base];
+  for (let i = 0; i < bare.length - 1; i++) {
+    if (bare[i] === 'cd' || bare[i] === 'pushd') dirs.push(path.resolve(dirs[dirs.length - 1], bare[i + 1]));
+  }
+  const namesCommands = COMMANDS_TEXT_RE.test(command);
+  for (let i = 0; i < words.length; i++) {
+    if (!RUNTIME_WORD_RE.test(bare[i].split(/[\\/]/).pop())) continue;
+    const j = bare.findIndex((w, k) => k > i && w !== '' && !w.startsWith('-'));
+    if (j < 0) continue;
+    const raw = words[j];
+    if (/[$`]/.test(raw)) return REFUSAL_SWEEP_PLAIN;
+    if (/start\.js/i.test(bare[j]) || COMMANDS_TEXT_RE.test(bare[j])) return REFUSAL_SWEEP_PLAIN;
+    if (namesCommands && /[*?[]/.test(raw)) return REFUSAL_SWEEP_PLAIN;
+    const real = dirs.map((dir) => resolveLikeNode(dir, bare[j])).find((r) => r !== null && ctocKind(r) === 'menu');
+    if (real) return REFUSAL_SWEEP_PLAIN;
+  }
+  // The runtime itself may be a variable (`$NODE "…/start.js" …`) or reached through a wrapper
+  // (`xargs node …`, `bash -c "…"`): any word naming the menu counts, but only when a word in command
+  // position is built at run time or is a wrapper. A plain `grep … src/commands/…` stays allowed.
+  if (bare.some((w) => /start\.js/i.test(w) || COMMANDS_TEXT_RE.test(w)) && hasIndirectCommand(command)) {
+    return REFUSAL_SWEEP_PLAIN;
+  }
+  return null;
+}
+
+const WRAPPER_WORD_RE = /^(eval|exec|xargs|sh|bash|zsh|env|command|source|\.)$/;
+const CONTROL_WORD_RE = /^(do|then|else|elif|if|while|until|time|!|\{|\()$/;
+
+/**
+ * True when a word in command position (the first word of a segment split on `; | && || &` and a
+ * newline, and of what follows `$(` or a backtick) holds `$` or a backtick, or is a wrapper such as
+ * `eval`, `xargs`, `bash`. Loop keywords (`do`, `then` …) before the word are skipped.
+ * @param {string} command
+ * @returns {boolean}
+ */
+function hasIndirectCommand(command) {
+  const pieces = [command, ...command.split(/\$\(|`/).slice(1)];
+  return pieces.some((piece) => piece.split(/[;&|\n]+/).some((segment) => {
+    const words = segment.split(/\s+/).filter(Boolean);
+    while (words.length && CONTROL_WORD_RE.test(words[0])) words.shift();
+    if (!words.length) return false;
+    return /[$`]/.test(words[0]) || WRAPPER_WORD_RE.test(words[0].replace(/['"]/g, ''));
+  }));
+}
+
+/**
  * The shell decision, in the plan's order.
  * @param {string} command
  * @param {string} cwdRel - the session's working directory relative to the root, or ''
@@ -918,6 +1053,12 @@ function subagentMenuRefusal(command, base) {
 const RECORD_REFUSALS_OFF = true;
 
 function bashRefuses(command, cwdRel, base, bash, subagent = false) {
+  // Owner, 2026-10-18: only the human confirms a sweep. Holds whatever RECORD_REFUSALS_OFF says.
+  if (subagent && confirmsSweep(command)) return REFUSAL_SWEEP_CONFIRM;
+  if (subagent) {
+    const bypass = sweepBypassRefusal(command, base) || expansionRefusal(command);
+    if (bypass) return bypass;
+  }
   // Tijn, 15 October 2026: "remove that hook block, it is wrong". The record-write refusal and
   // the background-agent refusal are off; the settings-file refusal below stays.
   if (RECORD_REFUSALS_OFF) {
@@ -1027,7 +1168,10 @@ function main() {
       : raw;
     // A background agent's call that reaches for the menu fails closed too; the main
     // session's menu call does not, so one broken release never locks the human out.
-    if (UNCHECKED_SUSPECT_RE.test(scanned) || (parsed && isSubagent(payload) && MENU_MENTION_RE.test(scanned))) {
+    // Owner, 2026-10-18: a background agent's sweep confirmation fails closed with its own sentence.
+    if (parsed && isSubagent(payload) && confirmsSweep(scanned)) {
+      refuse(REFUSAL_SWEEP_CONFIRM);
+    } else if (UNCHECKED_SUSPECT_RE.test(scanned) || (parsed && isSubagent(payload) && MENU_MENTION_RE.test(scanned))) {
       refuse(REFUSAL_UNCHECKED);
     }
     if (parsed && isSubagent(payload) && SETTINGS_MENTION_RE.test(scanned.normalize('NFKC'))) refuse(REFUSAL_AGENT_SETTINGS_UNCHECKED);
