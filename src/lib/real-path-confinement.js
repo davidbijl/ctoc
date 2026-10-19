@@ -175,10 +175,15 @@ function resolveExisting(p) {
         st = safeFs.lstatSync(next);
       } catch (err) {
         const code = err && /** @type {NodeJS.ErrnoException} */ (err).code;
-        // A name longer than the file system holds (ENAMETOOLONG) cannot exist, so it cannot be
-        // written either: out of the caller's text it is a name still to be made, like ENOENT.
-        // Out of a link's contents it stays a fault (below).
-        if (code === 'ENOENT' || (code === 'ENAMETOOLONG' && !linked)) {
+        // ONE name over the file system's limit of 255 cannot exist, so it cannot be written either:
+        // out of the caller's text it is a name still to be made, like ENOENT. Counted in UTF-16 units
+        // (JavaScript's `length`), not bytes and not code points: APFS and NTFS count UTF-16 units (a
+        // 200-character Chinese name of 603 bytes exists; 128 emoji, 256 units, cannot), and on ext4 the
+        // byte count is never below the unit count, so no name over 255 units exists anywhere. Any other
+        // ENAMETOOLONG is a fault (below): macOS gives it for a WHOLE path of 1,024 bytes or more, and
+        // such an object exists, reached by `cd` into a deep folder. Out of a link's contents too. (On a
+        // disk that counts bytes, a name of 255 or fewer units but over 255 bytes is refused: the safe side.)
+        if (code === 'ENOENT' || (code === 'ENAMETOOLONG' && !linked && seg.length > 255)) {
           if (linked) return fault('dangling'); // the forged-record shape: see the header
           tail.push(seg); // the ordinary new file
           continue;

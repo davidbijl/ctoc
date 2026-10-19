@@ -264,19 +264,6 @@ function quotedLiterals(seg) {
 const OPERAND_RESOLUTION_CAP = 128;
 
 /**
- * A candidate longer than this is NOT resolved. `PATH_MAX` is 4096 on Linux/macOS,
- * `NAME_MAX` 255 per component; a token above that cannot name a real filesystem
- * entry, so `realpathSync`/`lstat` answer `ENAMETOOLONG` — a fault the confinement
- * module (correctly, for a genuine operand) fails CLOSED on, which would turn a
- * harmless `echo <20k chars>` into a false deny. Skipping is SOUND, not a weakening:
- * a path too long to stat is too long to WRITE (the forgery itself would
- * `ENAMETOOLONG`), so no real ledger entry is reachable through such a token, and the
- * arithmetic adjacency test still scans the full string regardless. A real ledger
- * path (`.ctoc/approvals/<slug>.json`) is well under this bound.
- */
-const MAX_CANDIDATE_LEN = 4096;
-
-/**
  * Does a single shell operand REALLY resolve under `<cwd>/.ctoc/approvals`, whatever
  * symbolic links it passes through? This is the third, filesystem-aware ledger test
  * — WIRING the one real-path-confinement encoding, never a second copy of it.
@@ -304,13 +291,9 @@ function operandResolvesIntoLedger(prefix, token, dir = LEDGER_DIR_RELATIVE, raw
   const rel = resolveTokenPath(prefix, token);
   if (!rel) return false;
   const raw = resolveTokenPath(rawPrefix, token, false);
-  // A token longer than any real path cannot name a ledger entry; resolving it only
-  // manufactures an ENAMETOOLONG fault that fail-closes to a false deny. See the const.
-  // But two DIFFERENT readings of which one is over-long (a padded `cd` chain makes the as-written
-  // prefix long while the tidied one stays short) are never skipped: a command is not let through by its length.
-  if (rel !== raw && (rel.length > MAX_CANDIDATE_LEN || raw.length > MAX_CANDIDATE_LEN)) return true;
-  return [...new Set([rel, raw])].some((c) => c.length <= MAX_CANDIDATE_LEN
-    && realPathConfinement.resolvesUnder(c, dir, process.cwd()));
+  // No candidate is skipped for its length: a deep folder reached by a chain of `cd` steps makes a
+  // path over 4,096 bytes that exists. The resolver counts only one over-long NAME as absent.
+  return [...new Set([rel, raw])].some((c) => realPathConfinement.resolvesUnder(c, dir, process.cwd()));
 }
 
 /**
@@ -424,9 +407,14 @@ function isLedgerWrite(command, spec = LEDGER_SPEC) {
     //     already match pays no syscall — and (c) touches the filesystem only on the
     //     operands of a segment neither arithmetic test caught.
     //     Redirect operators become separators so `echo x>approvals/y` splits.
-    let touches = spec.segmentRe.test(normalizeForMatch(seg));
-    const tokens = seg.replace(/[<>]+/g, ' ').split(/\s+/).filter(Boolean);
-    const operands = tokens.slice(1).filter((t) => !t.startsWith('-'));
+    // A backtick is read twice: deleted (the text matching and the operand cleaning drop it without
+    // a gap) and as a space (the shell ends the substitution's words there): "`rm .ctoc/settings.yaml`x"
+    // reads `.ctoc/settings.yamlx` the first way and the protected file the second. Either refuses.
+    const readings = seg.includes('`') ? [seg, seg.replace(/`/g, ' ')] : [seg];
+    let touches = readings.some((r) => spec.segmentRe.test(normalizeForMatch(r)));
+    const operandsOf = (r) => r.replace(/[<>]+/g, ' ').split(/\s+/).filter(Boolean)
+      .slice(1).filter((t) => !t.startsWith('-'));
+    const operands = [...new Set(readings.flatMap(operandsOf))];
     if (!touches) {
       // Each operand is path work too: past the budget, refuse (see the top of the loop).
       for (const t of operands) {
@@ -440,7 +428,7 @@ function isLedgerWrite(command, spec = LEDGER_SPEC) {
       // embedded in `node -e "…'link/approvals/x'…"` is resolved as well. Bounded by
       // OPERAND_RESOLUTION_CAP (Decision 3, a stated ceiling); beyond the cap the
       // arithmetic verdict above stands.
-      const candidates = operands.concat(quotedLiterals(seg));
+      const candidates = [...new Set(operands.concat(readings.flatMap(quotedLiterals)))];
       // Past the cap the operands get no link test, so the as-written reading would never reach them:
       // when it differs from the tidied one (a `..` after a named folder) the segment is refused.
       if (candidates.length > OPERAND_RESOLUTION_CAP && rawPrefix !== prefix) return true;

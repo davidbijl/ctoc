@@ -647,7 +647,192 @@ describe('the protected folder is compared by file identity (owner, 2026-10-15)'
         confinement.resolveExisting(path.join(root, long)),
         { ok: true, real: path.join(root, long), reason: null, tail: [long] }));
       R.row('a 300-byte name is outside the approval records', () => assert.equal(resolvesUnder(long, '.ctoc/approvals', root), false));
+      const wide = 'あ'.repeat(100); // 100 characters, 300 UTF-8 bytes: over the 255-byte name limit, under 255 characters
+      // Counted in characters (case 24): only macOS, whose limit is 255 characters, answers "no such file" here; a
+      // Linux disk (255 bytes) answers ENAMETOOLONG, which is a fault and so refused (the safe side).
+      R.row('a name of 100 non-Latin characters (300 bytes) is a name still to be made where the disk allows it', () => assert.equal(
+        resolvesUnder(wide, '.ctoc/approvals', root), process.platform !== 'darwin'));
     } finally { rm(dir); }
+    R.done();
+  });
+
+  it('case 23: a long WHOLE path is not "absent": only one over-long NAME is, and no candidate is skipped for its length', () => {
+    // An ordinary folder `P` stands in for the protected folder (never `.ctoc`). A deep folder is made by
+    // changing into it step by step, because the system refuses to make it by one long path. The system's
+    // limit on a whole path (PATH_MAX): 1,024 on macOS, 4,096 on Linux. The link's own lstat then fails
+    // with ENAMETOOLONG although every name in it is short, and the object exists.
+    const { isLedgerWrite } = require('../src/hooks/PreToolUse.Bash.js');
+    const pathMax = process.platform === 'darwin' ? 1024 : 4096;
+    const never = /(^|[^a-z0-9._-])zz-never-matches\/+x(\s|$)/;
+    const spec = Object.freeze({ dir: 'P', segmentRe: never, resolvedRe: never });
+    const { dir, root } = makeRealProject();
+    const R = makeRows();
+    const here = process.cwd();
+    const link = 'linklink';
+    const made = []; // { names, linked } of each deep tree, for the cleanup (also by `chdir`, never by a long path)
+    /** Makes folders of the given name lengths below the project root by `chdir`, then a link `linklink` to `P` inside the last. */
+    const deepen = (levels, letter) => {
+      const entry = { names: [], linked: false };
+      made.push(entry);
+      process.chdir(root);
+      for (const n of levels) {
+        const name = `${letter}${'d'.repeat(n - 1)}`;
+        fs.mkdirSync(name);
+        entry.names.push(name);
+        process.chdir(name);
+      }
+      mklink(path.join(root, 'P'), link);
+      entry.linked = true;
+      process.chdir(root);
+      return entry.names;
+    };
+    const undeepen = ({ names, linked }) => {
+      process.chdir(root);
+      for (const name of names) process.chdir(name);
+      if (linked) fs.unlinkSync(link);
+      for (const name of [...names].reverse()) { process.chdir('..'); fs.rmdirSync(name); }
+    };
+    try {
+      fs.mkdirSync(path.join(root, 'P'));
+      process.chdir(root);
+      // D: a real path of PATH_MAX - 9 bytes, so `<D>/linklink` is exactly PATH_MAX bytes.
+      const levels = [];
+      let remaining = pathMax - 9 - Buffer.byteLength(root);
+      while (remaining > 0) {
+        let n = remaining - 1;
+        if (n > 200) n = remaining - 201 === 1 ? 199 : 200;
+        levels.push(n);
+        remaining -= n + 1;
+      }
+      const names = deepen(levels, 'a');
+      const D = path.join(root, ...names);
+      assert.equal(Buffer.byteLength(D), pathMax - 9, `D is ${pathMax - 9} bytes`);
+      assert.throws(() => fs.lstatSync(path.join(D, link)), { code: 'ENAMETOOLONG' }, 'the link inside D cannot be asked by its whole path');
+      R.row('resolvesUnder of <D>/<link>/x reaches P through the link', () => assert.equal(resolvesUnder(path.join(D, link, 'x'), 'P', root), true));
+      R.row('isLedgerWrite of cd <D> && echo x > <link>/x', () => assert.equal(isLedgerWrite(`cd ${D} && echo x > ${link}/x`, spec), true));
+      R.row('control: the same link at the project root reaches P (true), a plain name there does not', () => {
+        mklink(path.join(root, 'P'), path.join(root, link));
+        assert.equal(resolvesUnder(path.join(root, link, 'x'), 'P', root), true);
+        assert.equal(resolvesUnder(path.join(root, 'plans', 'nothing'), 'P', root), false);
+      });
+      // A `cd` chain over 4,096 bytes (no `..`, so the tidied and the written readings are the same).
+      const chain = deepen(Array.from({ length: 22 }, () => 200), 'c');
+      const long = chain.map((n) => `cd ${n}`).join(' && ');
+      assert.ok(long.length > 4096, 'the chain is over 4,096 bytes');
+      R.row('isLedgerWrite of a cd chain over 4,096 bytes then echo x > <link>/x', () => assert.equal(
+        isLedgerWrite(`${long} && echo x > ${link}/x`, spec), true));
+      // CONTROLS that stay allowed.
+      R.row('echo of a 300-character word', () => assert.equal(isLedgerWrite(`echo ${'x'.repeat(300)}`, spec), false));
+      R.row('echo of a 20,000-character word', () => assert.equal(isLedgerWrite(`echo ${'x'.repeat(20000)}`, spec), false));
+      // 100 characters = 300 bytes: absent on macOS (limit 255 characters); on a 255-byte disk ENAMETOOLONG is a fault, refused.
+      R.row('echo of a quoted name of 100 non-Latin characters', () => assert.equal(
+        isLedgerWrite(`echo "${'あ'.repeat(100)}"`, spec), process.platform !== 'darwin'));
+      R.row('cp of a 300-character file name', () => assert.equal(isLedgerWrite(`cp x ${'n'.repeat(300)}`, spec), false));
+    } finally {
+      try {
+        for (const entry of made) undeepen(entry);
+      } finally {
+        process.chdir(here);
+        rm(dir);
+      }
+    }
+    R.done();
+  });
+
+  it('case 24: a link named in non-Latin characters is not "absent" when only its whole path is too long (names are counted in characters, not bytes)', () => {
+    // The file system limits a NAME to 255 characters (macOS) or 255 bytes (Linux), so a name of 100 Chinese
+    // characters (300 bytes) is creatable on macOS. Its link is then reached through a deep folder whose whole
+    // path is over PATH_MAX: lstat fails with ENAMETOOLONG for the WHOLE path, not for the name. Counting the
+    // name in bytes called it "a name still to be made" and let the write through. Elsewhere 80 characters (240 bytes).
+    const { isLedgerWrite } = require('../src/hooks/PreToolUse.Bash.js');
+    const darwin = process.platform === 'darwin';
+    const never = /(^|[^a-z0-9._-])zz-never-matches\/+x(\s|$)/;
+    const { dir, root } = makeRealProject();
+    const spec = Object.freeze({ dir: 'P', segmentRe: never, resolvedRe: never });
+    const R = makeRows();
+    const here = process.cwd();
+    const link = 'あ'.repeat(darwin ? 100 : 80);
+    const names = [];
+    let linked = false;
+    try {
+      fs.mkdirSync(path.join(root, 'P'));
+      process.chdir(root);
+      let remaining = (darwin ? 900 : 3900) - Buffer.byteLength(root);
+      while (remaining > 1) {
+        const n = Math.min(200, remaining - 1);
+        const name = `w${'d'.repeat(n - 1)}`;
+        fs.mkdirSync(name);
+        names.push(name);
+        process.chdir(name);
+        remaining -= n + 1;
+      }
+      mklink(path.join(root, 'P'), link);
+      linked = true;
+      process.chdir(root);
+      const deep = path.join(root, ...names);
+      assert.throws(() => fs.lstatSync(path.join(deep, link, 'y')), { code: 'ENAMETOOLONG' }, 'the whole path is too long for lstat');
+      R.row('resolvesUnder of <deep>/<link>/y reaches P through the link', () => assert.equal(resolvesUnder(path.join(deep, link, 'y'), 'P', root), true));
+      R.row('isLedgerWrite of cd <deep> && touch <link>/y', () => assert.equal(isLedgerWrite(`cd ${deep} && touch ${link}/y`, spec), true));
+      // The limit is 255 UTF-16 units (APFS and NTFS), not code points: 128 emoji are 256 units, a name that
+      // cannot exist (ENAMETOOLONG out of the caller's text = a name still to be made), so it is allowed.
+      R.row('echo of a word of 128 emoji (256 UTF-16 units) is allowed', () => assert.equal(isLedgerWrite(`echo ${'😀'.repeat(128)}`, spec), false));
+    } finally {
+      try {
+        process.chdir(root);
+        for (const name of names) process.chdir(name);
+        if (linked) fs.unlinkSync(link);
+        for (const name of [...names].reverse()) { process.chdir('..'); fs.rmdirSync(name); }
+      } finally {
+        process.chdir(here);
+        rm(dir);
+      }
+    }
+    R.done();
+  });
+
+  it('case 25: a link named by 127 emoji (254 UTF-16 units) is a real name, so a write through it from a deep folder is refused', () => {
+    // The guard on the other side of case 24's emoji row: the unit count must not be loosened past 255.
+    // 127 emoji = 508 bytes, creatable on macOS (units counted); a 255-byte disk takes 63 (252 bytes, 126 units).
+    const { isLedgerWrite } = require('../src/hooks/PreToolUse.Bash.js');
+    const darwin = process.platform === 'darwin';
+    const never = /(^|[^a-z0-9._-])zz-never-matches\/+x(\s|$)/;
+    const { dir, root } = makeRealProject();
+    const spec = Object.freeze({ dir: 'P', segmentRe: never, resolvedRe: never });
+    const R = makeRows();
+    const here = process.cwd();
+    const link = '😀'.repeat(darwin ? 127 : 63);
+    const names = [];
+    let linked = false;
+    try {
+      fs.mkdirSync(path.join(root, 'P'));
+      process.chdir(root);
+      let remaining = (darwin ? 900 : 3900) - Buffer.byteLength(root);
+      while (remaining > 1) {
+        const n = Math.min(200, remaining - 1);
+        const name = `e${'d'.repeat(n - 1)}`;
+        fs.mkdirSync(name);
+        names.push(name);
+        process.chdir(name);
+        remaining -= n + 1;
+      }
+      mklink(path.join(root, 'P'), link);
+      linked = true;
+      process.chdir(root);
+      const deep = path.join(root, ...names);
+      assert.throws(() => fs.lstatSync(path.join(deep, link, 'y')), { code: 'ENAMETOOLONG' }, 'the whole path is too long for lstat');
+      R.row('resolvesUnder of <deep>/<emoji link>/y reaches P through the link', () => assert.equal(resolvesUnder(path.join(deep, link, 'y'), 'P', root), true));
+      R.row('isLedgerWrite of cd <deep> && touch <emoji link>/y', () => assert.equal(isLedgerWrite(`cd ${deep} && touch ${link}/y`, spec), true));
+    } finally {
+      try {
+        process.chdir(root);
+        for (const name of names) process.chdir(name);
+        if (linked) fs.unlinkSync(link);
+        for (const name of [...names].reverse()) { process.chdir('..'); fs.rmdirSync(name); }
+      } finally {
+        process.chdir(here);
+        rm(dir);
+      }
+    }
     R.done();
   });
 });

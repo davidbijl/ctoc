@@ -1523,4 +1523,27 @@ describe('the write protection compares real files, not spellings (owner, 2026-1
     allowedBoth(bash(`echo ${'w'.repeat(5000)}`), 'echo of one 5,000-character word');
     allowedBoth(bash(`git add ${Array.from({ length: 200 }, (_, i) => `src/f${i}.js`).join(' ')}`), 'git add of 200 operands, no cd');
   });
+
+  rowTest('159 · a backtick substitution inside double quotes hides no write (the backtick is read as a space too)', () => {
+    // Found by the security scanner (also on the installed 6.14.130): the text test deleted backticks
+    // without a gap, so "`rm .ctoc/settings.yaml`x" read `.ctoc/settings.yamlx`; the shell still ran the rm.
+    for (const n of [1, 300, 5000]) {
+      const x = 'x'.repeat(n);
+      refusedBoth(bash('echo "`rm .ctoc/settings.yaml`' + x + '"'), `backtick rm of .ctoc/settings.yaml, ${n} x after`, REFUSAL_SETTINGS);
+      refusedBoth(bash('echo "`cp x .ctoc/settings.yaml`' + x + '"'), `backtick cp onto .ctoc/settings.yaml, ${n} x after`, REFUSAL_SETTINGS);
+      refusedBoth(bash('echo "`rm -r .ctoc/regulatory-regimes`' + x + '"'), `backtick rm -r of the regime folder, ${n} x after`, REFUSAL_SETTINGS);
+      refusedAgent(bash('echo "`rm .claude/settings.json`' + x + '"'), `backtick rm of .claude/settings.json, ${n} x after`, REFUSAL_AGENT_SETTINGS);
+    }
+    allowedBoth(bash('echo "`date`"'), 'echo of a backtick date (control)');
+    // Controls for the length rules: one over-long word, a long word with no slash, a name of 100
+    // non-Latin characters (over 255 UTF-8 bytes), and a 300-byte file name are all still plain text.
+    allowedBoth(bash(`echo ${'x'.repeat(300)}`), 'echo of a 300-character word (control)');
+    allowedBoth(bash(`echo ${'x'.repeat(20000)}`), 'echo of a 20,000-character word (control)');
+    // Counted in characters: absent on macOS (limit 255 characters); a 255-byte disk answers ENAMETOOLONG, a fault, refused.
+    (process.platform === 'darwin' ? allowedBoth : (r, w) => refusedBoth(r, w, REFUSAL_SETTINGS))(
+      bash(`echo "${'あ'.repeat(100)}"`), 'echo of a quoted name of 100 non-Latin characters (control)');
+    allowedBoth(bash(`cp x ${'n'.repeat(300)}`), 'cp onto a 300-character file name (control)');
+    // The limit is 255 UTF-16 units: 128 emoji are 256, a name that cannot exist, so plain text.
+    allowedBoth(bash(`echo ${'😀'.repeat(128)}`), 'echo of a word of 128 emoji (256 UTF-16 units) (control)');
+  });
 });

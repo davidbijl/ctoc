@@ -336,8 +336,10 @@ decision starts, every file-system walk fails and every check whose failure coul
 through refuses, or is backed in the same decision by one that refuses — the background agent's
 shell settings check keeps its link test rather than dropping it — because Claude Code lets a call
 run when its hook times out (a call that needs no walk is decided as without the budget, and the
-budget does not cover Node's start-up). The shell's own text work obeys the same budget: once it is
-spent, the shell checks refuse even a long read-only command (the owner's "refuse after 5 s"). On
+budget does not cover Node's start-up). The shell's text work is checked against the same budget at
+each segment and each operand (the text test on one huge segment, the quoted-literal scan and the
+folded second reading are not): once it is spent, the shell checks refuse even a long read-only
+command (the owner's "refuse after 5 s"). On
 a slow disk the budget refuses ordinary writes: an ordinary Write makes about 190 file-system
 calls, so refusals start at roughly 26 ms per call on average. The background agent's settings
 check reads its identity tests and its real-path name test on the path as written and tidied. On
@@ -347,10 +349,10 @@ settings for every session, the settings files for background agents — calls t
 each operand as written and tidied, so a hard link to `.ctoc/settings.yaml` (or, for a background
 agent, to a protected settings file that has a link test), a spelling the disk opens as one, a
 link then `..`, and a `cd` through a link are refused there. Held by
-`tests/protect-records.test.js` (cases 139–157) and
-`tests/a-link-cannot-leave-the-repository.test.js` (cases 15–22). A path or a single name too
-long for the file system (over 255 bytes a name) that does not exist is not read as protected: it
-cannot be written either.
+`tests/protect-records.test.js` (cases 139–157 and 159) and
+`tests/a-link-cannot-leave-the-repository.test.js` (cases 15–25). A single name too long for the
+file system (over 255 UTF-16 units) that does not exist is not read as protected: it cannot be written
+either. A long whole path is not read that way (see the padded-command item below).
 
 If every write is refused, a protected folder's path (`.ctoc/approvals`, `.ctoc/state/verify`,
 `.ctoc/streaming`, `.ctoc/regulatory-regimes`, or `.ctoc/settings.yaml`) is a dangling symbolic
@@ -597,12 +599,33 @@ protected list and the project's files stay protected on the editing tools.
   folded second reading are not); Node's start-up, reading the payload and the other checks of the
   shell are outside the budget. Claude Code's default hook timeout is 600 seconds
   (code.claude.com/docs/en/hooks), far above the budget.
-- a padded command is no longer let through by its length: when a `cd` chain makes the as-written
-  working folder differ from the tidied one and either reading of an operand is longer than 4,096
-  characters, the operand is refused; and past 128 operands in one segment, when the as-written
-  working folder differs from the tidied one (a `..` after a named folder), the segment is refused.
-  The cost: such a command (`cd src && cd .. && git add` of 200 files, say) is refused. A single
-  over-long word with no `cd` before it, whose two readings are the same, is still not resolved.
+- a padded command is no longer let through by its length: past 128 operands in one segment, when
+  the as-written working folder differs from the tidied one (a `..` after a named folder), the
+  segment is refused.
+  The cost: such a command (`cd src && cd .. && git add` of 200 files, say) is refused. No
+  candidate is skipped for its length any more (hook case 157, unit case 23): a `cd` chain over
+  4,096 bytes through real folders, with a link at its end, is resolved like any other path.
+  "Name too long" counts as absent only for ONE over-long name (over 255 UTF-16 units, JavaScript's
+  `length`: macOS and Windows count UTF-16 units, so APFS holds a 200-character Chinese name of 603
+  bytes and refuses 128 emoji, which are 256 units, while ext4 counts bytes, never fewer than the
+  units, so no name over 255 units exists anywhere; out of the caller's text, never out of a link's
+  contents); a long WHOLE path is not absent, because macOS answers it with the same error at 1,024
+  bytes though the object exists, so that error from a name of 255 units or fewer is a fault and the
+  call is refused (on a disk that counts bytes, a name of 255 or fewer units but over 255 bytes is
+  refused too: the safe side).
+- a backtick is read twice (hook case 159). In `echo "`rm .ctoc/settings.yaml`x"` the text test,
+  the operands and the quoted literals are read once with the backticks deleted and once with
+  each backtick as a space (the shell ends the substitution's words there); either reading
+  naming a protected file refuses. Before, only the first reading ran and the `x` glued the file
+  name to something else.
+- plain text on the shell is still read as text. The shell check splits a command at `;`, `|`,
+  `&&` and newlines without reading quotes, so an `echo` of a sentence that names
+  `.ctoc/settings.yaml`, or a commit message in a heredoc that does, is refused for its words. A
+  design that reads quoted text and heredoc text as data (a safe consumer of the text, with the
+  parser fixes it needs: nested double quotes, a heredoc opened inside a quoted string, `<<$'EOF'`,
+  `>&` redirects, a `patch` heredoc, a pipe into `(bash)`, `/bin/ba?h`, `"$(command -v bash)"`,
+  `bash${x}`) moved out of this plan into its own plan after a review found its first form let
+  nine such commands write the file.
 - a hard link to a record (a file inside a protected folder) is not seen on any channel — only one
   to the settings file is; on the shell, a look-alike spelling of another copy's
   `.ctoc/settings.yaml` (the text rules are not folded; the link test measures against the
