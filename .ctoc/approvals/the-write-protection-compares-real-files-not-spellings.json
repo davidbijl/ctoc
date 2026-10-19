@@ -1,10 +1,10 @@
 {
   "content_sha256": "348f9a2face6f2b6dcfc6c72c3dffa3a8fa3e603a9054011d3c8616adfa3a66e",
   "hash_scope": "specification",
-  "stage_from": "implementation",
-  "stage_to": "todo",
-  "approved_at": "2026-10-18T07:50:48.308Z",
-  "advanced_by": "sufficiency",
-  "evidence": "sufficiency: implementation/the-write-protection-compares-real-files-not-spellings.md — no questions were computed (0 question(s) computed), 0 answered; 0 unanswered, 0 blocking; attested by: not recorded; 2 recorded answer(s) did not bind to this revision; enough (no unanswered fork)",
+  "stage_from": "review",
+  "stage_to": "done",
+  "approved_at": "2026-10-19T11:39:29.788Z",
+  "advanced_by": "pipeline",
+  "evidence": "evidence: review→done — checks passed, recorded 2026-10-19T11:39:29.765Z in .ctoc/state/verify/the-write-protection-compares-real-files-not-spellings.json (VERIFY passed — ran: lint, typecheck, tests); coverage 99.64% against a floor of 99%, 0 skipped; every required step 8–16 is checked in the plan, including REVIEW, SECURE and FINAL-REVIEW (checked by the build itself); questions: none were stored; crossed on evidence, not approved by the human",
   "plan_basename": "the-write-protection-compares-real-files-not-spellings"
 }
