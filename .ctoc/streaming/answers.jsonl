@@ -14,11 +14,3 @@
 {"ref":"review/00003-r2a-scheduler-lifecycle-honesty.md","questionId":"q16-executor-decision-record-empty","answer":"Fill the decision record and the final report before crossing","at":"2026-07-18T20:33:30.270Z"}
 {"ref":"review/00003-r2a-scheduler-lifecycle-honesty.md","questionId":"q98-critique-coverage","answer":"Noted","at":"2026-07-18T20:33:56.014Z"}
 {"ref":"review/00003-r2a-scheduler-lifecycle-honesty.md","questionId":"q99-gate-ruling","answer":"Hold until the full quality gate is run over this wave","derived_from":"q10,q13,q15,q16","at":"2026-07-18T20:33:56.014Z"}
-
-{"ts":"2026-10-16T15:09:30.449Z","ref":"implementation/a-background-agent-cannot-change-claude-codes-settings.md","questionId":"q10-protected-file-matching-r1792089308848","optionKey":"1","holds":false,"planMtimeMs":1792089308848.0112,"questionDigest":"96f70844d733935573785d31d6a3c455638a3525f304c2b6119d642fb5b86e17"}
-
-{"ts":"2026-10-16T15:09:30.792Z","ref":"implementation/a-background-agent-cannot-change-claude-codes-settings.md","questionId":"q11-ctoc-settings-also-protected-r1792089308848","optionKey":"1","holds":false,"planMtimeMs":1792089308848.0112,"questionDigest":"12427fa3b0c94493c046ec500aa5b10a9e03d7e63d3f96bbfc53a54f28709ba9"}
-
-{"ts":"2026-10-16T15:09:31.069Z","ref":"implementation/the-write-protection-compares-real-files-not-spellings.md","questionId":"q10-decision-time-limit-refuses-r1792102154334","optionKey":"1","holds":false,"planMtimeMs":1792102154334.7178,"questionDigest":"003b32a33cedb3c5c6bef09d98e346f7b67e0899bea459bc9b047eb1a220bbd0"}
-
-{"ts":"2026-10-16T15:09:31.343Z","ref":"implementation/the-write-protection-compares-real-files-not-spellings.md","questionId":"q11-faulted-protected-folder-allows-r1792102154334","optionKey":"1","holds":false,"planMtimeMs":1792102154334.7178,"questionDigest":"de00f9a4fb10b1feecddcaca8830cc26608abea1d40d30bbad8724901dcd57bd"}
