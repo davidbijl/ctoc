@@ -90,7 +90,14 @@
  *   has a wrapper or run-time-built word in command position. Accepted false refusal:
  *   `for f in tests/*.test.js; do node --test "$f"; done` — write `node --test tests/*.test.js`.
  *   Not caught: a script file the agent writes and runs, inline code, a file move by other
- *   means, an alias, or a `cd` into `src` then a relative `commands/…` word.
+ *   means, an alias, or a `cd` into `src` then a relative `commands/…` word. Also not
+ *   caught, and NOT failing closed: a background agent that reaches the runtime under
+ *   another name (a path glob such as `<node folder>/nod?` or `no[d]e`, or a renamed or
+ *   linked copy of the runtime) together with words the shell builds at run time. Same
+ *   class as the residuals above: a hook that reads command text cannot enforce "only the
+ *   human confirms"; the refusal guards against mistakes and the plain and simply-built
+ *   spellings. Closing it means isolating background agents from the main project's
+ *   records (an open owner question; measured 2026-10-19 by piping hook input only).
  *   Nothing else is loaded or run: no plan coverage, no escape phrases, no enforcement
  *   mode, no Iron Loop step gates, no irreversible-command net, no plan-move gate.
  *
