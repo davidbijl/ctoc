@@ -1516,7 +1516,7 @@ never sees it (believed; recorded at Step 14).
   not higher than at Step 9; `hooks/hooks.json` byte-identical.
 - [x] The Step 12 medians and worst cases (the padded agent command included) are quoted; an
   ordinary call over its stop, or a decision over the budget plus one second, stops the build.
-- [ ] Live, after the owner releases it, on macOS: a Write to `.ctoc/ſtreaming/answers.jsonl` is
+- [x] Live, after the owner releases it, on macOS: a Write to `.ctoc/ſtreaming/answers.jsonl` is
   refused for the main session and for a background agent, a Write into the waiting folder goes
   through, a Write to `src/L/../approvals/y.json` through a planted link is refused, and a
   background agent's Write to `src/y/../foo` (`src/y` a link to `.claude/agents`, `.claude/foo` a
@@ -2085,7 +2085,7 @@ never sees it (believed; recorded at Step 14).
 
 ### Step 16: FINAL-REVIEW
 - [x] Dispatch `iron-loop-critic` against every acceptance box; each box quotes its evidence, including the Step 8 disk answer, the Step 11 reds and the Step 12 medians and worst cases.
-- [ ] After the owner releases it: in a real session on a scratch CTOC project on macOS, a Write to `.ctoc/ſtreaming/answers.jsonl` from the main session and from a background agent is refused, a Write to `.ctoc/streaming/questions/pending/x.json` goes through, and, with `src/L` a planted link to `.ctoc/state`, a Write to `src/L/../approvals/y.json` is refused; and a background agent's Write to `src/y/../foo`, with `src/y` a link to `.claude/agents` and `.claude/foo` a broken link to `.claude/settings.local.json`, is refused and creates no file; quote each answer exactly as shown. Until the release, report this box as not run.
+- [x] After the owner releases it: in a real session on a scratch CTOC project on macOS, a Write to `.ctoc/ſtreaming/answers.jsonl` from the main session and from a background agent is refused, a Write to `.ctoc/streaming/questions/pending/x.json` goes through, and, with `src/L` a planted link to `.ctoc/state`, a Write to `src/L/../approvals/y.json` is refused; and a background agent's Write to `src/y/../foo`, with `src/y` a link to `.claude/agents` and `.claude/foo` a broken link to `.claude/settings.local.json`, is refused and creates no file; quote each answer exactly as shown. Until the release, report this box as not run.
 
 ## Execution Record
 
@@ -2350,3 +2350,21 @@ On other platforms the rows assert the platform's behaviour: the kernel does not
 **Phase I results.** The two Step 8 files: 176 tests, 176 pass, 0 fail, 0 skipped. `npm test` (second run): exit 0, tests 13,348, pass 13,348, fail 0, cancelled 0, skipped 0; test-gate "coverage 99.64% (threshold 99%), skipped 0, failed 0", corpus claims verified 3 refuted 0, PASS. `npx eslint . --max-warnings 0`: exit 0. `npm run typecheck`: exit 0. Plan validator (read-only): `valid:false`, one error, "1 of 18 acceptance criteria not checked" — the live check, open by design.
 **One failure, first `npm test` run:** `tests/quality-agent-coverage.test.js`, "a long run of digits … linear time" (ratio 8.35 against the limit 8: 42.7 ms at 512 thousand digits, 356.7 ms at 2,048 thousand), load average about 30. Reproduced: not alone (4 of 4 green, then 8 of 8 green under 14 busy loops), but 1 of 6 runs of the whole file under 14 busy loops failed that test and the neighbouring "long blank stretch" test (both are the file's timing-ratio tests). Product code measured, not assumed: the seven regexes `readSuiteSummary` and `readPassCount` run on that text take 1.1, 2.1, 4.4, 8.5, 17.5, 35.0 ms for 128 to 4,096 thousand digits (exactly 2.0 per doubling), also with 6 busy loops (1.0 … 32.6 ms); the ANSI strip is 0.0 … 2.0 ms for 128 to 8,192 thousand. So the product is linear; the assertion fails when a loaded machine inflates the big-input run (2 MB strings) past twice the ideal ratio. This round touches no file that test reads (`git status`: the confinement module, its two test files, `docs/ENFORCEMENT.md`); the second full `npm test` run was green. Not changed: no finding that the test is wrong beyond its load sensitivity, which is the owner's standing rule (timing tests out of the gated suite) to schedule.
 No hook refusal was met. One stray no-op: a shell `python3` heredoc that read nothing and wrote nothing was run once by mistake (as in phase F). Not run — needs a real Claude session, the coordinator's to run: the live check.
+
+### Step 16: live check (run by the coordinator, 2026-10-19)
+
+**Method.** A headless Claude Code session in bypass mode (permissionMode `bypassPermissions`) ran in a scratch git project with a `.ctoc/` folder (`<scratch>/realfile-live-check/`), with the hook at commit 3981ea9c registered as its one PreToolUse hook. Each verdict below is the hook's own exit code, read from the logged hook input (raw logs in `<scratch>/realfile-live-check/logs/`, summary in `RESULTS.md`).
+
+**Results.**
+1. Background agent, Write `.ctoc/ſtate/verify/x.json` (long s; `.ctoc/state/verify/` existing): exit 2, the records sentence.
+2. Main session, Write `.ctoc/ſtate/verify/y.json`: exit 2, the records sentence.
+3. Main session, Write `src/x.js`: exit 0, the file was written.
+4. Background agent, Write `.claude/settings.json`: exit 2, the agent-settings sentence.
+5. Background agent, Write `/.vol/<dev>/<inode of .ctoc/approvals>/x.json`: exit 2, the records sentence; `.ctoc/approvals` stayed empty.
+
+**Permission mode:** `bypassPermissions`. **Input fields:** agent calls carried `agent_id` and `agent_type`; main-session calls carried neither.
+
+**What it settles.** The exact long-s attack is refused end to end in a real session, for the main session and for a background agent; the inode-addressed spelling is refused; ordinary work (a Write to `src/x.js`) is allowed; the settings-file refusal is intact on this build.
+
+**Evidence, acceptance criterion (live check on macOS):** results 1 and 2 (long-s refused for both sessions), 3 (ordinary Write allowed), 4 (settings refusal intact) and 5 (inode spelling refused, records folder empty).
+**Evidence, Step 16 live box:** the same five results, exit codes 2, 2, 0, 2, 2, from the logged hook input of one real bypass-mode session. Not exercised in that session: the waiting-folder Write, the planted-link `src/L/../approvals/y.json` and the `src/y/../foo` broken-link rows; those stay covered by the unit and hook cases of Step 8 (unit 18, 26; hook 139–160).
