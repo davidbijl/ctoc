@@ -1,0 +1,10 @@
+{
+  "content_sha256": "571d15edb8269b94aa00ff09324dbd1fc1e2a9365f7d9b197811498005fc2689",
+  "hash_scope": "specification",
+  "stage_from": "implementation",
+  "stage_to": "todo",
+  "approved_at": "2026-10-20T16:38:22.821Z",
+  "advanced_by": "sufficiency",
+  "evidence": "sufficiency: implementation/ctoc-is-built-with-ctoc-the-pre-build-check-accepts-a-slice-that-edits-a-file-an-ear.md — no questions were computed (0 question(s) computed), 0 answered; 0 unanswered, 0 blocking; attested by: not recorded; enough (no unanswered fork)",
+  "plan_basename": "ctoc-is-built-with-ctoc-the-pre-build-check-accepts-a-slice-that-edits-a-file-an-ear"
+}

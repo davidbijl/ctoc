@@ -1,0 +1,10 @@
+{
+  "content_sha256": "c5555020882a795f1dcd8a990872a9548dfb74b325cba68d014e8f78b12f561c",
+  "hash_scope": "specification",
+  "stage_from": "implementation",
+  "stage_to": "todo",
+  "approved_at": "2026-10-20T17:00:37.122Z",
+  "advanced_by": "sufficiency",
+  "evidence": "sufficiency: implementation/ctoc-is-built-with-ctoc-a-plan-in-the-build-queue-can-be-sent-back-to-technical-plan.md — no questions were computed (0 question(s) computed), 0 answered; 0 unanswered, 0 blocking; attested by: not recorded; enough (no unanswered fork)",
+  "plan_basename": "ctoc-is-built-with-ctoc-a-plan-in-the-build-queue-can-be-sent-back-to-technical-plan"
+}

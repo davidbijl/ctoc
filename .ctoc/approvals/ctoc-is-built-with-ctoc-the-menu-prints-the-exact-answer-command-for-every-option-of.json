@@ -1,0 +1,10 @@
+{
+  "content_sha256": "e1fed35a69a9139f3b933a33ea2bda87334c66d14094810c0cd3f85a40e75826",
+  "hash_scope": "specification",
+  "stage_from": "implementation",
+  "stage_to": "todo",
+  "approved_at": "2026-10-20T16:39:53.863Z",
+  "advanced_by": "sufficiency",
+  "evidence": "sufficiency: implementation/ctoc-is-built-with-ctoc-the-menu-prints-the-exact-answer-command-for-every-option-of.md — no questions were computed (0 question(s) computed), 0 answered; 0 unanswered, 0 blocking; attested by: not recorded; enough (no unanswered fork)",
+  "plan_basename": "ctoc-is-built-with-ctoc-the-menu-prints-the-exact-answer-command-for-every-option-of"
+}

@@ -1,0 +1,10 @@
+{
+  "content_sha256": "2fdca8f9837032c8ab7233f2a3417984a8a6b0a61b2c437df3f630f43f9e8183",
+  "hash_scope": "specification",
+  "stage_from": "implementation",
+  "stage_to": "todo",
+  "approved_at": "2026-10-20T20:16:55.959Z",
+  "advanced_by": "sufficiency",
+  "evidence": "sufficiency: implementation/ctoc-is-built-with-ctoc-send-backs-from-review-and-security-rounds-count-toward-the-.md — 1 question(s) computed, 1 answered (q10-round-count-write-lock-r1792514438287); 0 unanswered, 0 blocking; attested by: not recorded; enough (no unanswered fork)",
+  "plan_basename": "ctoc-is-built-with-ctoc-send-backs-from-review-and-security-rounds-count-toward-the-"
+}

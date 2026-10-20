@@ -1,0 +1,10 @@
+{
+  "content_sha256": "61a2064de6aed839b1a7023aab34710a3871124159ee346a7d9db2d6f0876d34",
+  "hash_scope": "specification",
+  "stage_from": "implementation",
+  "stage_to": "todo",
+  "approved_at": "2026-10-20T16:46:13.359Z",
+  "advanced_by": "sufficiency",
+  "evidence": "sufficiency: implementation/ctoc-is-built-with-ctoc-opening-the-menu-in-a-fresh-worktree-writes-no-stray-half-fi.md — no questions were computed (0 question(s) computed), 0 answered; 0 unanswered, 0 blocking; attested by: not recorded; enough (no unanswered fork)",
+  "plan_basename": "ctoc-is-built-with-ctoc-opening-the-menu-in-a-fresh-worktree-writes-no-stray-half-fi"
+}

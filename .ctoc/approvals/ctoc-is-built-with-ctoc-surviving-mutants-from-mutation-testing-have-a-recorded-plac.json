@@ -1,0 +1,10 @@
+{
+  "content_sha256": "833b4923772d6220075937c60b5f86041cccf7257e6e2ce50308a2cfd6341bd5",
+  "hash_scope": "specification",
+  "stage_from": "implementation",
+  "stage_to": "todo",
+  "approved_at": "2026-10-20T16:48:31.913Z",
+  "advanced_by": "sufficiency",
+  "evidence": "sufficiency: implementation/ctoc-is-built-with-ctoc-surviving-mutants-from-mutation-testing-have-a-recorded-plac.md — no questions were computed (0 question(s) computed), 0 answered; 0 unanswered, 0 blocking; attested by: not recorded; enough (no unanswered fork)",
+  "plan_basename": "ctoc-is-built-with-ctoc-surviving-mutants-from-mutation-testing-have-a-recorded-plac"
+}

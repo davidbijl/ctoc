@@ -1,0 +1,10 @@
+{
+  "content_sha256": "3f1adda31aa4f2a15ce397101cf2615300d6546b211708dbd7c8e014a97cc5f3",
+  "hash_scope": "specification",
+  "stage_from": "implementation",
+  "stage_to": "todo",
+  "approved_at": "2026-10-20T16:15:31.177Z",
+  "advanced_by": "sufficiency",
+  "evidence": "sufficiency: implementation/ctoc-is-built-with-ctoc-the-operating-lessons-say-ctoc-is-built-with-ctoc-and-fricti.md — 1 question(s) computed, 0 answered; 1 unanswered, 0 blocking; attested by: not recorded; enough (no unanswered fork)",
+  "plan_basename": "ctoc-is-built-with-ctoc-the-operating-lessons-say-ctoc-is-built-with-ctoc-and-fricti"
+}
