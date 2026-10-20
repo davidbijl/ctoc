@@ -28,6 +28,7 @@ const { validateTransition } = require('./plan-validator');
 const { findProjectRoot } = require('./project-root');
 // NB2: the background-task registry (fs choke point via safe-fs) + its pure view.
 const taskRegistry = require('./task-registry');
+const { releaseLock } = require('./agent-lock');
 const taskView = require('./task-view');
 
 // NB2: terminal task statuses (mirror of NB1's frozen set — not exported by NB1).
@@ -128,6 +129,70 @@ function getVersion(projectPath) {
 }
 
 /**
+ * NAV_ROUTE's `plan` verb, as recorded by `taskComplete`'s `--next`/b64
+ * `nextAction` (e.g. `"plan in-progress/<file>.md"`). Captures the `<stage>/<file>`
+ * remainder. Literal regex (allowed — the security lint bans `new RegExp` on a
+ * non-literal, not a literal pattern).
+ */
+const NEXT_ACTION_PLAN_ROUTE = /^plan\s+(\S+)/;
+
+/**
+ * Recover the plan file's basename (no `.md`) that a DONE task's completion
+ * route points at, so the menu-noise cleanup (Rule 15) can check whether that
+ * plan has shipped (`plans/done/<basename>.md`). Tries, in order: (1) the
+ * task's own `plan` field, when a non-empty string; (2) the nav route recorded
+ * in `result.nextAction` at completion (`"plan <stage>/<file>.md"`). Returns
+ * `null` when neither source yields a usable path — the caller must then leave
+ * the task untouched (never guess a shipped status).
+ * @param {object} task
+ * @returns {string|null}
+ */
+function recoverPlanBasename(task) {
+  if (task && typeof task.plan === 'string' && task.plan.trim()) {
+    return stripCtl(path.basename(task.plan).replace(/\.md$/, ''));
+  }
+  const nextAction = task && task.result && typeof task.result.nextAction === 'string'
+    ? task.result.nextAction
+    : null;
+  if (nextAction) {
+    const m = NEXT_ACTION_PLAN_ROUTE.exec(nextAction);
+    if (m) return stripCtl(path.basename(m[1]).replace(/\.md$/, ''));
+  }
+  return null;
+}
+
+/**
+ * Menu-noise cleanup (Rule 15b): silently mark `result.reviewed = true` on any
+ * DONE task whose recovered plan path has reached `plans/done/` — so a shipped
+ * task stops showing as "awaiting review" / "Gate N ready" in the inbox. A task
+ * already marked reviewed, not yet done, or whose plan path cannot be recovered
+ * (`recoverPlanBasename` → null) is left completely untouched — this is the
+ * safety guardrail: never dismiss a task whose shipped status can't be
+ * confirmed. Mutates `reg` in place; the caller persists only when truthy is
+ * returned (idempotent — no wasted saves on a menu render that changes nothing).
+ * @param {string} root
+ * @param {{tasks?:Array<object>}} reg
+ * @returns {boolean} true iff at least one task was changed
+ */
+function cleanupShippedTasks(root, reg) {
+  let changed = false;
+  const tasks = reg && Array.isArray(reg.tasks) ? reg.tasks : [];
+  for (const t of tasks) {
+    if (!t || t.status !== 'done') continue;
+    if (t.result && t.result.reviewed === true) continue;
+    const basename = recoverPlanBasename(t);
+    if (!basename) continue; // can't confirm shipped status — never guess
+    const donePath = path.join(root, 'plans', 'done', `${basename}.md`);
+    let shipped = false;
+    try { shipped = safeFs.existsSync(donePath); } catch { shipped = false; }
+    if (!shipped) continue;
+    taskRegistry.updateTask(reg, t.id, { result: { ...(t.result || {}), reviewed: true } });
+    changed = true;
+  }
+  return changed;
+}
+
+/**
  * Build the dashboard table text
  * @param {string} projectPath
  * @returns {string} Dashboard table
@@ -185,6 +250,12 @@ function buildDashboardTable(projectPath) {
   // with no background tasks (protects every dashboard substring/count regression).
   let taskReg;
   try { taskReg = taskRegistry.load(root); } catch { taskReg = taskRegistry.emptyRegistry(); }
+  // Menu-noise cleanup (Rule 15b), once per menu load: silently dismiss any
+  // done task whose plan has shipped to plans/done/. Best-effort — a cleanup
+  // failure must never break the dashboard render.
+  try {
+    if (cleanupShippedTasks(root, taskReg)) taskRegistry.save(root, taskReg);
+  } catch { /* best-effort; the dashboard still renders from the in-memory reg */ }
   let tasksBlock = '';
   try { tasksBlock = taskView.renderTasksSection(taskReg); } catch { tasksBlock = ''; }
   if (tasksBlock) out += tasksBlock + '\n';
@@ -235,7 +306,13 @@ function buildDashboardTable(projectPath) {
     if (agent.pid) out += ` (PID ${agent.pid})`;
     out += '\n';
   } else if (agent.stale) {
-    out += `  ⚠ Stale lock: ${agent.stalePlan || 'unknown'} (process died)\n`;
+    // Rule 15a: a lock whose owning process is dead is stale noise. Silently
+    // release it and render idle — never surface a warning on the JSON
+    // dashboard (same treatment as src/areas/agent.js). A live lock takes the
+    // `agent.active` branch above and is never touched. Best-effort: a release
+    // failure must never break the render.
+    try { releaseLock(root); } catch { /* best-effort */ }
+    out += `  ○ Idle\n`;
   } else if (agent.overloadRetry) {
     const retryLabel = agent.retryAt
       ? (() => {
