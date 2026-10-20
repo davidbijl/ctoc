@@ -7,10 +7,21 @@
 
 const { c, line, renderFooter } = require('../lib/tui');
 const { getAgentStatus } = require('../lib/state');
+const { releaseLock } = require('../lib/agent-lock');
 
 function render(app) {
   const root = app.projectPath || process.cwd();
-  const agent = getAgentStatus(root);
+  let agent = getAgentStatus(root);
+
+  // Menu-noise cleanup (Rule 15): a stale lock is already confirmed dead here —
+  // getAgentStatus only sets `stale` after its own isPidAlive(lock.pid) check
+  // failed — so it is safe to silently release it and render idle, with NO
+  // warning. A lock whose owning process is still alive takes the `active`
+  // branch below and is never touched.
+  if (agent.stale) {
+    releaseLock(root);
+    agent = { active: false };
+  }
 
   let out = '\n';
   out += `${c.bold}Agent${c.reset}\n\n`;
@@ -24,10 +35,6 @@ function render(app) {
     if (agent.pid)     out += `  PID        ${c.dim}${agent.pid}${c.reset}\n`;
     out += '\n';
     out += `  ${c.dim}Press 's' to request stop (graceful — after current plan)${c.reset}\n`;
-  } else if (agent.stale) {
-    out += `  ${c.yellow}⚠${c.reset} ${c.bold}Stale lock${c.reset}\n`;
-    out += `  Plan was: ${c.dim}${agent.stalePlan || 'unknown'}${c.reset} (process died)\n`;
-    out += `  ${c.dim}Run /ctoc:menu to clean up.${c.reset}\n`;
   } else {
     out += `  ${c.dim}○ Idle${c.reset}\n`;
     out += `  No active plan. Queue is processed by the next /ctoc:start.\n`;
