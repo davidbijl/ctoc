@@ -39,7 +39,7 @@
  * text first, because `..` after a link is the link's real parent to the file system
  * (measured 2026-10-15: `src/L/../approvals` with `src/L → ../.ctoc/state` is
  * `.ctoc/approvals`). Bounded by `MAX_ANCESTOR_WALK` segments walked (links'
- * contents included), `MAX_LINK_HOPS` links, and the decision deadline.
+ * contents included), `MAX_LINK_HOPS` links, and the decision budget.
  *
  * THE TAIL'S GUARANTEE HOLDS ONLY AFTER A DANGLING SEGMENT HAS BEEN EXCLUDED — this
  * paragraph once read "the tail contains no links BECAUSE IT DOES NOT EXIST", and
@@ -77,17 +77,39 @@
  * into consistency with the fail-open reporting checks that neighbour it; the
  * inversion is deliberate and load-bearing.
  *
- * A DECISION BUDGET. A hook that times out lets the call run (measured, the owner's
- * trial of 2026-10-15), so a slow walk is an allow. `setDeadline` sets the latest
- * `Date.now()` at which a walk may still take a step; past it `resolvesUnder` refuses
- * at its entry, before the root lookup, and every walk returns `'resolve-failed'`,
- * the refusing value for `resolvesUnder`. A caller that DROPS a check when a walk
- * faults, with no refusing check behind it in the same decision (the background
- * agent's shell settings specs in `protect-records.js`, which guard against a
- * lock-out that way), asks `budgetSpent()` first and keeps the check, so it refuses
- * at `resolvesUnder`'s entry instead of vanishing; `PreToolUse.Bash.isLedgerWrite` asks it too,
- * and refuses its own text work once the budget is spent. Set once per decision by
- * `protect-records.js`, a fresh process per call; never set by any other caller.
+ * A DECISION BUDGET, COUNTED IN WORK (owner, 2026-10-19). A hook that times out lets the
+ * call run (measured, the owner's trial of 2026-10-15), so a slow walk is an allow. The
+ * verdict must not depend on how busy the machine is, so the budget is a COUNT of work, not
+ * seconds. `setWorkBudget` sets the units one decision may spend. A unit is about one
+ * file-system step: a walk step, a kernel step, an identity-chain step or a `resolvesUnder`
+ * entry, each charged through `budgetSpent(cost)`. Text work is charged by its length at ONE
+ * rate (`textBudgetSpent`, `CHARS_PER_UNIT` characters a unit, plus one per check): the target
+ * at `resolvesUnder`'s entry, the prefix at each `kernelAgrees` step, each name the walk adds
+ * to its tail past the first missing one, and, in `PreToolUse.Bash.isLedgerWrite`, the
+ * folder-change chain of each segment, each operand and each link-test candidate. The count only
+ * goes down, so once it is spent it stays spent. `setDeadline` is kept as the BACKSTOP clock, set
+ * far below Claude Code's hook time limit. Past the count or the backstop `resolvesUnder` refuses
+ * at its entry, before the root lookup, and every walk returns `'resolve-failed'` (a remembered
+ * walk included, never its stored answer), the refusing value for `resolvesUnder`. A caller that
+ * DROPS a check when a walk faults, with no refusing check behind it in the same decision (the
+ * background agent's shell settings specs in `protect-records.js`, which guard against a lock-out
+ * that way), asks `budgetSpent()` first and keeps the check, so it refuses at `resolvesUnder`'s
+ * entry instead of vanishing; `PreToolUse.Bash.isLedgerWrite` charges its own text work and refuses
+ * once the budget is spent. Set once per decision by `protect-records.js`, a fresh process per call,
+ * which gives its own sentence for a refusal made past it; never set by any other caller.
+ *
+ * MEMORY WITHIN ONE DECISION. While a count is set, three lookups are answered from a memory:
+ * `resolveBasis`, `resolveExisting` and `fileIdentity`. Nine settings checks put the same operand
+ * to the same disk nine times; the memory asks once. The key is the exact absolute path AS WRITTEN
+ * (never tidied, so the as-written and the tidied reading stay two questions); a `p` that is not a
+ * non-empty string, or whose key cannot be built (a working folder that is gone), is never
+ * remembered and gets the uncached answer. The memory holds at most `MEMORY_ENTRIES_MAX` answers
+ * of each kind and `MEMORY_CHARS_MAX` characters of keys and stored paths in all; past either, a
+ * lookup is made and charged in full. Answers are frozen. It lives from `setWorkBudget` to the end
+ * of the process (a fresh process per call), and the menu process never sets a count, so it has no
+ * memory. A hit charges nothing, because every hit sits under a check that charges (each
+ * `resolvesUnder` entry, identity-chain step, segment and operand), so asking again and again
+ * still runs the count down.
  *
  * THE TWO FUNCTIONS FAIL IN OPPOSITE BOOLEAN DIRECTIONS, and both directions mean
  * DENY:
@@ -116,12 +138,70 @@ const MAX_ANCESTOR_WALK = 4096;
 const MAX_LINK_HOPS = 40;
 /** The path separators of this platform, for splitting a path into segments. */
 const SEPARATORS = path.sep === '\\' ? /[\\/]+/ : /\/+/;
-/** The latest `Date.now()` at which a walk may take a step, or null for none. */
+/** The latest `Date.now()` at which a walk may take a step (the BACKSTOP clock), or null for none. */
 let deadline = null;
+/** The units this decision may still spend, or null for no count. Spent when below zero. */
+let unitsLeft = null;
+/** `{ basis, walks, ids }`: the three remembered lookups while a count is set, else null. */
+let memory = null;
+/** The characters the memory holds: keys plus stored paths. */
+let memoryChars = 0;
+/** The most answers one kind of lookup holds (sized for a here-document of 2,000 lines of distinct words). */
+const MEMORY_ENTRIES_MAX = 32768;
+/** The most characters of keys and stored paths the memory holds in all: an entry cap alone does not bound bytes. */
+const MEMORY_CHARS_MAX = 16777216;
+/** The one text rate: characters per unit of the count. */
+const CHARS_PER_UNIT = 64;
+
+/**
+ * The memory key of a path: the exact absolute path AS WRITTEN (the rule of `walkAsWritten`), never tidied.
+ * Null for a `p` that is not a non-empty string, or whose key cannot be built (a working folder that is gone):
+ * such a path is never remembered. Never throws.
+ * @param {*} p
+ * @returns {string|null}
+ */
+function keyOf(p) {
+  if (typeof p !== 'string' || p.length === 0) return null;
+  try {
+    return path.isAbsolute(p) ? p : `${process.cwd()}${path.sep}${p}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The answer for `key` from `map`, computed once. Stored (frozen, with its `tail`) only while the entry cap and the
+ * character cap allow; past either the lookup is made and returned, not kept.
+ * @template T
+ * @param {Map<string, T>} map
+ * @param {string} key
+ * @param {function(): T} compute
+ * @returns {T}
+ */
+function remember(map, key, compute) {
+  if (map.has(key)) return /** @type {T} */ (map.get(key));
+  const value = compute();
+  const held = typeof value === 'string' ? value : value !== null && typeof value === 'object' ? /** @type {*} */ (value).real : null;
+  let size = typeof held === 'string' ? held.length : 0;
+  // The names of a walk's tail are stored again, as the array's own strings: they count too.
+  const tail = value !== null && typeof value === 'object' ? /** @type {*} */ (value).tail : null;
+  if (Array.isArray(tail)) for (const name of tail) size += name.length;
+  if (map.size < MEMORY_ENTRIES_MAX && memoryChars + key.length + size <= MEMORY_CHARS_MAX) {
+    if (value !== null && typeof value === 'object') {
+      if (Array.isArray(/** @type {*} */ (value).tail)) Object.freeze(/** @type {*} */ (value).tail);
+      Object.freeze(value);
+    }
+    map.set(key, value);
+    memoryChars += key.length + size;
+  }
+  return value;
+}
 
 /**
  * Where `p` really leads, walked AS WRITTEN the way the file system walks it, tolerating a
- * path that does not exist yet. See the header: THE WALK, AS WRITTEN.
+ * path that does not exist yet. See the header: THE WALK, AS WRITTEN. Within one decision (a
+ * work count is set) the answer is remembered by the path as written (see MEMORY WITHIN ONE
+ * DECISION); past the count or the backstop it is the fault, never a stored answer.
  *
  * NEVER THROWS. Every fault is returned as `{ ok: false, reason }` with a fixed vocabulary
  * (`'resolve-failed'` | `'loop'` | `'denied'` | `'dangling'` | `'not-a-folder'`), so a caller
@@ -136,6 +216,14 @@ let deadline = null;
  *   names at the end of `real` that do not exist yet, outermost first (`[]` when the whole path exists).
  */
 function resolveExisting(p) {
+  const key = memory === null ? null : keyOf(p);
+  if (key === null) return walkAsWritten(p);
+  if (budgetSpent(0)) return { ok: false, real: null, reason: 'resolve-failed', tail: null };
+  return remember(/** @type {{walks: Map<string, *>}} */ (memory).walks, key, () => walkAsWritten(p));
+}
+
+/** The walk itself: see `resolveExisting`, which remembers its answers. Never throws. */
+function walkAsWritten(p) {
   const fault = (reason) => ({ ok: false, real: null, reason, tail: null });
   try {
     if (typeof p !== 'string' || p.length === 0) return fault('resolve-failed');
@@ -166,6 +254,9 @@ function resolveExisting(p) {
         // a link's segments sit on top of `todo` and are popped before any other, a missing one
         // returns 'dangling' below before the tail can start, and a link is met only by `lstat`,
         // which runs only while the tail is empty — so the tail is empty while such segments remain.
+        // The step's own unit is charged above; a name past the first missing one is also charged by its
+        // length, because every later join of the path carries it. Charged, never length-checked.
+        if (budgetSpent(Math.floor(seg.length / CHARS_PER_UNIT))) return fault('resolve-failed');
         tail.push(seg);
         continue;
       }
@@ -240,8 +331,9 @@ function kernelAgrees(abs, existing) {
     const root = path.parse(abs).root;
     const names = segmentsOf(abs.slice(root.length));
     for (let n = names.length; n >= 0; n--) {
-      if (budgetSpent()) return false;
+      // Each step builds a prefix as long as the path: charged by its length.
       const prefix = root + names.slice(0, n).join(path.sep);
+      if (textBudgetSpent(prefix.length)) return false;
       let st;
       try {
         st = safeFs.statSync(prefix, { bigint: true });
@@ -282,6 +374,14 @@ function segmentsOf(s) {
  * @returns {{ok: boolean, real: (string|null), reason: (string|null)}}
  */
 function resolveBasis(p) {
+  const key = memory === null ? null : keyOf(p);
+  return key === null
+    ? basisOf(p)
+    : remember(/** @type {{basis: Map<string, *>}} */ (memory).basis, key, () => basisOf(p));
+}
+
+/** The lookup `resolveBasis` remembers. Never throws. */
+function basisOf(p) {
   try {
     if (typeof p !== 'string' || p.length === 0) return { ok: false, real: null, reason: 'resolve-failed' };
     try {
@@ -407,8 +507,9 @@ function resolvesUnder(targetFile, protectedDirRelative, root) {
     if (typeof targetFile !== 'string' || targetFile.length === 0) return false;
     if (typeof protectedDirRelative !== 'string' || protectedDirRelative.length === 0) return true;
     if (typeof root !== 'string' || root.length === 0) return true;
-    // The decision budget, before the root lookup (`resolveBasis` is not bounded by it).
-    if (budgetSpent()) return true;
+    // The decision budget, before the root lookup (`resolveBasis` is not bounded by it). The target is the
+    // text every later step of this call joins and walks, so it is charged by its length.
+    if (textBudgetSpent(targetFile.length)) return true;
 
     // Strict: the root must EXIST. The protected directory need not — a project that has never
     // minted an approval has no `.ctoc/approvals` yet.
@@ -437,8 +538,9 @@ function resolvesUnder(targetFile, protectedDirRelative, root) {
 }
 
 /**
- * Set the decision budget: walks refuse once `Date.now()` passes `at`. A number sets it; anything
- * else clears it. Called once per decision by `protect-records.js` (a fresh process per call).
+ * Set the BACKSTOP clock: walks refuse once `Date.now()` passes `at`, whatever is left of the count.
+ * A number sets it; anything else clears it. Called once per decision by `protect-records.js`
+ * (a fresh process per call).
  * @param {number|null} at
  */
 function setDeadline(at) {
@@ -446,14 +548,48 @@ function setDeadline(at) {
 }
 
 /**
- * Has the decision budget run out? The one test every walk, `resolvesUnder` and `identityChain`
- * use, exported for a caller that would otherwise DROP a check when a walk faults
+ * Set the decision's count of work: `units` it may spend, and an empty memory (see MEMORY WITHIN ONE
+ * DECISION). A finite number of at least 0 sets it; anything else clears the count and drops the memory.
+ * `setWorkBudget(0)` is an empty count, not "no count": it is not yet spent, and the first charge spends it.
+ * Called once per decision by `protect-records.js` (a fresh process per call).
+ * @param {number|null} units
+ */
+function setWorkBudget(units) {
+  if (typeof units === 'number' && Number.isFinite(units) && units >= 0) {
+    unitsLeft = Math.floor(units);
+    memory = { basis: new Map(), walks: new Map(), ids: new Map() };
+  } else {
+    unitsLeft = null;
+    memory = null;
+  }
+  memoryChars = 0;
+}
+
+/**
+ * Charge `cost` units to the decision's count (when one is set), then say whether the decision budget has
+ * run out: the count below zero, or the backstop clock past. The one test every walk, `resolvesUnder` and
+ * `identityChain` use, exported for a caller that would otherwise DROP a check when a walk faults
  * (`protect-records.fileSpec`): a spent budget must keep the check, so it refuses (Decision 46).
- * `PreToolUse.Bash.isLedgerWrite` is the other caller: it refuses its own text work past the budget.
+ * `PreToolUse.Bash.isLedgerWrite` is the other caller: it charges its own text work through `textBudgetSpent`.
+ * A cost that is not a finite number of at least 0 charges 1, so a caller's slip can never stop the count;
+ * `budgetSpent(0)` asks without charging.
+ * @param {number} [cost] - units to charge (default 1)
  * @returns {boolean}
  */
-function budgetSpent() {
-  return deadline !== null && Date.now() > deadline;
+function budgetSpent(cost = 1) {
+  if (unitsLeft !== null) unitsLeft -= typeof cost === 'number' && Number.isFinite(cost) && cost >= 0 ? cost : 1;
+  return (unitsLeft !== null && unitsLeft < 0) || (deadline !== null && Date.now() > deadline);
+}
+
+/**
+ * Charge text work of `chars` characters to the decision's count, at the ONE text rate: one unit, plus
+ * one more per `CHARS_PER_UNIT` characters. True once the budget has run out. A `chars` that is not a finite
+ * number charges 1 (through `budgetSpent`'s floor).
+ * @param {number} chars
+ * @returns {boolean}
+ */
+function textBudgetSpent(chars) {
+  return budgetSpent(1 + Math.floor(chars / CHARS_PER_UNIT));
 }
 
 /** One path segment folded for a name compare: NFKC (the long s becomes s), then lower case. */
@@ -465,11 +601,18 @@ function foldSegment(s) {
  * What `p` names after links, as `'<dev>:<ino>'` from a `bigint` stat (Windows file IDs can pass
  * 2^53); null when nothing is there (ENOENT, ENOTDIR) or the file system reports inode 0 (FAT
  * and some network shares, where every file would compare equal); undefined on any other
- * fault. Never throws. The one identity helper in CTOC.
+ * fault. Never throws. The one identity helper in CTOC. Remembered within one decision (see
+ * MEMORY WITHIN ONE DECISION); uncharged, because every caller charges per call.
  * @param {string} p
  * @returns {string|null|undefined}
  */
 function fileIdentity(p) {
+  const key = memory === null ? null : keyOf(p);
+  return key === null ? identityOf(p) : remember(/** @type {{ids: Map<string, *>}} */ (memory).ids, key, () => identityOf(p));
+}
+
+/** The lookup `fileIdentity` remembers. Never throws. */
+function identityOf(p) {
   try {
     const st = safeFs.statSync(p, { bigint: true });
     return String(st.ino) === '0' ? null : `${st.dev}:${st.ino}`;
@@ -503,7 +646,7 @@ function anchorOf(resolved) {
  * ancestor, each with its identity (null when the file system gives none) and the folded names
  * below it, the missing tail included. Stops after the entry whose identity is the project
  * root's (no protected entry lies above the root), else at the file-system root. Bounded by
- * MAX_ANCESTOR_WALK and the decision deadline. Null on a fault.
+ * MAX_ANCESTOR_WALK and the decision budget (one unit a step). Null on a fault.
  * @param {{real: string, tail: string[]}} resolved - an `ok` result of `resolveExisting`
  * @param {string|null} rootId - the project root's identity
  * @returns {Array<{id: (string|null), below: string[]}>|null}
@@ -539,4 +682,4 @@ function passesThrough(chain, anchor) {
     && anchor.below.every((name, i) => link.below[i] === name));
 }
 
-module.exports = { escapesRoot, resolvesUnder, resolveExisting, setDeadline, budgetSpent, fileIdentity, foldSegment };
+module.exports = { escapesRoot, resolvesUnder, resolveExisting, setDeadline, setWorkBudget, budgetSpent, textBudgetSpent, fileIdentity, foldSegment };

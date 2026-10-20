@@ -255,15 +255,6 @@ function quotedLiterals(seg) {
 }
 
 /**
- * A bounded number of operands per segment get the real-path resolution. Beyond the
- * cap the two ARITHMETIC tests alone stand — a STATED ceiling (Decision 3), never a
- * silent one: denying a long command outright would deny real work (`git add` with
- * many files). Measured: 51 operands resolve in ~3.3ms, so 128 bounds the worst case
- * well under the per-command budget while never clipping a realistic `git add`.
- */
-const OPERAND_RESOLUTION_CAP = 128;
-
-/**
  * Does a single shell operand REALLY resolve under `<cwd>/.ctoc/approvals`, whatever
  * symbolic links it passes through? This is the third, filesystem-aware ledger test
  * — WIRING the one real-path-confinement encoding, never a second copy of it.
@@ -294,6 +285,16 @@ function operandResolvesIntoLedger(prefix, token, dir = LEDGER_DIR_RELATIVE, raw
   // No candidate is skipped for its length: a deep folder reached by a chain of `cd` steps makes a
   // path over 4,096 bytes that exists. The resolver counts only one over-long NAME as absent.
   return [...new Set([rel, raw])].some((c) => realPathConfinement.resolvesUnder(c, dir, process.cwd()));
+}
+
+/**
+ * Charge the shell's text work of `chars` characters to the decision's count, at the resolver's one rate
+ * (`textBudgetSpent`); true once the count or its backstop is spent. False when the resolver is absent.
+ * @param {number} chars
+ * @returns {boolean}
+ */
+function chargeText(chars) {
+  return realPathConfinement !== null && realPathConfinement.textBudgetSpent(chars);
 }
 
 /**
@@ -336,11 +337,11 @@ function isLedgerWrite(command, spec = LEDGER_SPEC) {
   let prefix = '';
   let rawPrefix = ''; // the same accumulated cwd as written (no `..` removed), for the link test
   for (const rawSeg of segments) {
-    // The decision's budget also covers this function's own TEXT work (the `cd` prefix rebuild
-    // below grows with the square of the `cd` count; operand resolution with the operand count).
-    // Claude Code lets a call run when its hook times out, so a padded command that outlasts the
-    // budget is refused here — even a read-only one (the owner's "refuse after 5 s").
-    if (realPathConfinement !== null && realPathConfinement.budgetSpent()) return true;
+    // The decision's count of work also covers this function's own TEXT work (the `cd` prefix rebuild
+    // below grows with the square of the `cd` count; operand resolution with the operand count),
+    // charged by the length of the text. Claude Code lets a call run when its hook times out, so a
+    // padded command that outlasts the count is refused here — even a read-only one.
+    if (chargeText(prefix.length + rawPrefix.length)) return true;
     const seg = rawSeg.replace(/^[\s({]+/, '').trim();
     if (!seg) continue;
     const cdKw = seg.match(/^(?:cd|pushd)\b(.*)$/i);
@@ -416,25 +417,30 @@ function isLedgerWrite(command, spec = LEDGER_SPEC) {
       .slice(1).filter((t) => !t.startsWith('-'));
     const operands = [...new Set(readings.flatMap(operandsOf))];
     if (!touches) {
-      // Each operand is path work too: past the budget, refuse (see the top of the loop).
+      // Each operand is path work too, charged by its length with the prefix it is joined to: past the
+      // count, refuse (see the top of the loop).
       for (const t of operands) {
-        if (realPathConfinement !== null && realPathConfinement.budgetSpent()) return true;
+        if (chargeText(prefix.length + t.length)) return true;
         if (spec.resolvedRe.test(resolveTokenPath(prefix, t))) { touches = true; break; }
       }
     }
     if (!touches && spec.dir) {
       // (c) The filesystem-aware test — the link-through-the-ledger close. Candidates
       // are the shell operands PLUS the segment's quoted string literals, so a path
-      // embedded in `node -e "…'link/approvals/x'…"` is resolved as well. Bounded by
-      // OPERAND_RESOLUTION_CAP (Decision 3, a stated ceiling); beyond the cap the
-      // arithmetic verdict above stands.
+      // embedded in `node -e "…'link/approvals/x'…"` is resolved as well. EVERY candidate gets the
+      // test, however many there are: the decision's count of work bounds the time (a candidate past a
+      // fixed number once skipped it, and the long-s spelling of a settings file after 128 harmless
+      // operands got through), and a segment too large for the count is refused.
       const candidates = [...new Set(operands.concat(readings.flatMap(quotedLiterals)))];
-      // Past the cap the operands get no link test, so the as-written reading would never reach them:
-      // when it differs from the tidied one (a `..` after a named folder) the segment is refused.
-      if (candidates.length > OPERAND_RESOLUTION_CAP && rawPrefix !== prefix) return true;
-      touches =candidates.slice(0, OPERAND_RESOLUTION_CAP)
-        .some((t) => operandResolvesIntoLedger(prefix, t, spec.dir, rawPrefix));
+      // Each candidate is joined to both prefixes by `operandResolvesIntoLedger`, so it is charged with both.
+      for (const t of candidates) {
+        if (chargeText(prefix.length + rawPrefix.length + t.length)) return true;
+        if (operandResolvesIntoLedger(prefix, t, spec.dir, rawPrefix)) { touches = true; break; }
+      }
     }
+    // A count that ran out inside the link test makes `resolvesUnder` answer `true` (its fault value), which the
+    // read-only exemption below would let through on a last segment such as `cat x`: refuse it here instead.
+    if (realPathConfinement !== null && realPathConfinement.budgetSpent(0)) return true;
     if (touches && !isReadOnlyLedgerCommand(seg)) return true;
   }
   return false;

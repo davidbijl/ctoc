@@ -331,17 +331,42 @@ and is refused. The waiting folder stays writable under every Unicode-folded spe
 The root-independent test reads the folded path and the folded real path, so another copy's
 records count under a look-alike spelling or through a link, and a link inside the waiting folder
 that leads into the store is refused. A file, or a folder the session cannot search, where a
-protected folder is expected refuses only the writes that run into it. From 5 seconds after a
-decision starts, every file-system walk fails and every check whose failure could let the call
-through refuses, or is backed in the same decision by one that refuses — the background agent's
-shell settings check keeps its link test rather than dropping it — because Claude Code lets a call
-run when its hook times out (a call that needs no walk is decided as without the budget, and the
-budget does not cover Node's start-up). The shell's text work is checked against the same budget at
-each segment and each operand (the text test on one huge segment, the quoted-literal scan and the
-folded second reading are not): once it is spent, the shell checks refuse even a long read-only
-command (the owner's "refuse after 5 s"). On
-a slow disk the budget refuses ordinary writes: an ordinary Write makes about 190 file-system
-calls, so refusals start at roughly 26 ms per call on average. The background agent's settings
+protected folder is expected refuses only the writes that run into it. A decision is bounded by a
+count of work, not by the clock (the owner's decision of 2026-10-19): 3,000,000 units, each about one
+file-system step (a walk step, a kernel step, an identity-chain step or the entry of a path check).
+Text work is charged at one rate, one unit plus one more per 64 characters, wherever its length is
+joined or walked: in the shell, each segment's folder-change chain, each operand and each link-test
+candidate; in the resolver, the target of each check, the prefix of each kernel step and each name
+the walk adds below the first missing one. Lookups are remembered within one decision, keyed on the
+exact path as written, so nine settings checks cost about one; the memory holds at most 32,768
+answers of each kind and 16,777,216 characters, answers are frozen, a path that is not a non-empty
+string is never remembered, and a hit charges nothing because every hit sits under a check that
+does (asking again and again still runs the count down). Past the count, or past the backstop clock
+(60 seconds, a tenth of Claude Code's hook time limit of 600 seconds, read offline in the installed
+2.1.300), every file-system walk fails, a remembered one included, and every check whose failure
+could let the call through refuses, or is backed in the same decision by one that refuses — the
+background agent's shell settings check keeps its link test rather than dropping it — because
+Claude Code lets a call run when its hook times out (a call that needs no walk still pays for its
+text work, charged the same way; the count does not cover Node's start-up). A read-only command is refused
+too once the count runs out, also when it runs out inside the link test. Such a refusal gives its
+own sentence: "CTOC refused this call because checking it would take more work than CTOC allows for
+one call; split it into smaller commands and run them one by one." A refusal made within the count
+keeps its own sentence, and an allow is never rewritten. The verdict of an ordinary command no
+longer depends on the machine's load, on any platform; only the backstop depends on the platform,
+and it refuses. The stated limit: a here-document of up to 2,000 lines of distinct words (about
+100,000 characters) is allowed, measured at 1,434,509 units for a background agent in a project
+inside `.claude/worktrees/` (nine checks) and 12.7 megabytes of memory, 24,006 remembered paths. Past
+that, each lookup the memory cannot hold is paid in full, and the count refuses, failing closed, at a
+size that depends on the shape of the command; nothing here promises a size past 2,000 lines. A command that
+Unicode compatibility folding changes (a character such as `…` that folds to plain text) is read
+twice by each of a background agent's settings checks: 2 + 2N runs, 16 in a project inside
+`.claude/worktrees/`, and the here-document limit for that shape is the same 2,000 lines (measured at
+2,232,773 units). The builder's ordinary 43 KB here-document costs 327,646 units for a background agent
+in that layout (573,478 when folding changes it), against the count of 3,000,000. The text this
+paragraph does not check is what stays uncharged: the text test and the quoted-literal scan over one
+segment, and the Unicode fold. An ordinary Write makes 65 to 92 file-system calls and costs 79 to 105
+units, so the count refuses ordinary writes only when a single call has done tens of thousands of times
+that work. The background agent's settings
 check reads its identity tests and its real-path name test on the path as written and tidied. On
 the shell the text rules stay a guard against honest mistakes (the owner's ruling of 2026-10-15),
 the record refusals stay off, and the link test of the checks that still run — the regulatory
@@ -349,8 +374,8 @@ settings for every session, the settings files for background agents — calls t
 each operand as written and tidied, so a hard link to `.ctoc/settings.yaml` (or, for a background
 agent, to a protected settings file that has a link test), a spelling the disk opens as one, a
 link then `..`, and a `cd` through a link are refused there. Held by
-`tests/protect-records.test.js` (cases 139–157, 159 and 160) and
-`tests/a-link-cannot-leave-the-repository.test.js` (cases 15–26). A single name too long for the
+`tests/protect-records.test.js` (cases 139–157, 159–176 with 173b, and case 109 of the sweep-confirmation block) and
+`tests/a-link-cannot-leave-the-repository.test.js` (cases 15–28). A single name too long for the
 file system (over 255 UTF-16 units) that does not exist is not read as protected: it cannot be written
 either. A long whole path is not read that way (see the padded-command item below). The resolver
 confirms an absent tail with the kernel: the deepest ancestor of the path as written that the kernel
@@ -377,7 +402,7 @@ the link and make the folder again.
    `status`, `blame`, `ls-files` without `--output` or `>`).
 3. The same after a `cd` into or toward the folder, including a working directory the
    session already stands in; and an operand or quoted string that really leads into a
-   folder through a symbolic link (the first 128 per segment).
+   folder through a symbolic link (every one, however many; the count of work bounds the time).
 4. Inline scripts (`node -e` and its relatives) naming an approval-ledger writer,
    `step-13-verify`, `persistVerifyResult`, `verifyEvidencePath`, `crossBySufficiency`,
    `streamApprove` or `streamAnswer`; inline scripts built at run time; a decoded payload
@@ -528,8 +553,7 @@ protected list and the project's files stay protected on the editing tools.
   checkout, stash pop, merge, pull, reset, rebase, apply);
 - replacing a parent folder (`mv`, `cp -r`, `rsync` or an archive onto `.ctoc`,
   `.ctoc/state` or the project root);
-- hard links; more than 128 operands in one segment (given the segment is not refused, see the
-  padded-command item below); file-writing tools other than the five;
+- hard links; file-writing tools other than the five;
 - read commands with a write side effect (`find -delete`, `tree -o`), which can delete or
   corrupt a record but never forge one;
 - `find … -exec <program> {} +` runs any program on the file, so it can write any content: the
@@ -594,24 +618,53 @@ protected list and the project's files stay protected on the editing tools.
   holds Claude Code's own files);
 - the home folder's `.claude/settings.local.json` is refused by the name rule although it is not on
   the protected list (a harmless false refusal);
-- a deliberately padded shell command (tens of kilobytes of operands) takes several seconds to
-  check, and a hook that times out lets the call run. Measured on a heavily loaded Mac (load
-  average 25 to 47): the 64-segment, 128-operand command of about 100 kilobytes took 2.1 to 4.6 s
-  and was allowed under the 5-second budget; a command of `cd a;` segments followed by a write, from
-  a background agent, was refused at 5.03 s at 100, 200, 400, 800 and 3,200 kilobytes, while the main
-  session's 100-kilobyte call finished in 3.5 s and was allowed (before the budget covered the
-  shell's text work, 800 kilobytes took 198 s); a command of four segments of `cp x` with 128
-  operands through the deepest folders this machine allows (478 kilobytes) was refused at 5.03 s.
-  The file-system walks stop at 5 seconds and refuse, and the shell's text work is checked at each
-  segment and each operand (the text test on one huge segment, the quoted-literal scan and the
-  folded second reading are not); Node's start-up, reading the payload and the other checks of the
-  shell are outside the budget. Claude Code's default hook timeout is 600 seconds
-  (code.claude.com/docs/en/hooks), far above the budget.
-- a padded command is no longer let through by its length: past 128 operands in one segment, when
-  the as-written working folder differs from the tidied one (a `..` after a named folder), the
-  segment is refused.
-  The cost: such a command (`cd src && cd .. && git add` of 200 files, say) is refused. No
-  candidate is skipped for its length any more (hook case 157, unit case 23): a `cd` chain over
+- a deliberately padded shell command is decided by a count of work, not by the clock, and a hook
+  that times out lets the call run, so the count and the 60-second backstop both refuse. Measured
+  at release 6.14.133 plus this change, through the hook's own input JSON, on a loaded Mac (load
+  average 22 to 25, not idle; wall times are quoted, never asserted): a command of `cd a;` segments
+  of 100 and of 3,200 kilobytes, then `ls`, is refused in 0.6 s; a `cd` into a 100-kilobyte name
+  followed by 450 segments of 128 literals (about 675 kilobytes, written apart or glued into one
+  operand) is refused in about half a second after 3,268 and 4,104 file-system calls, with the whole count of
+  3,000,000 units spent, so the count decides and the fake clock never reaches the backstop in the
+  tests. The builder's ordinary 43 KB here-document costs 327,646 units for a background agent in a
+  project inside `.claude/worktrees/` (nine checks; 81,779 for the main session; 573,478 when folding
+  changes it) and makes 9,469 file-system calls and 481,014 budget checks where the clock-bound check
+  made 2,506,383 calls and 2,337,737 budget checks (both taken with the clock frozen, so the 5-second
+  clock never fired); the 2,000-line here-document costs 1,434,509 units (2,232,773 folded), 348,222
+  calls and 1,908,616 budget checks (before: 8,331,909 calls and 7,743,835 checks),
+  1.3 s (1.9 s folded), and the memory holds it in 12.7 megabytes (24,006 remembered paths against the
+  cap of 32,768; about 5 million of the 16,777,216 characters). With a project path of 200 characters
+  the builder costs 329,958 units (agent, nine checks; 575,814 folded) and the 2,000-line
+  here-document 1,530,558 (2,328,838 folded), so the margin against a third of the count is kept. The
+  command of four segments of `cp x` with 128 operands through the deepest folders this machine allows
+  (470,619 characters, each operand 912 bytes of folders) was measured under the shipped code at load
+  average 77: 75,298 units for the main session and 179,840 for a background agent in a plain project
+  (259,798 in the nine-check layout), about 8,000 file-system calls, 0.08 to 0.17 s. The count decides
+  it, at under a tenth of the count, and the verdict does not move with the load. The sweep check of a
+  background agent (its folders and runtime words, each step of its search for the next word, and the
+  manifests it reads above a script it finds) and the reading of a menu reply body are charged to the
+  same count; a 64 KB command of 2,800 folder changes and runtime words is refused by it. A manifest
+  is opened once without waiting and judged and read through that one descriptor: it is read only if it
+  is a regular file of at most 1 MiB, its bytes are charged at the text rate, and any other manifest
+  names nothing. A pipe is opened (so that the open cannot block) but never read, and a regular
+  manifest swapped for a pipe between a check and a read cannot hold the hook, because there is no
+  check apart from the read. The `current` folder of that check follows plain `cd` and `pushd` with a
+  path, and moves on every one, a repeated folder included; only the list of folders searched drops
+  repeats. It is not where the shell is after `cd -`, `popd`, `cd ~`, a bare `cd`, a failed `cd` or
+  `cd -P` (these gaps were there before this change and are left to their own plan). The
+  file-system walks and the shell's text work (each segment's folder-change chain, each operand, each
+  link-test candidate, with no cap on their number) stop when the count runs out; Node's start-up,
+  reading the payload, the other checks of the shell, the text test and the quoted-literal scan over
+  one segment, and the Unicode fold are outside the count. Claude
+  Code's default hook time limit is 600 seconds (read offline in the installed 2.1.300: the default
+  `timeoutMs` of the PreToolUse runner; `hooks/hooks.json` sets none), ten times the backstop. The
+  time per unit on Windows is not measured (continuous integration runs on `ubuntu-latest` only);
+  the count decides an ordinary command there as everywhere, and only the backstop depends on the
+  platform, and it refuses.
+- a padded command is not let through by its length: every operand of a segment gets the link test,
+  however many there are (the cap of 128 operands is gone; with it the long-s spelling of a settings
+  file after 128 harmless operands got through, hook case 168), and a segment too large for the count
+  is refused by it. No candidate is skipped for its length any more (hook case 157, unit case 23): a `cd` chain over
   4,096 bytes through real folders, with a link at its end, is resolved like any other path.
   "Name too long" counts as absent only for ONE over-long name (over 255 UTF-16 units, JavaScript's
   `length`: macOS and Windows count UTF-16 units, so APFS holds a 200-character Chinese name of 603

@@ -873,4 +873,457 @@ describe('the protected folder is compared by file identity (owner, 2026-10-15)'
     }
     R.done();
   });
+
+  // -------------------------------------------------------------------------------------------
+  // The settings check counts its work, not the clock (owner, 2026-10-19). Cases 27 and 28 count
+  // file-system calls and units in this process, never wall time: a verdict here depends on the
+  // count and on a mocked clock only. Every row clears the count and the backstop in `finally`
+  // (all tests of a file share one process, so a leftover memory would serve stale answers).
+  // -------------------------------------------------------------------------------------------
+
+  const { isLedgerWrite } = require('../src/hooks/PreToolUse.Bash.js');
+  const NEVER = /(?!)/;
+
+  /** The builder's ordinary here-document (hook case 161): `lines` of test, first line given. */
+  function builderCommand(first = "cd copy && cd src && cd .. && cat > tests/claude-setup-check.test.js <<'EOF'", lines = 300) {
+    return [first, "'use strict';", "const { route } = require('../src/lib/menu-screens');",
+      ...Array.from({ length: lines }, (_, i) => `  test('${i} claude-setup apply advisor writes the setting', () => { assert.equal(route(['claude-setup', 'apply', 'advisor'], dir).ok, true); });`),
+      'EOF', 'node --test tests/claude-setup-check.test.js'].join('\n');
+  }
+
+  /** The 2,000-line here-document of distinct words (the same text as the hook file's fixture). */
+  function twoThousandLines(first = "cd copy && cd src && cd .. && cat > tests/claude-setup-check.test.js <<'EOF'") {
+    const lines = Array.from({ length: 2000 }, (_, k) => {
+      const i = String(k).padStart(4, '0');
+      return `t('${i} a${i}', () => f${i}(['c${i}', 'd${i}']));`;
+    });
+    return [first, ...lines, 'EOF'].join('\n');
+  }
+
+  /** The nine-check layout: a project at `<tmp>/<scratch>/.claude/worktrees/w`, with `copy/src`. */
+  function makeNineLayout() {
+    const outer = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ctoc-nine-')));
+    const root = path.join(outer, '.claude', 'worktrees', 'w');
+    for (const d of [['.ctoc', 'approvals'], ['.ctoc', 'state', 'verify'], ['src'], ['copy', 'src']]) {
+      fs.mkdirSync(path.join(root, ...d), { recursive: true });
+    }
+    fs.mkdirSync(path.join(outer, 'cfg'));
+    // The nine relative paths of the settings checks of a background agent in a worktree.
+    const dirs = ['.ctoc/settings.yaml', '.ctoc/regulatory-regimes', '.claude/settings.json', '.claude/settings.local.json',
+      '.ctoc/settings.json', '../../../cfg/settings.json', '../../settings.json', '../../settings.local.json', '../../../.ctoc/settings.json'];
+    return { outer, root, dirs };
+  }
+
+  /**
+   * The delegating counters of the file-system calls the resolver makes. A plain wrapper, put back when the case ends:
+   * `t.mock.method` keeps every call's arguments and result, which is millions of entries for a here-document read
+   * without the memory (a process out of memory instead of a failed row).
+   */
+  function countFsCalls(t) {
+    const counter = { n: 0 };
+    for (const name of ['lstatSync', 'statSync', 'realpathSync', 'readlinkSync']) {
+      const real = safeFs[name];
+      safeFs[name] = (...args) => { counter.n += 1; return real(...args); };
+      t.after(() => { safeFs[name] = real; });
+    }
+    return counter;
+  }
+
+  /** Clears the decision's count (and with it the memory) and the backstop. */
+  function clearWork() {
+    confinement.setWorkBudget(null);
+    confinement.setDeadline(null);
+  }
+
+  it('case 27: within one decision a lookup is made once, and the memory dies with the decision', (t) => {
+    const R = makeRows();
+    const counter = countFsCalls(t);
+    const { dir, root } = makeRealProject();
+    const nine = makeNineLayout();
+    const segmentsOf = (p) => p.split(path.sep).filter(Boolean).length;
+    /** Runs the first `lines`-line command once per spec of the nine, returns the calls each check made. */
+    const nineChecks = (command, memoryOn) => withCwd(nine.root, () => {
+      confinement.setWorkBudget(memoryOn ? 3000000 : null);
+      const calls = [];
+      for (const d of nine.dirs) {
+        const before = counter.n;
+        const verdict = isLedgerWrite(command, { dir: d, segmentRe: NEVER, resolvedRe: NEVER });
+        calls.push({ d, n: counter.n - before, verdict });
+      }
+      return calls;
+    });
+    try {
+      R.row('(i) a second ask of the same question makes 0 file-system calls', () => {
+        try {
+          confinement.setWorkBudget(3000000);
+          assert.equal(resolvesUnder('src/x.js', '.ctoc/approvals', root), false);
+          const before = counter.n;
+          assert.equal(resolvesUnder('src/x.js', '.ctoc/approvals', root), false);
+          assert.ok(before > 0, 'the first ask made calls');
+          assert.equal(counter.n - before, 0, 'the second ask is answered from memory');
+        } finally { clearWork(); }
+      });
+
+      R.row('(ii) nine checks of the builder cost about one with the memory, and at least 5 times more without it', () => {
+        try {
+          const command = builderCommand().split('\n').slice(0, 10).join('\n');
+          const on = nineChecks(command, true);
+          for (const c of on) assert.equal(c.verdict, false, `the check of ${c.d} allows`);
+          const bound = (d) => 2 * segmentsOf(path.join(nine.root, d)) + 6;
+          for (const c of on.slice(1)) assert.ok(c.n <= bound(c.d), `check ${c.d}: ${c.n} calls, at most ${bound(c.d)}`);
+          const off = nineChecks(command, false);
+          for (const c of off.slice(1)) assert.ok(c.n > bound(c.d), `check ${c.d} without the memory: ${c.n} calls, more than ${bound(c.d)}`);
+          const sum = (rows) => rows.reduce((a, c) => a + c.n, 0);
+          assert.ok(sum(off) >= 5 * sum(on), `without ${sum(off)} against with ${sum(on)}: at least 5 times`);
+        } finally { clearWork(); }
+      });
+
+      R.row('(iii) the memory never outlives the decision', () => {
+        try {
+          confinement.setWorkBudget(3000000);
+          assert.equal(resolvesUnder('src/L/x.json', '.ctoc/approvals', root), false, '(src/L absent)');
+          mklink(path.join(root, '.ctoc', 'approvals'), path.join(root, 'src', 'L'));
+          confinement.setWorkBudget(3000000);
+          assert.equal(resolvesUnder('src/L/x.json', '.ctoc/approvals', root), true, 'a fresh decision sees the link');
+          confinement.setWorkBudget(null);
+          assert.equal(resolvesUnder('src/L/x.json', '.ctoc/approvals', root), true, 'with the count cleared too');
+        } finally { clearWork(); fs.rmSync(path.join(root, 'src', 'L'), { force: true, recursive: true }); }
+      });
+
+      R.row('(iv) past the count a remembered walk returns the fault', () => {
+        try {
+          confinement.setWorkBudget(1000000);
+          const file = path.join(root, 'src', 'x.js');
+          assert.equal(confinement.resolveExisting(file).ok, true);
+          assert.equal(confinement.budgetSpent(10000000), true);
+          const again = confinement.resolveExisting(file);
+          assert.equal(again.ok, false);
+          assert.equal(again.reason, 'resolve-failed');
+        } finally { clearWork(); }
+      });
+
+      R.row('(v) the entry cap, at its exact value (32,768 answers per kind)', () => {
+        try {
+          confinement.setWorkBudget(3000000);
+          const ask = (i) => confinement.resolveExisting(path.join(root, `n${i}`));
+          for (let i = 0; i < 32768; i++) assert.equal(ask(i).ok, true);
+          let before = counter.n;
+          ask(32767);
+          assert.equal(counter.n - before, 0, 'the 32,768th path asked again is answered from memory');
+          before = counter.n;
+          ask(32768);
+          const first = counter.n - before;
+          ask(32768);
+          const second = counter.n - before - first;
+          assert.ok(first > 0 && second > 0, `the next distinct path is not remembered: ${first} then ${second} calls`);
+        } finally { clearWork(); }
+      });
+
+      R.row('(v-b) the character cap: past 16,777,216 characters nothing more is remembered', () => {
+        try {
+          confinement.setWorkBudget(1e9);
+          const long = 'z'.repeat(30000);
+          const ask = (i) => confinement.resolveExisting(path.join(root, `m${i}`, long));
+          for (let i = 0; i < 300; i++) ask(i);
+          let before = counter.n;
+          ask(300);
+          const first = counter.n - before;
+          before = counter.n;
+          ask(300);
+          const second = counter.n - before;
+          assert.ok(first > 0 && second > 0, `the next distinct long path is not remembered: ${first} then ${second} calls`);
+        } finally { clearWork(); }
+      });
+
+      R.row('(v-c) the character cap counts the names of the tail too', () => {
+        try {
+          // Each walk of <root>/m<i>/<30,000 z> stores its path (about 30,000 characters), its key (the same) and its
+          // tail names (the same again): 90,000 a walk, so the 16,777,216-character cap holds 186 of them. Without the
+          // tail it would hold 279, and the 200th distinct path would still be remembered.
+          confinement.setWorkBudget(1e9);
+          const long = 'z'.repeat(30000);
+          const ask = (i) => confinement.resolveExisting(path.join(root, `m${i}`, long));
+          for (let i = 0; i < 200; i++) ask(i);
+          let before = counter.n;
+          ask(199);
+          const first = counter.n - before;
+          before = counter.n;
+          ask(199);
+          const second = counter.n - before;
+          assert.ok(first > 0 && second > 0, `the 200th distinct path is not remembered: ${first} then ${second} calls`);
+        } finally { clearWork(); }
+      });
+
+      R.row('(vi) a remembered answer is frozen', () => {
+        try {
+          confinement.setWorkBudget(3000000);
+          const r = confinement.resolveExisting(path.join(root, 'src', 'absent-name'));
+          assert.equal(r.ok, true);
+          assert.ok(Object.isFrozen(r) && Object.isFrozen(r.tail), 'the answer and its tail are frozen');
+        } finally { clearWork(); }
+      });
+
+      R.row('(vii) asking a remembered question again and again runs the count down', () => {
+        try {
+          confinement.setWorkBudget(100000);
+          let asks = 0;
+          let verdict = false;
+          while (!verdict && asks < 100000) {
+            verdict = resolvesUnder('src/x.js', '.ctoc/approvals', root);
+            asks += 1;
+          }
+          assert.equal(verdict, true, `still false after ${asks} asks`);
+        } finally { clearWork(); }
+      });
+
+      R.row('(viii) the memory holds the 2,000-line here-document: checks 2 to 9 cost only their own protected path', () => {
+        try {
+          const command = twoThousandLines();
+          assert.ok(command.length < 163840, `the command is ${command.length} characters`);
+          const on = nineChecks(command, true);
+          for (const c of on) assert.equal(c.verdict, false, `the check of ${c.d} allows`);
+          for (const c of on.slice(1)) {
+            const bound = 2 * segmentsOf(path.join(nine.root, c.d)) + 6;
+            assert.ok(c.n <= bound, `check ${c.d}: ${c.n} calls, at most ${bound}`);
+          }
+        } finally { clearWork(); }
+      });
+
+      R.row('(ix) the as-written reading is never answered from the tidied one\'s memory', () => {
+        try {
+          fs.mkdirSync(path.join(root, '.ctoc', 'approvals', 'inner'));
+          mklink(path.join(root, '.ctoc', 'approvals', 'inner'), path.join(root, 'src', 'L'));
+          withCwd(root, () => {
+            confinement.setWorkBudget(3000000);
+            assert.equal(resolvesUnder('src/x', '.ctoc/approvals', root), false);
+            // As written, `..` after the link is the link's real parent, `.ctoc/approvals`. Joined with
+            // path.sep, never path.join, which would tidy it.
+            assert.equal(resolvesUnder(['src', 'L', '..', 'x'].join(path.sep), '.ctoc/approvals', root), true);
+          });
+        } finally { clearWork(); fs.rmSync(path.join(root, 'src', 'L'), { force: true, recursive: true }); }
+      });
+
+      R.row('(x) a wrapper never throws and never remembers what it cannot key', () => {
+        try {
+          withCwd(root, () => {
+            const uncached = (f) => { confinement.setWorkBudget(null); const v = f(); confinement.setWorkBudget(3000000); return v; };
+            confinement.setWorkBudget(3000000);
+            for (const [label, f] of [
+              ['resolveExisting(42)', () => confinement.resolveExisting(42)],
+              ['resolveExisting(null)', () => confinement.resolveExisting(null)],
+              ['fileIdentity(42)', () => confinement.fileIdentity(42)],
+            ]) {
+              const mine = noThrow(f);
+              assert.deepStrictEqual(mine, uncached(f), label);
+            }
+            assert.deepStrictEqual(confinement.resolveExisting(42), { ok: false, real: null, reason: 'resolve-failed', tail: null });
+            // An empty string never shares the key `<cwd><sep>` with the real working folder. Two rows, each priming its own
+            // memory right before its ask: `uncached` ends with `setWorkBudget(3000000)`, which builds a fresh EMPTY memory,
+            // so when both asks shared one priming the `fileIdentity('')` half ran against an empty memory and could not
+            // fail under mutation (u) (a key built for ''). Written down after the fourth review round found it.
+            const here = process.cwd() + path.sep;
+            for (const [label, f] of [
+              ['resolveExisting(\'\')', () => confinement.resolveExisting('')],
+              ['fileIdentity(\'\')', () => confinement.fileIdentity('')],
+            ]) {
+              R.row(`(x) ${label} is not answered with the working folder's remembered answers`, () => {
+                confinement.setWorkBudget(3000000);
+                assert.equal(confinement.resolveExisting(here).ok, true);
+                assert.notEqual(confinement.fileIdentity(here), null);
+                const mine = noThrow(f);
+                assert.deepStrictEqual(mine, uncached(f), label);
+              });
+            }
+          });
+          // A working folder that cannot be read: relative paths get the uncached answer, and nothing throws.
+          withCwd(root, () => {
+            confinement.setWorkBudget(3000000);
+            const broken = t.mock.method(process, 'cwd', () => { throw new Error('uv_cwd'); });
+            try {
+              const rel = noThrow(() => confinement.resolveExisting('src/x.js'));
+              const id = noThrow(() => confinement.fileIdentity('src/x.js'));
+              confinement.setWorkBudget(null);
+              assert.deepStrictEqual(rel, confinement.resolveExisting('src/x.js'));
+              assert.deepStrictEqual(id, confinement.fileIdentity('src/x.js'));
+            } finally {
+              broken.mock.restore();
+            }
+          });
+        } finally { clearWork(); }
+      });
+    } finally {
+      rm(dir);
+      rm(nine.outer);
+    }
+    R.done();
+  });
+
+  it('case 28: the count decides at an exact number', (t) => {
+    const R = makeRows();
+    const { dir, root } = makeRealProject();
+    const start = Date.now();
+    t.mock.method(Date, 'now', () => start);
+    const textOnly = { segmentRe: /(^|[^a-z0-9._-])\.ctoc\/+settings\.yaml([^a-z0-9._-]|$)/i, resolvedRe: /(^|\/)\.ctoc\/+settings\.yaml$/i };
+    /** Is the command allowed at exactly `units`? */
+    const allowedAt = (command, units, spec = textOnly) => {
+      confinement.setDeadline(start + 60000);
+      confinement.setWorkBudget(units);
+      return isLedgerWrite(command, spec) === false;
+    };
+    /** The smallest count at which `f` gives its allowing answer: doubling from 1, then bisection. */
+    const minUnits = (f) => {
+      let hi = 1;
+      const ok = (c) => { confinement.setWorkBudget(c); return f(); };
+      while (!ok(hi)) {
+        hi *= 2;
+        assert.ok(hi <= 10000000, 'the allowing answer needs more than 10,000,000 units');
+      }
+      let lo = Math.floor(hi / 2); // refused at lo (or lo is 0)
+      while (hi - lo > 1) {
+        const mid = Math.floor((lo + hi) / 2);
+        if (ok(mid)) hi = mid; else lo = mid;
+      }
+      return hi;
+    };
+    try {
+      for (const [label, command, allowed, refused] of [
+        ['(i) cd a; cd a; cd a; ls: four segments, one unit each', 'cd a; cd a; cd a; ls', 4, 3],
+        ['(ii) cd <640 a>; ls: 1, then 1 + 20', `cd ${'a'.repeat(640)}; ls`, 22, 21],
+        ['(iii) cd <640 a>; cp x y: 1 + 21 + two operands at 11', `cd ${'a'.repeat(640)}; cp x y`, 44, 43],
+      ]) {
+        R.row(label, () => {
+          try {
+            assert.equal(allowedAt(command, allowed), true, `allowed at ${allowed}`);
+            assert.equal(allowedAt(command, refused), false, `refused at ${refused}`);
+          } finally { clearWork(); }
+        });
+      }
+
+      R.row('(iv) budgetSpent charges its cost and floors a bad cost at 1', () => {
+        try {
+          confinement.setWorkBudget(10);
+          assert.equal(confinement.budgetSpent(10), false);
+          assert.equal(confinement.budgetSpent(), true);
+          confinement.setWorkBudget(0);
+          assert.equal(confinement.budgetSpent(0), false, 'an empty count is not spent');
+          assert.equal(confinement.budgetSpent(), true, 'the first charge spends it');
+          confinement.setWorkBudget(1);
+          assert.equal(confinement.budgetSpent(-5), false);
+          assert.equal(confinement.budgetSpent(NaN), true);
+          confinement.setWorkBudget(null);
+          confinement.setDeadline(null);
+          for (let i = 0; i < 1000; i++) assert.equal(confinement.budgetSpent(), false);
+        } finally { clearWork(); }
+      });
+
+      R.row('(v) the clock is independent of the count', () => {
+        try {
+          confinement.setWorkBudget(1e9);
+          confinement.setDeadline(start - 1);
+          assert.equal(confinement.budgetSpent(), true);
+        } finally { clearWork(); }
+      });
+
+      const linkSpec = { dir: '.ctoc/approvals', segmentRe: NEVER, resolvedRe: NEVER };
+      R.row('(vi) lengthening the folder-change chain by 128 characters costs exactly 22 units', () => {
+        try {
+          withCwd(root, () => {
+            const at = (n) => minUnits(() => { confinement.setDeadline(start + 60000); return isLedgerWrite(`cd ${'b'.repeat(n)}; true 'q'`, linkSpec) === false; });
+            const a = at(64);
+            const b = at(192);
+            assert.equal(b - a, 22, `${b} - ${a}`);
+          });
+        } finally { clearWork(); }
+      });
+
+      R.row('(vii) lengthening a tail name by 128 characters costs exactly 4 units', () => {
+        try {
+          const at = (k) => minUnits(() => {
+            confinement.setDeadline(start + 60000);
+            return confinement.resolveExisting(path.join(root, 'b'.repeat(64), 'c'.repeat(k))).ok === true;
+          });
+          const a = at(64);
+          const b = at(192);
+          assert.equal(b - a, 4, `${b} - ${a}`);
+        } finally { clearWork(); }
+      });
+
+      R.row('(vii-b) a count that runs out on the tail charge of a name below the first missing one is a refusal, and one unit more is not', () => {
+        // Row (vii) measures the tail charge as a difference of two minimums; neither of its walks ever fails ON that charge.
+        // This row spends the count exactly there. `pre` is the walk's own steps down to and including the first missing
+        // folder, one unit each and one `lstat` each (counted below); the long name's own step is one more unit; the
+        // charge by its length is F. At `pre + F` units, F - 1 remain after the step and the charge spends the count.
+        // The walk then ends in `kernelAgrees`, whose first charge (the whole path, which holds the name) is at least F + 1,
+        // so the verdict of that count is the same without the arm's own `return`: the arm is taken here, and the charge
+        // itself is held by the second half, whose expected least count is written out from the schedule, not read off the
+        // code under test: the least count that walks the path to `missing`, plus the long name's step (1), its charge (F),
+        // and the extra `kernelAgrees` step for the prefix that ends in the long name (1 + its length at the text rate).
+        // One unit below that the walk is refused; a walk whose tail charge was removed would be allowed there.
+        const missing = path.join(root, 'tail-test-missing-folder'); // a fresh path: no remembered answer skips the walk
+        const long = 'c'.repeat(200);
+        const target = path.join(missing, long);
+        const leastToWalk = (p) => minUnits(() => {
+          confinement.setDeadline(start + 60000);
+          return confinement.resolveExisting(p).ok === true;
+        });
+        /** The `lstat` calls `f` makes (a plain wrapper, put back at once). */
+        const lstatsOf = (f) => {
+          const realLstat = safeFs.lstatSync;
+          let n = 0;
+          safeFs.lstatSync = (...args) => { n += 1; return realLstat(...args); };
+          try { const result = f(); return { n, result }; } finally { safeFs.lstatSync = realLstat; }
+        };
+        const counted = lstatsOf(() => {
+          confinement.setDeadline(start + 60000);
+          confinement.setWorkBudget(10000000);
+          return confinement.resolveExisting(missing).ok;
+        });
+        clearWork();
+        assert.equal(counted.result, true);
+        const pre = counted.n;
+        assert.ok(pre >= 2, `the walk down to the first missing folder made ${pre} lstat calls`);
+        const F = Math.floor(long.length / 64);
+        assert.ok(F >= 2, 'the name is long enough that the charge is more than one unit');
+        const expected = leastToWalk(missing) + 1 + F + 1 + Math.floor(target.length / 64);
+        try {
+          const at = (count) => {
+            confinement.setDeadline(start + 60000);
+            confinement.setWorkBudget(count);
+            return confinement.resolveExisting(target);
+          };
+          // The walk made all `pre` lstat calls (it reached the long name's step) and none for the name itself.
+          const walked = lstatsOf(() => at(pre + F));
+          assert.equal(walked.n, pre, `the lstat calls of the walk that spent the count on the tail charge: ${walked.n}`);
+          const spentOnTheCharge = walked.result;
+          assert.deepEqual(
+            { ok: spentOnTheCharge.ok, reason: spentOnTheCharge.reason, tail: spentOnTheCharge.tail },
+            { ok: false, reason: 'resolve-failed', tail: null },
+            `at ${pre + F} units the count runs out on the tail charge`,
+          );
+          assert.equal(confinement.budgetSpent(0), true, 'the count is spent');
+          const justUnder = at(expected - 1);
+          assert.equal(justUnder.ok, false, `refused at ${expected - 1}`);
+          assert.equal(justUnder.reason, 'resolve-failed');
+          const atLeast = at(expected);
+          assert.equal(atLeast.ok, true, `allowed at ${expected}`);
+          assert.deepEqual([...atLeast.tail], [path.basename(missing), long]);
+        } finally { clearWork(); }
+      });
+
+      R.row('(viii) a count that runs out inside the link test refuses a read-only segment', () => {
+        try {
+          withCwd(root, () => {
+            confinement.setDeadline(start + 60000);
+            confinement.setWorkBudget(3);
+            assert.equal(isLedgerWrite('cat x', linkSpec), true);
+            clearWork();
+            assert.equal(isLedgerWrite('cat x', linkSpec), false, 'with no count it is allowed');
+          });
+        } finally { clearWork(); }
+      });
+    } finally {
+      rm(dir);
+    }
+    R.done();
+  });
 });

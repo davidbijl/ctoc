@@ -1106,6 +1106,9 @@ describe('the write protection compares real files, not spellings (owner, 2026-1
     + 'later call runs with; report what you wanted to change and let the main session make the change.';
   const REFUSAL_AGENT_SETTINGS_UNCHECKED = 'CTOC refused this call because it mentions a settings file and '
     + "CTOC's protection for it failed to run; tell the human that this protection is broken.";
+  // The sentence for a refusal made once the decision's count of work, or its backstop clock, is spent.
+  const REFUSAL_WORK = 'CTOC refused this call because checking it would take more work than CTOC allows for one call; '
+    + 'split it into smaller commands and run them one by one.';
   const LONG_S = 'ſ'; // U+017F, which NFKC folds to `s` and APFS opens as `s`
   const FULL_WIDTH_S = 'ｓ'; // U+FF53, a distinct, absent name on APFS
   const FULL_WIDTH_SOLIDUS = '／'; // U+FF0F, never a path separator
@@ -1212,7 +1215,152 @@ describe('the write protection compares real files, not spellings (owner, 2026-1
     put(p('.ctoc', 'regulatory-regimes', 'gdpr.yaml'), 'x: 1');
     put(p('src', 'e.js'), 'x');
   });
-  afterEach(() => { rm(cfg); cfg = null; });
+  afterEach(() => { rm(cfg, ...scratch.splice(0)); cfg = null; });
+
+  // ---- The count of work (owner, 2026-10-19): helpers for cases 161-167. No row reads wall time. ----
+  /** Extra folders a case makes (a worktree layout), removed after it. */
+  const scratch = [];
+  const SAFE_FS = path.join(REPO, 'src', 'lib', 'safe-fs.js');
+  const BUILDER_FIRST = "cd copy && cd src && cd .. && cat > tests/claude-setup-check.test.js <<'EOF'";
+
+  /** The builder's ordinary here-document: 300 test lines, about 43 KB. `folded` puts a `…` into line 0. */
+  function builderFixture(first = BUILDER_FIRST, folded = false) {
+    const lines = Array.from({ length: 300 }, (_, i) => {
+      const end = folded && i === 0 ? '…' : '';
+      return `  test('${i} claude-setup apply advisor writes the setting${end}', () => { assert.equal(route(['claude-setup', 'apply', 'advisor'], dir).ok, true); });`;
+    });
+    return [first, "'use strict';", "const { route } = require('../src/lib/menu-screens');", ...lines, 'EOF',
+      'node --test tests/claude-setup-check.test.js'].join('\n');
+  }
+
+  /** 2,000 lines of distinct words after the builder's first line (about 100,000 characters). `folded` changes line 0000. */
+  function twoThousandFixture(folded = false) {
+    const lines = Array.from({ length: 2000 }, (_, k) => {
+      const i = String(k).padStart(4, '0');
+      return folded && k === 0 ? `t('${i} a${i}…', () => f${i}(['c${i}', 'd${i}']));` : `t('${i} a${i}', () => f${i}(['c${i}', 'd${i}']));`;
+    });
+    return [BUILDER_FIRST, ...lines, 'EOF'].join('\n');
+  }
+
+  /** The project folders of `makeProject`, plus `copy/src` and the files the describe's beforeEach makes. */
+  function fillProject(root) {
+    for (const d of [['.ctoc', 'approvals'], ['.ctoc', 'state', 'verify'], ['.ctoc', 'streaming', 'questions', 'pending'],
+      ['src'], ['plans', 'review'], ['copy', 'src']]) fs.mkdirSync(path.join(root, ...d), { recursive: true });
+    put(path.join(root, '.ctoc', 'settings.yaml'), 'x: 1');
+    put(path.join(root, '.ctoc', 'regulatory-regimes', 'gdpr.yaml'), 'x: 1');
+    put(path.join(root, 'src', 'e.js'), 'x');
+  }
+
+  /**
+   * A project layout. 'plain' is the case's project (a background agent makes 6 settings checks, the main session 2).
+   * 'nine' is a project at `<tmp>/pr-wt-…/.claude/worktrees/w`, where the hook also protects the main checkout's three
+   * files, so a background agent makes 2 + 7 = 9 checks. `dir` holds the preload and its report.
+   */
+  function makeLayout(kind) {
+    if (kind === 'plain') {
+      fs.mkdirSync(p('copy', 'src'), { recursive: true });
+      return { root: project, dir: project };
+    }
+    const outer = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pr-wt-')));
+    scratch.push(outer);
+    const root = path.join(outer, '.claude', 'worktrees', 'w');
+    fillProject(root);
+    return { root, dir: outer };
+  }
+
+  let preloadSeq = 0;
+  /**
+   * Spawns the real hook on one payload with a preload that counts the file-system calls the resolver makes and keeps
+   * a fake clock: `Date.now` starts at 1e12 and moves `stepMs` per call, never with the wall.
+   * opts: `units` sets the decision's count of work; `chargeAfterSet` charges that many units right after the count is
+   * set; `spendAtFirstLookup` empties the count at the first exported `resolveExisting` call; `agent` makes the call a
+   * background agent's; `statLiesFor` and `fstatGrowsFor` (a path ending) make a manifest's path-based stat lie, or its
+   * descriptor's size grow by 10 bytes. Returns the child's result and its report `{ calls, elapsed, spent, charged,
+   * bytesRead, zeroReads }` (the fake clock's span, the resolver's `budgetSpent(0)` at exit, the units charged from
+   * outside the resolver, the bytes read from files, and the empty reads of a grown descriptor).
+   */
+  function spawnWork(lay, input, opts = {}) {
+    const name = `work-preload-${preloadSeq++}`;
+    const file = path.join(lay.dir, `${name}.js`);
+    const out = path.join(lay.dir, `${name}.json`);
+    fs.writeFileSync(file, [
+      "const fs = require('fs');",
+      `const c = require(${JSON.stringify(RPC)});`,
+      `const safeFs = require(${JSON.stringify(SAFE_FS)});`,
+      `const stepMs = ${JSON.stringify(opts.stepMs || 0)};`,
+      'let now = 1e12;',
+      'let calls = 0;',
+      'Date.now = () => now;',
+      "for (const name of ['lstatSync', 'statSync', 'realpathSync', 'readlinkSync']) {",
+      '  const real = safeFs[name];',
+      '  safeFs[name] = function (...args) { calls += 1; now += stepMs; return real.apply(this, args); };',
+      '}',
+      'const set = c.setWorkBudget;',
+      `const units = ${JSON.stringify(typeof opts.units === 'number' ? opts.units : null)};`,
+      `const charge = ${JSON.stringify(typeof opts.chargeAfterSet === 'number' ? opts.chargeAfterSet : null)};`,
+      "if (typeof set === 'function') {",
+      "  c.setWorkBudget = (n) => { set(units !== null && typeof n === 'number' ? units : n); if (charge !== null) c.budgetSpent(charge); };",
+      '}',
+      ...(opts.spendAtFirstLookup ? [
+        'const resolve = c.resolveExisting;',
+        'let first = true;',
+        "c.resolveExisting = (q) => { if (first) { first = false; if (typeof set === 'function') set(0); } return resolve(q); };",
+      ] : []),
+      // The units charged from outside the resolver (the shell's text work, the sweep check's lookups).
+      'let charged = 0;',
+      'const text = c.textBudgetSpent;',
+      "if (typeof text === 'function') c.textBudgetSpent = (n) => { charged += 1 + Math.floor(n / 64); return text(n); };",
+      'const spend = c.budgetSpent;',
+      "if (typeof spend === 'function') c.budgetSpent = (n = 1) => { if (n > 0) charged += n; return spend(n); };",
+      // The bytes read from files after this point (a manifest read whole or by descriptor), and an optional lie:
+      // `statLiesFor` makes the path-based stat of a file with that ending say "regular file" whatever it is.
+      'let bytesRead = 0;',
+      'const readWhole = fs.readFileSync;',
+      'fs.readFileSync = function (...a) { const r = readWhole.apply(this, a); bytesRead += r.length; return r; };',
+      // `fstatGrowsFor`: the descriptors `safe-fs.openSync` returns for a path with that ending are remembered, `fs.fstatSync`
+      // reports their size 10 bytes larger than the file is (a file that shrank after its size was read: a short read), and
+      // every `readSync` on them that returns 0 is counted, throwing at the 1,000th. A reader that stops at the first
+      // empty read counts 1; one that loops on `got < size` counts 1,000.
+      'let zeroReads = 0;',
+      'const grownFds = new Set();',
+      `const growFor = ${JSON.stringify(opts.fstatGrowsFor || null)};`,
+      'if (growFor !== null) {',
+      '  const open = safeFs.openSync;',
+      '  safeFs.openSync = function (p, ...a) { const fd = open.call(this, p, ...a); if (String(p).endsWith(growFor)) grownFds.add(fd); return fd; };',
+      '  const realFstat = fs.fstatSync;',
+      '  fs.fstatSync = function (fd, ...a) { const st = realFstat.call(this, fd, ...a); return grownFds.has(fd) ? Object.assign(Object.create(Object.getPrototypeOf(st)), st, { size: st.size + 10 }) : st; };',
+      '}',
+      'const readFd = fs.readSync;',
+      'fs.readSync = function (...a) {',
+      '  const n = readFd.apply(this, a);',
+      '  bytesRead += n;',
+      '  if (n === 0 && grownFds.has(a[0])) { zeroReads += 1; if (zeroReads >= 1000) throw new Error(\'1,000 empty reads of a short file\'); }',
+      '  return n;',
+      '};',
+      `const lieFor = ${JSON.stringify(opts.statLiesFor || null)};`,
+      'if (lieFor !== null) {',
+      '  const realStat = safeFs.statSync;',
+      '  safeFs.statSync = function (p, o) { const st = realStat.call(this, p, o); return String(p).endsWith(lieFor) ? Object.assign(Object.create(Object.getPrototypeOf(st)), st, { isFile: () => true }) : st; };',
+      '}',
+      "process.on('exit', () => {",
+      "  const spent = typeof c.budgetSpent === 'function' ? spend(0) : false;",
+      `  fs.writeFileSync(${JSON.stringify(out)}, JSON.stringify({ calls, elapsed: now - 1e12, spent, charged, bytesRead, zeroReads }));`,
+      '});',
+      '',
+    ].join('\n'));
+    const res = spawnSync(process.execPath, ['--require', file, ENTRY], {
+      cwd: lay.root, env: { ...process.env, CLAUDE_CONFIG_DIR: cfg }, input: JSON.stringify(opts.agent ? asAgent(input) : input),
+      encoding: 'utf8', timeout: opts.timeout || 280000,
+    });
+    let report = null;
+    try { report = JSON.parse(fs.readFileSync(out, 'utf8')); } catch { report = null; }
+    return { res, report };
+  }
+
+  /** Asserts the spawned hook allowed the command. */
+  const allowedWork = (lay, command, opts, what) => assertAllowed(spawnWork(lay, bash(command, lay.root), opts).res, what);
+  /** Asserts the spawned hook refused the command with the work sentence. */
+  const refusedWork = (lay, command, opts, what) => assertRefused(spawnWork(lay, bash(command, lay.root), opts).res, what, REFUSAL_WORK);
 
   rowTest('139 · the long-s attack: a Write to the answers log or a check record spelled with ſ is refused', () => {
     for (const [what, real, alias] of [
@@ -1406,7 +1554,7 @@ describe('the write protection compares real files, not spellings (owner, 2026-1
     ].join('\n'));
     R.row('Write src/x.js through the budget-spent preload', () => assertRefused(spawnSync(process.execPath, ['--require', preload, ENTRY], {
       cwd: project, input: JSON.stringify(write(p('src', 'x.js'))), encoding: 'utf8',
-    }), 'a Write decided past its budget'));
+    }), 'a Write decided past its budget', REFUSAL_WORK));
     R.row('control: the same Write without the preload', () => assertAllowed(run(write(p('src', 'x.js'))), 'the control'));
   });
 
@@ -1467,12 +1615,12 @@ describe('the write protection compares real files, not spellings (owner, 2026-1
       cwd: project, env: { ...process.env, CLAUDE_CONFIG_DIR: cfg }, input: JSON.stringify(input), encoding: 'utf8',
     });
     R.row('agent Bash echo x > src/x.js, budget spent at the root lookup', () => assertRefused(spawned(asAgent(bash('echo x > src/x.js'))),
-      'the agent shell settings check with a spent budget', REFUSAL_AGENT_SETTINGS));
+      'the agent shell settings check with a spent budget', REFUSAL_WORK));
     R.row('main Bash echo x > src/x.js, same preload', () => assertAllowed(spawned(bash('echo x > src/x.js')), 'the main session with the preload'));
     R.row('agent Bash echo x > src/x.js, no preload', () => assertAllowed(run(asAgent(bash('echo x > src/x.js')), ro()), 'the control without the preload'));
   });
 
-  rowTest("155 · once the budget is spent the shell's own text work refuses (the owner's \"refuse after 5 s\")", () => {
+  rowTest("155 · the shell's own text work refuses once the backstop clock has run out", () => {
     // The shell's `cd` prefix rebuild and operand resolution are text work the file-system walks' deadline
     // does not cover; past the budget isLedgerWrite itself must refuse, or a padded command outlasts
     // Claude Code's hook timeout (a timed-out hook lets the call run). The verdict is judged, never wall time.
@@ -1489,9 +1637,9 @@ describe('the write protection compares real files, not spellings (owner, 2026-1
     });
     const padded = 'cd a; cd a; cd a; ls';
     R.row('agent Bash cd a; cd a; cd a; ls, budget spent', () => assertRefused(spawned(asAgent(bash(padded))),
-      'a padded read-only command past the budget (agent)', REFUSAL_SETTINGS));
+      'a padded read-only command past the budget (agent)', REFUSAL_WORK));
     R.row('main Bash cd a; cd a; cd a; ls, budget spent', () => assertRefused(spawned(bash(padded)),
-      'a padded read-only command past the budget (main session)', REFUSAL_SETTINGS));
+      'a padded read-only command past the budget (main session)', REFUSAL_WORK));
     R.row('agent Bash cd a; cd a; cd a; ls, no preload (control)', () => assertAllowed(run(asAgent(bash(padded)), ro()), 'the control (agent)'));
     R.row('main Bash cd a; cd a; cd a; ls, no preload (control)', () => assertAllowed(run(bash(padded)), 'the control (main session)'));
   });
@@ -1587,6 +1735,383 @@ describe('the write protection compares real files, not spellings (owner, 2026-1
       (reaches || (process.platform === 'darwin' && !kernelReaches) ? refusedBoth : allowedBoth)(
         write(spelling), `Write ${what} [kernel reaches=${reaches}]`);
     }
+  });
+
+  // ---- The settings check counts its work, not the clock (owner, 2026-10-19) ----
+  // Each verdict below depends on counts and on a fake clock only (frozen, or moved per file-system call by the
+  // preload), never on wall time or on the machine's load.
+
+  rowTest('161 · the builder\'s here-document is decided by its work, not by how slow the machine is', () => {
+    const lay = makeLayout('nine');
+    const command = builderFixture();
+    // A counting run (a frozen clock) gives the file-system calls F; a second run spreads 25 s of fake clock over them.
+    const twentyFive = (agent, what) => R.row(what, () => {
+      const counted = spawnWork(lay, bash(command, lay.root), { agent });
+      assert.ok(counted.report && counted.report.calls > 0, `the counting run made calls: ${JSON.stringify(counted.report)}`);
+      assertAllowed(spawnWork(lay, bash(command, lay.root), { agent, stepMs: 25000 / counted.report.calls }).res, what);
+    });
+    twentyFive(true, '(a) the builder, background agent, nine-check layout, a decision spanning 25 s of fake clock');
+    twentyFive(false, '(b) the builder, main session, nine-check layout, a decision spanning 25 s of fake clock');
+  });
+
+  rowTest('162 · ordinary commands spend at most a third of the count (the margin), and the stated limits fit', () => {
+    const lay = makeLayout('nine');
+    const plain = makeLayout('plain');
+    const third = { units: 1000000 };
+    const folds = (command) => assert.notEqual(command.normalize('NFKC'), command, 'folding changes the command');
+    R.row('(a) the builder, background agent, nine-check layout, a third of the count', () => allowedWork(lay, builderFixture(), { ...third, agent: true }, '162 (a)'));
+    R.row('(b) the builder, main session, nine-check layout, a third of the count', () => allowedWork(lay, builderFixture(), third, '162 (b)'));
+    R.row('(c) the builder, main session, plain project, a third of the count', () => allowedWork(plain, builderFixture(), third, '162 (c)'));
+    R.row('(d) the builder after an absolute folder change, background agent, nine-check layout', () => allowedWork(lay,
+      builderFixture(`cd ${lay.root} && cat > notes.js <<'EOF'`), { ...third, agent: true }, '162 (d)'));
+    R.row('(e) git add of 128 files after an absolute folder change, background agent, nine-check layout', () => allowedWork(lay,
+      `cd ${lay.root} && git add ${Array.from({ length: 128 }, (_, i) => `src/f${i}.js`).join(' ')}`, { ...third, agent: true }, '162 (e)'));
+    R.row('(f) the 2,000-line here-document, background agent, nine-check layout, the shipped count', () => {
+      const command = twoThousandFixture();
+      assert.ok(command.length < 163840, `the command is ${command.length} characters, under the agent cap`);
+      allowedWork(lay, command, { agent: true }, '162 (f)');
+    });
+    R.row('(g) the folded builder, background agent, nine-check layout (16 runs), a third of the count', () => {
+      const command = builderFixture(BUILDER_FIRST, true);
+      folds(command);
+      allowedWork(lay, command, { ...third, agent: true }, '162 (g)');
+    });
+    R.row('(h) the folded 2,000-line here-document, background agent, nine-check layout (16 runs), the shipped count', () => {
+      const command = twoThousandFixture(true);
+      folds(command);
+      assert.ok(command.length < 163840, `the command is ${command.length} characters, under the agent cap`);
+      allowedWork(lay, command, { agent: true }, '162 (h)');
+    });
+  });
+
+  rowTest('163 · the backstop clock still refuses when it is hit', () => {
+    const lay = makeLayout('nine');
+    const command = builderFixture();
+    R.row('the builder, background agent, nine-check layout, a decision spanning 1,200 s of fake clock', () => {
+      const counted = spawnWork(lay, bash(command, lay.root), { agent: true });
+      assert.ok(counted.report && counted.report.calls > 0, `the counting run made calls: ${JSON.stringify(counted.report)}`);
+      assertRefused(spawnWork(lay, bash(command, lay.root), { agent: true, stepMs: 1200000 / counted.report.calls }).res,
+        'the builder past the backstop', REFUSAL_WORK);
+    });
+  });
+
+  rowTest('164 · pathological text work is refused by the count, not by the backstop', () => {
+    const lay = makeLayout('plain');
+    const chain = 'cd a; '.repeat(12000) + 'ls';
+    R.row('(a) 12,000 x "cd a;" then ls, main session, frozen clock', () => refusedWork(lay, chain, {}, '164 (a) main'));
+    R.row('(a) 12,000 x "cd a;" then ls, background agent, frozen clock', () => refusedWork(lay, chain, { agent: true }, '164 (a) agent'));
+    // A 100 KB folder name in front of 450 segments of 128 distinct literals: about 680 KB, over the agent cap, so main only.
+    const folder = 'n'.repeat(102400);
+    const shape = (segment) => `cd ${folder}; ${Array.from({ length: 450 }, (_, k) => segment(k)).join('')}`;
+    const apart = shape((k) => `true ${Array.from({ length: 128 }, (_, j) => `'p${k}_${j}'`).join(' ')}; `);
+    const glued = shape((k) => `true x${Array.from({ length: 128 }, (_, j) => `'q${k}_${j}'`).join('x')}; `);
+    for (const [what, command] of [['(b) shape A, 128 literals apart', apart], ['(c) shape B, 128 literals glued into one operand', glued]]) {
+      R.row(`${what}, main session, 1 ms of fake clock per call`, () => {
+        assert.ok(command.length > 163840, `the command is ${command.length} characters`);
+        const { res, report } = spawnWork(lay, bash(command, lay.root), { stepMs: 1 });
+        assertRefused(res, what, REFUSAL_WORK);
+        assert.ok(report && report.elapsed < 60000, `the fake clock stopped at ${report && report.elapsed} ms, before the 60,000 ms backstop`);
+      });
+    }
+  });
+
+  rowTest('165 · a command too large for its count is refused when the count runs out', () => {
+    const lay = makeLayout('plain');
+    const many = Array.from({ length: 32 }, (_, k) => `cp ${Array.from({ length: 128 }, (_, j) => `s${k}_${j}`).join(' ')} d`).join('\n');
+    const few = { units: 10000 };
+    R.row('32 segments of 128 distinct cp operands, main session', () => refusedWork(lay, many, few, '165 main'));
+    R.row('32 segments of 128 distinct cp operands, background agent', () => refusedWork(lay, many, { ...few, agent: true }, '165 agent'));
+    R.row('control: cp x0 x1 d, main session', () => allowedWork(lay, 'cp x0 x1 d', few, '165 control main'));
+    R.row('control: cp x0 x1 d, background agent', () => allowedWork(lay, 'cp x0 x1 d', { ...few, agent: true }, '165 control agent'));
+  });
+
+  rowTest('166 · the budget cases again, with an empty count instead of the clock', () => {
+    const lay = makeLayout('plain');
+    fs.mkdirSync(p('a'), { recursive: true });
+    R.row('Write src/x.js with an empty count is refused', () => assertRefused(spawnWork(lay, write(p('src', 'x.js')), { units: 0 }).res,
+      'a Write decided with an empty count', REFUSAL_WORK));
+    R.row('agent Bash echo x > src/x.js, count emptied at the first lookup, is refused', () => refusedWork(lay, 'echo x > src/x.js',
+      { spendAtFirstLookup: true, agent: true }, '166 agent'));
+    R.row('main Bash echo x > src/x.js, same preload, is allowed', () => allowedWork(lay, 'echo x > src/x.js', { spendAtFirstLookup: true }, '166 main'));
+    R.row('agent Bash cd a; cd a; cd a; ls with an empty count is refused', () => refusedWork(lay, 'cd a; cd a; cd a; ls', { units: 0, agent: true }, '166 padded agent'));
+    R.row('main Bash cd a; cd a; cd a; ls with an empty count is refused', () => refusedWork(lay, 'cd a; cd a; cd a; ls', { units: 0 }, '166 padded main'));
+  });
+
+  rowTest('167 · the work sentence names the cause, and only when the count or the backstop is spent', () => {
+    const lay = makeLayout('plain');
+    fs.mkdirSync(p('a'), { recursive: true });
+    R.row('(a) cd a; cd a; cd a; ls with a count of 3 is refused with exactly the work sentence', () => refusedWork(lay, 'cd a; cd a; cd a; ls', { units: 3 }, '167 (a)'));
+    R.row('(b) a genuine settings write within the count keeps the settings sentence', () => assertRefused(
+      spawnWork(lay, bash('echo x > .ctoc/settings.yaml', lay.root), {}).res, '167 (b)', REFUSAL_SETTINGS));
+    R.row('(c) an allowed Read whose count is really spent stays allowed', () => {
+      const { res, report } = spawnWork(lay, payload('Read', { file_path: p('src', 'x.js') }), { units: 0, chargeAfterSet: 1 });
+      assertAllowed(res, '167 (c)');
+      assert.ok(report && report.spent === true, `the count was really spent at exit: ${JSON.stringify(report)}`);
+    });
+  });
+
+  // ---- The first review round (security scan and critic), 2026-10-20 ----
+
+  const REFUSAL_SWEEP_EXPANSION = 'CTOC refused this call because only the human confirms which builds go back '
+    + 'to the queue; report the sweep preview and let the main session ask him. A command that only '
+    + 'mentions both words is refused too: search one word at a time, and commit with git commit -F <file>.'
+    + " A background agent's command that runs node or a wrapper must be one plain call when it uses $ or a backtick.";
+
+  // The same sentence with the plain-call ending, which the sweep check gives for a body that stays in the text read.
+  const REFUSAL_SWEEP_PLAIN = REFUSAL_SWEEP_EXPANSION.slice(0, REFUSAL_SWEEP_EXPANSION.indexOf(" A background agent's command"))
+    + " A background agent's menu call must also be one plain call, built without $, a backtick, a brace or a wildcard.";
+
+  rowTest('168 · no operand escapes the link test by its place in a long segment (the 128-operand cap is gone)', () => {
+    // Found by the security scan: 128 harmless operands followed by the long-s spelling of the settings file
+    // let the write through, while 127 refused it. The cap only bounded time, which the count does now.
+    fs.linkSync(p('.ctoc', 'settings.yaml'), p('src', 'h.yaml'));
+    const operands = (n) => Array.from({ length: n }, (_, i) => `a${i}`).join(' ');
+    for (const n of [127, 128, 129, 400]) {
+      refusedBoth(bash(`echo ${operands(n)} > src/h.yaml`), `${n} harmless operands then a hard link to the settings file`, REFUSAL_SETTINGS);
+    }
+    const aliasSame = sameFileOnDisk(p('.ctoc', 'settings.yaml'), p('.ctoc', `${LONG_S}ettings.yaml`));
+    for (const n of [127, 128, 400]) {
+      const call = bash(`echo ${operands(n)} > .ctoc/${LONG_S}ettings.yaml`);
+      if (aliasSame) refusedBoth(call, `${n} harmless operands then the long-s spelling [sameFileOnDisk=true]`, REFUSAL_SETTINGS);
+      else allowedBoth(call, `${n} harmless operands then the long-s spelling [sameFileOnDisk=false]`);
+    }
+    allowedBoth(bash(`echo ${operands(400)} > src/ordinary.txt`), '400 operands then an ordinary file (control)');
+  });
+
+  rowTest("169 · a background agent's sweep check is charged to the count: a 64 KB command of folders and runtime words is refused by it", () => {
+    // Found by the security scan: every `cd` adds a folder and every runtime word looks the next word up in every folder
+    // (five stats and a real path each): 27 KB took 47.8 s, 32 KB 167 s, with no unit spent. The shape below passes the
+    // sweep check's `$` test, names no menu, and every lookup misses.
+    const lay = makeLayout('plain');
+    const pairs = (n) => Array.from({ length: n }, (_, i) => `cd d${i}; node s${i}.js; `).join('');
+    const big = `echo $H; ${pairs(2800)}ls`;
+    assert.ok(big.length > 64 * 1024, `the command is ${big.length} characters`);
+    R.row('64 KB of folders and runtime words, background agent, frozen clock: refused by the count', () => {
+      const { res, report } = spawnWork(lay, bash(big, lay.root), { agent: true });
+      assertRefused(res, '169 big', REFUSAL_WORK);
+      assert.ok(report && report.spent === true, `the count was spent: ${JSON.stringify(report)}`);
+      assert.ok(report.calls < 3500000, `the lookups stopped with the count: ${report.calls} file-system calls`);
+    });
+    R.row('control: 20 pairs keep the sweep sentence, not the work sentence', () => assertRefused(
+      spawnWork(lay, bash(`echo $H; ${pairs(20)}ls`, lay.root), { agent: true }).res, '169 small', REFUSAL_SWEEP_EXPANSION));
+  });
+
+  rowTest('171 · four segments of 128 operands through the deepest folders (about 470 KB) are decided by the count, at a fraction of it', () => {
+    // The critic's finding on the 478 KB command of the earlier clock. Measured: 75,298 units for the main session and
+    // 179,840 for a background agent in a plain project, about 8,000 file-system calls, so the count decides, not the clock.
+    // The deep folders are made by a child that changes folder step by step (the system refuses one long path).
+    const lay = makeLayout('nine');
+    // One limit on every platform, 1,024 bytes (what macOS refuses in one call): the same folders and the same cost
+    // everywhere. At 4,096 bytes the earlier four-segment agent row was reported near 1,046,000 units, over the third
+    // (1,000,000) that these rows hold the count to (a figure from the final review, not re-measured here: the cost
+    // grows with the length of the folders, and a longer limit would turn the row red off macOS for a reason that is
+    // not the code's).
+    const pathMax = 1024;
+    const build = spawnSync(process.execPath, ['-e', [
+      "const fs = require('fs');",
+      `let remaining = ${pathMax} - 40 - Buffer.byteLength(process.cwd());`,
+      'const names = [];',
+      'while (remaining > 1) { const n = Math.min(200, remaining - 1); const name = "e" + "d".repeat(n - 1); fs.mkdirSync(name); names.push(name); process.chdir(name); remaining -= n + 1; }',
+      "process.stdout.write(names.join('/'));",
+    ].join('\n')], { cwd: lay.root, encoding: 'utf8' });
+    assert.equal(build.status, 0, build.stderr);
+    const deep = build.stdout;
+    const segment = (k) => `cp ${Array.from({ length: 128 }, (_, j) => `${deep}/x${k}_${j}`).join(' ')} d`;
+    const command = [0, 1, 2, 3].map(segment).join('\n');
+    assert.ok(command.length > 400000, `the command is ${command.length} characters`);
+    // Decision 16: a row over 163,840 characters runs for the main session only, because the hook branch's cap on a background
+    // agent's command (AGENT_COMMAND_CAP) refuses it before any other work. The agent's row is therefore one segment of the
+    // four, under the cap, so after the merge it still tests the count and not the cap.
+    const agentCommand = segment(0);
+    assert.ok(agentCommand.length < 163840, `the agent's command is ${agentCommand.length} characters, under the cap`);
+    R.row('background agent, nine-check layout, one segment, a third of the count, frozen clock: allowed', () => allowedWork(lay, agentCommand, { units: 1000000, agent: true }, '171 agent'));
+    R.row('main session, nine-check layout, four segments, a third of the count, frozen clock: allowed', () => allowedWork(lay, command, { units: 1000000 }, '171 main'));
+    // The deep folders reach about 1,000 bytes of path (macOS refuses a path of 1,024 bytes or more in one call). The
+    // removal walks down by name as the creation did, so it must leave nothing behind: asserted here, not assumed.
+    rm(lay.dir);
+    assert.equal(fs.existsSync(lay.dir), false, 'the layout with its deep folders is removed');
+  });
+
+  rowTest("172 · the sweep check finds the next word that is not an option in one pass, and the text it reads is charged", () => {
+    // Found by the re-review: a word such as `-/node` is an option by its first character and a runtime word by its last
+    // path segment, and every runtime word searched forward to the end of the run of options: quadratic, 12 s at 1.09 MB,
+    // with no unit charged.
+    const lay = makeLayout('plain');
+    // No word that is not an option follows, so no lookup is made and the search itself is all the work there is.
+    const command = `echo *; ${'-/node '.repeat(20000)}`;
+    R.row('20,000 option-like runtime words (140 KB), background agent: allowed, each step of the search and the reading charged once', () => {
+      const { res, report } = spawnWork(lay, bash(command, lay.root), { agent: true });
+      assertAllowed(res, '172');
+      // One unit for each of the 20,000 words in the single pass, and the command's length at the text rate. A search
+      // from every runtime word to the end of the run costs about 200,000,000 units at the same price per step: the
+      // count (3,000,000) is spent and the command refused, so only the one-pass version passes this row.
+      assert.ok(report && report.charged >= 20000 + Math.floor(command.length / 64), `the units charged: ${JSON.stringify(report)}`);
+      assert.ok(report.charged < 100000, `the units charged: ${JSON.stringify(report)}`);
+      assert.equal(report.spent, false, 'the count is not spent');
+    });
+  });
+
+  rowTest('173 · a manifest that is not a regular file (a named pipe) cannot hold the sweep check: it gives a verdict', () => {
+    // Found by the re-review: `namesCtoc` read `package.json` of every folder above a script it found, so a named pipe
+    // there blocked the read, outside the count and the backstop, with no verdict. (Where no named pipe can be made, a
+    // folder stands in: its read fails at once, so that platform row holds the verdict only.)
+    const lay = makeLayout('plain');
+    fs.mkdirSync(path.join(lay.root, 'b'));
+    fs.writeFileSync(path.join(lay.root, 'b', 'm'), '');
+    const manifest = path.join(lay.root, 'b', 'package.json');
+    if (process.platform === 'win32') fs.mkdirSync(manifest);
+    else assert.equal(spawnSync('mkfifo', [manifest]).status, 0, 'a named pipe was made');
+    R.row('agent: node m, a wildcard-built sweep word, with a pipe for the manifest next to the script: allowed, no hang', () => assertAllowed(
+      spawnWork(lay, bash('cd b; node m menu task sw?ep --con?irm none', lay.root), { agent: true, timeout: 30000 }).res, '173'));
+    // The race: a regular manifest swapped for a pipe between a check and the read. Simulated without timing: the path-based
+    // stat is made to say "regular file" for the pipe. The manifest is opened once without waiting and judged by that
+    // descriptor, so the lie changes nothing; a check by path followed by a read by path blocks on the pipe.
+    R.row('the stat says "regular file" for the pipe: the descriptor is judged, a verdict is given', () => assertAllowed(
+      spawnWork(lay, bash('cd b; node m menu task sw?ep --con?irm none', lay.root), { agent: true, timeout: 30000, statLiesFor: 'package.json' }).res, '173 lie'));
+  });
+
+  rowTest('173b · a large manifest is charged for the bytes it is read for, and one over 1 MiB is not read at all', () => {
+    const lay = makeLayout('plain');
+    fs.mkdirSync(path.join(lay.root, 'b'));
+    fs.writeFileSync(path.join(lay.root, 'b', 'm'), '');
+    const manifest = path.join(lay.root, 'b', 'package.json');
+    const command = bash('cd b; node m menu task sw?ep --con?irm none', lay.root);
+    const sized = (bytes) => JSON.stringify({ name: 'ctoc', pad: 'x'.repeat(bytes - 30) });
+    let readWhole = null;
+    R.row('a regular manifest of 900,000 bytes: read, and charged at the text rate for its bytes', () => {
+      fs.writeFileSync(manifest, sized(900000));
+      const { res, report } = spawnWork(lay, command, { agent: true });
+      assertAllowed(res, '173b regular');
+      assert.ok(report && report.bytesRead >= 899000, `the bytes read: ${JSON.stringify(report)}`);
+      assert.ok(report.charged >= Math.floor(900000 / 64), `the units charged: ${JSON.stringify(report)}`);
+      readWhole = report.bytesRead;
+    });
+    R.row('a regular manifest of 2,000,000 bytes: not read, names nothing, a verdict', () => {
+      fs.writeFileSync(manifest, sized(2000000));
+      const { res, report } = spawnWork(lay, command, { agent: true });
+      assertAllowed(res, '173b oversized');
+      assert.ok(report && report.bytesRead < 1048576, `the bytes read: ${JSON.stringify(report)}`);
+    });
+    R.row('the same 900,000-byte manifest at a count of 1,000: its charge (14,063 units) spends the count, it is not read, the verdict is the work sentence', () => {
+      fs.writeFileSync(manifest, sized(900000));
+      const { res, report } = spawnWork(lay, command, { agent: true, units: 1000 });
+      assertRefused(res, '173b charged at the count', REFUSAL_WORK);
+      assert.ok(report && report.spent === true, `the count was spent: ${JSON.stringify(report)}`);
+      assert.ok(readWhole !== null && report.bytesRead <= readWhole - 899000, `the bytes read: ${JSON.stringify(report)}, against ${readWhole} when the count allowed the read`);
+    });
+    R.row('a short read: the descriptor says 10 bytes more than the file holds; the read stops at the first empty read', () => {
+      fs.writeFileSync(manifest, JSON.stringify({ name: 'ctoc' }));
+      const { res, report } = spawnWork(lay, command, { agent: true, fstatGrowsFor: 'package.json' });
+      assertAllowed(res, '173b short read');
+      assert.ok(report && report.zeroReads >= 1 && report.zeroReads <= 1, `the empty reads: ${JSON.stringify(report)}`);
+    });
+  });
+
+  rowTest("174 · the sweep check's reads of manifests above a script are charged to the count", () => {
+    // `ctocKind` reads two manifests in each of up to 16 folders for every script a runtime word names. The script sits 16
+    // folders below the project (`b`, then 15 more), so `ctocKind` visits exactly 16 folders, all inside the project and none
+    // with a manifest, on every platform: with the script one folder down it climbed to the root of the disk, which is 9
+    // folders on a deep temporary path and fewer on a shallow one, and the two costs below moved with the machine.
+    // Measured by bisection over the count (a background agent, this layout, a frozen clock): 461,488 units allowed on this
+    // tree, and 333,488 with the charge of `ctocKind` removed (mutation (ad)): 64 units for each of the 2,000 words, 128,000
+    // in all. The count sits midway, 397,488, so it refuses the charged check and would allow the uncharged one.
+    const lay = makeLayout('plain');
+    const folders = ['b', ...Array(15).fill('c')];
+    fs.mkdirSync(path.join(lay.root, ...folders), { recursive: true });
+    fs.writeFileSync(path.join(lay.root, ...folders, 'm'), '');
+    const script = [...folders, 'm'].join('/');
+    const many = `echo *; ${`node ${script} x; `.repeat(2000)}ls`;
+    const few = `echo *; ${`node ${script} x; `.repeat(100)}ls`;
+    R.row('2,000 runtime words naming one script 16 folders down, a count of 397,488: refused with the work sentence', () => refusedWork(lay, many, { units: 397488, agent: true }, '174 many'));
+    R.row('control: 100 of them, the same count: allowed', () => allowedWork(lay, few, { units: 397488, agent: true }, '174 few'));
+  });
+
+  rowTest("175 · with the resolver unloadable, a background agent's runtime word built at run time is still refused by the sweep check", () => {
+    // The sweep check charges its work through three module-private wrappers (the text rate, the file-system steps, and the
+    // work sentence of `main`). Each one's `catch` answers "nothing was counted" when the resolver does not load, so the check
+    // goes on and refuses on its own text test. Driven by a test-only `Module._load` shim (no product backdoor), as the
+    // degraded-resolver cases of the link test file do; the child inherits the environment, so coverage reaches it.
+    const shim = path.join(project, '_break-resolver.js');
+    fs.writeFileSync(shim, [
+      "const Module = require('module');",
+      'const load = Module._load;',
+      'Module._load = function (request, parent, isMain) {',
+      "  if (String(request).includes('real-path-confinement')) {",
+      "    require('fs').appendFileSync(process.env.RESOLVER_THROWS_MARKER, 'threw\\n');",
+      "    throw new Error('simulated unloadable resolver');",
+      '  }',
+      '  return load.call(this, request, parent, isMain);',
+      '};',
+      '',
+    ].join('\n'));
+    // The verdicts below are the same whether or not the resolver fails to load, so each row asserts its own precondition: the
+    // shim appends one line to the marker each time it throws for the resolver, the marker is removed before the spawn, and at
+    // least one throw must be recorded after it (a shim whose match string stopped matching would otherwise test nothing).
+    const marker = path.join(project, '_resolver-throws.log');
+    const spawned = (input, what) => {
+      fs.rmSync(marker, { force: true });
+      const res = spawnSync(process.execPath, ['--require', shim, ENTRY], {
+        cwd: project, env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, RESOLVER_THROWS_MARKER: marker }, input: JSON.stringify(input), encoding: 'utf8',
+      });
+      const throws = fs.existsSync(marker) ? fs.readFileSync(marker, 'utf8').split('\n').filter(Boolean).length : 0;
+      assert.ok(throws >= 1, `${what}: the shim made the resolver unloadable at least once (throws recorded: ${throws})`);
+      return res;
+    };
+    R.row('background agent: node $SCRIPT, no resolver: refused with the sweep sentence (plain-call ending)', () => assertRefused(
+      spawned(asAgent(bash('node $SCRIPT')), '175 agent'), '175 agent', REFUSAL_SWEEP_PLAIN));
+    R.row('main session: node $SCRIPT, no resolver: allowed (the sweep check is a background agent\'s)', () => assertAllowed(
+      spawned(bash('node $SCRIPT'), '175 main'), '175 main'));
+  });
+
+  rowTest('176 · a spent count stops the sweep check at the step that spent it', () => {
+    // The settings check also refuses once the count is spent, so every row here is refused with the work sentence either way;
+    // what tells the steps apart is the units charged. `X` is the reading of the command at the text rate: one unit plus one
+    // for every 64 characters.
+    const lay = makeLayout('plain');
+    const X = (command) => 1 + Math.floor(command.length / 64);
+    const spentAt = (command, count, what) => {
+      const { res, report } = spawnWork(lay, bash(command, lay.root), { agent: true, units: count });
+      assertRefused(res, what, REFUSAL_WORK);
+      assert.ok(report && report.spent === true, `${what}: the count was spent: ${JSON.stringify(report)}`);
+      return report.charged;
+    };
+    const listing = 'echo *; ls -l a b c';
+    R.row('the reading of the command spends the count: stops there, X units charged', () => {
+      const charged = spentAt(listing, X(listing) - 1, '176 reading');
+      assert.equal(charged, X(listing), `charged ${charged}, expected X = ${X(listing)}`);
+    });
+    R.row('the first step of the next-word pass spends it: stops there, X + 1 units charged', () => {
+      const charged = spentAt(listing, X(listing), '176 next-word pass');
+      assert.equal(charged, X(listing) + 1, `charged ${charged}, expected X + 1 = ${X(listing) + 1}`);
+    });
+    R.row('a folder step spends it: stops there, at most one step past the count', () => {
+      const chain = `${'cd a; '.repeat(200)}echo *`;
+      const count = X(chain) + 50;
+      const charged = spentAt(chain, count, '176 folder steps');
+      assert.ok(charged - count < 64, `charged ${charged} against a count of ${count}`);
+    });
+    R.row('the reading of a reply body spends it: the body is charged, then the command again, 2X in all', () => {
+      const command = ["node /x/src/commands/start.js inbox answer q1 --stdin <<'TAG'", 'body $HOME', 'TAG'].join('\n');
+      const charged = spentAt(command, X(command) - 1, '176 reply body');
+      assert.equal(charged, 2 * X(command), `charged ${charged}, expected 2X = ${2 * X(command)}`);
+    });
+  });
+
+  rowTest('170 · the menu reply body is read in linear time, charged by its length, and a closing line keeps its meaning', () => {
+    // Found by the security scan: a trailing-blanks regex on a line of 40,000 spaces and one more character takes quadratic time.
+    const lay = makeLayout('plain');
+    const head = `node ${path.join(REPO, 'src', 'commands', 'start.js')} inbox answer q1 --stdin <<'TAG'`;
+    const spaces = ' '.repeat(40000);
+    R.row('a body line of 40,000 spaces then a letter, closed by TAG: the body is data (allowed), and its length is charged', () => {
+      const { res, report } = spawnWork(lay, bash(`${head}\n${spaces}x\n$HOME\nTAG`, lay.root), { agent: true });
+      assertAllowed(res, '170 spaces');
+      assert.ok(report && report.charged >= Math.floor(40000 / 64), `the units charged: ${JSON.stringify(report)}`);
+    });
+    R.row('a closing line with trailing spaces and a tab still closes the body (allowed)', () => assertAllowed(
+      spawnWork(lay, bash(`${head}\nbody $HOME\nTAG \t `, lay.root), { agent: true }).res, '170 closing with blanks'));
+    R.row('a closing line "TAG." does not close it: the body stays in the text read (refused)', () => {
+      assertRefused(spawnWork(lay, bash(`${head}\nbody $HOME\nTAG.`, lay.root), { agent: true }).res, '170 TAG.', REFUSAL_SWEEP_PLAIN);
+    });
   });
 });
 
@@ -1738,6 +2263,22 @@ describe('only the human confirms a sweep (owner, 2026-10-18)', () => {
     assertRefused(run(agent(bash('for f in tests/*.test.js; do node --test "$f"; done'), 'a123')),
       'node in a loop with $f', REFUSAL_SWEEP_CONFIRM + PLAIN); // the older script-word rule fires first
     assertAllowed(run(agent(bash('node --test tests/*.test.js'), 'a123')), 'the rewrite');
+  });
+
+  test('109 · a folder visited again keeps the shell where it is: a wildcard-built confirmation after cd, cd .. is still refused', () => {
+    // Found by the re-review: dropping repeated folders from the chain also dropped the shell's own position, so the
+    // third `cd` below resolved to <repo>/src/src/commands and the real folder was never searched for the menu script.
+    const rows = [
+      ['a revisited folder (the one added last is not visited again)', `cd ${REPO} && cd src && cd .. && cd src/commands && node start menu task sw?ep --con?irm none`],
+      ['the same, brace-built', `cd ${REPO} && cd src && cd .. && cd src/commands && node start menu task sweep --con{firm,firm} none`],
+      ['the revisited folder is not the one added last', `cd ${REPO} && cd src && cd lib && cd .. && cd .. && cd src/commands && node start menu task s{w,w}eep --c{o,o}nfirm none`],
+      ['pushd, and a folder left and entered again', `pushd ${REPO}/src && pushd lib && pushd .. && pushd commands && node start menu task sw?ep --con?irm none`],
+      ['control: no revisit', `cd ${REPO}/src/commands && node start menu task sw?ep --con?irm none`],
+    ];
+    for (const [what, command] of rows) {
+      assertRefused(run(agent(bash(command))), `${what} (background agent)`, REFUSAL_SWEEP_CONFIRM + PLAIN);
+      assertAllowed(run(bash(command)), `${what} (main session)`);
+    }
   });
 
   test('101 · the fail rule: a crash on a background agent’s sweep confirmation refuses with the sweep sentence', () => {

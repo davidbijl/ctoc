@@ -39,9 +39,10 @@
  *   after a link goes to the link's real parent) and tidied (`..` removed by text); each
  *   reading is compared with each area by file identity through
  *   `real-path-confinement.resolvesUnder`, the waiting folder by its Unicode-folded name, the
- *   root-independent test on the Unicode-folded path and real path. From 5 seconds after the
- *   decision starts every walk fails and every check whose failure could let the call through
- *   refuses or is backed by one that refuses (`DECISION_BUDGET_MS`).
+ *   root-independent test on the Unicode-folded path and real path. Once the decision has done
+ *   `DECISION_WORK_UNITS` units of work, or has run `DECISION_BACKSTOP_MS` (the backstop), every walk
+ *   fails and every check whose failure could let the call through refuses or is backed by one that
+ *   refuses; the refusal then gives `REFUSAL_WORK`.
  *   Shell: a non-read command naming any area, directly, after a `cd`, from the
  *   session's working directory, or through a symbolic link; an inline script naming a
  *   record writer (the approval-ledger names, `step-13-verify`, `persistVerifyResult`,
@@ -147,10 +148,9 @@
  * WHAT IT CANNOT CATCH (it reads command text; it is not a sandbox)
  *   a script file written elsewhere and then run; a path built at run time (a variable,
  *   a glob, string pieces, `$'…'`); git operations that restore records without naming
- *   them; replacing a parent folder; hard links; operands beyond the first 128 per
- *   segment; file-writing tools other than the five matched; a background agent reaching a
- *   refused menu route through a script file, a path built at run time or another tool; and
- *   the main session running the menu's answering routes without the human's reply (it
+ *   them; replacing a parent folder; hard links; file-writing tools other than the five
+ *   matched; a background agent reaching a refused menu route through a script file, a path
+ *   built at run time or another tool; and the main session running the menu's answering routes without the human's reply (it
  *   carries no `agent_id`).
  *   For the settings files (a background agent's shell route is the text only): a script
  *   written then run; a path held in a variable or built at run time; the file name spelled
@@ -168,10 +168,15 @@
  *   file (reads to the shell rules; `-exec` can write any content, so a record's "never
  *   forged" does not hold for it); a fresh create through a macOS folder alias in a config
  *   folder not called `.claude` that does not exist yet (no folder to compare); a padded
- *   command of tens of kilobytes: the walks and the shell's text work stop at 5 seconds and
- *   refuse (measured: 100 to 3,200 kilobytes of `cd` segments refused at 5.03 s), the rest
- *   of the shell's checks and Node's start-up are outside that budget, and Claude Code's
- *   hook timeout is 600 seconds; on the shell, a look-alike spelling of
+ *   command: the walks, the shell's text work (each segment's folder-change chain, each operand, each
+ *   link-test candidate, with no cap on their number) and a background agent's sweep check stop when the
+ *   decision's count of work runs out and refuse with the work sentence; Node's start-up, reading the
+ *   payload, the other checks of the shell, the text test and the quoted-literal scan over one segment,
+ *   and the Unicode fold are outside the count; the backstop clock (`DECISION_BACKSTOP_MS`) refuses with
+ *   the same sentence; Claude Code's hook time limit is ten times the backstop. Measured: a builder's
+ *   ordinary 43 KB here-document costs 327,646 of the 3,000,000 units, a 2,000-line one 1,434,509, the
+ *   470 KB command of folders through the deepest paths 75,298 to 259,798, and the padded `cd` shapes are
+ *   refused with the whole count spent; on the shell, a look-alike spelling of
  *   another copy's `.ctoc/settings.yaml` (the text rules are not folded); a link swapped
  *   mid-call; a stalled file system. The home folder's `.claude/settings.local.json` is refused by the name
  *   rule although it is not on the list. The full list is in `docs/ENFORCEMENT.md`.
@@ -242,8 +247,20 @@ const REFUSAL_SETTINGS = "CTOC refused this call because it writes, or could wri
   + "file or its regulatory profiles, which only CTOC's menu writes; tell the human what you wanted to "
   + 'change and let the menu change it.';
 
-/** The longest one decision may walk the file system (Claude Code lets a call run when its hook times out). */
-const DECISION_BUDGET_MS = 5000;
+/**
+ * The sentence for a refusal made once the decision's count of work, or its backstop clock, is spent: the call
+ * may be perfectly innocent, and the cause is its size, not what it writes.
+ */
+const REFUSAL_WORK = 'CTOC refused this call because checking it would take more work than CTOC allows for one call; '
+  + 'split it into smaller commands and run them one by one.';
+
+/** The work one decision may do: about one file-system step per unit, the shell's text one unit per 64 characters (owner, 2026-10-19). */
+const DECISION_WORK_UNITS = 3000000;
+/**
+ * The backstop: a decision still running after this long refuses (Claude Code lets a call run when its hook times
+ * out). A tenth of Claude Code's default hook time limit of 600 seconds, verified offline in the installed 2.1.300.
+ */
+const DECISION_BACKSTOP_MS = 60000;
 
 /** The settings file or the profile folder as a path segment anywhere in an absolute path. */
 const REGIME_SEGMENT_RE = /(^|\/)\.ctoc\/+(settings\.yaml|regulatory-regimes)(\/|$)/i;
@@ -297,6 +314,36 @@ function trimDotsAndSpaces(s) {
   let end = s.length;
   while (end > 0 && (s[end - 1] === '.' || s[end - 1] === ' ')) end -= 1;
   return s.slice(0, end);
+}
+
+/** `s` without its trailing spaces and tabs; a linear scan (a `/[ \t]+$/` replace is quadratic on a long run). */
+function trimBlanks(s) {
+  let end = s.length;
+  while (end > 0 && (s[end - 1] === ' ' || s[end - 1] === '\t')) end -= 1;
+  return s.slice(0, end);
+}
+
+/**
+ * Charge `chars` characters of text work to the decision's count, at the resolver's one rate; true once the
+ * count or the backstop is spent. False when the resolver does not load (nothing is counted then).
+ * @param {number} chars
+ * @returns {boolean}
+ */
+function chargeWork(chars) {
+  try {
+    return require('../lib/real-path-confinement').textBudgetSpent(chars);
+  } catch {
+    return false;
+  }
+}
+
+/** Charge `units` file-system steps to the decision's count; true once it or the backstop is spent. */
+function confinementSpent(units) {
+  try {
+    return require('../lib/real-path-confinement').budgetSpent(units);
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -843,11 +890,46 @@ function resolveLikeNode(dir, word) {
   return null;
 }
 
+/** The largest manifest read: a package manifest is a few kilobytes; one over 1 MiB names nothing. */
+const MANIFEST_MAX_BYTES = 1048576;
+
+/**
+ * The text of a manifest, or null when it is not a regular file of at most `MANIFEST_MAX_BYTES`. The file is opened
+ * ONCE, without waiting (a pipe or a device with no writer opens at once and is then seen not to be a regular file),
+ * and judged and read through that one descriptor: a check by path followed by a read by path can be beaten by a
+ * swap between the two, and the read of a pipe blocks with no verdict, outside the count and the backstop. The
+ * bytes are charged to the count at the text rate. Throws when the file cannot be opened or read (the caller reads
+ * that as "names nothing").
+ * @param {string} file
+ * @returns {string|null}
+ */
+function readManifest(file) {
+  // O_NONBLOCK and O_NOCTTY are undefined on Windows, which `|` reads as 0.
+  const fd = require('../lib/safe-fs').openSync(file, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK | fs.constants.O_NOCTTY);
+  try {
+    const st = fs.fstatSync(fd);
+    if (!st.isFile() || st.size > MANIFEST_MAX_BYTES) return null;
+    if (chargeWork(st.size)) return null; // a spent count: the caller's spent check refuses
+    const buf = Buffer.alloc(st.size);
+    let got = 0;
+    while (got < st.size) {
+      const n = fs.readSync(fd, buf, got, st.size - got, got);
+      if (n === 0) break;
+      got += n;
+    }
+    return buf.toString('utf8', 0, got);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 /** Does a directory's package.json or .claude-plugin/plugin.json name the package "ctoc"? */
 function namesCtoc(dir) {
   for (const manifest of [['package.json'], ['.claude-plugin', 'plugin.json']]) {
     try {
-      const json = JSON.parse(require('../lib/safe-fs').readFileSync(path.join(dir, ...manifest), 'utf8'));
+      const text = readManifest(path.join(dir, ...manifest));
+      if (text === null) continue; // not a regular file, too large, or the count is spent: it names nothing
+      const json = JSON.parse(text);
       if (json && typeof json.name === 'string' && json.name.toLowerCase() === 'ctoc') return true;
     } catch {
       continue; // no such manifest, or not JSON: it names nothing
@@ -865,6 +947,9 @@ function namesCtoc(dir) {
 function ctocKind(real) {
   let dir = path.dirname(real);
   for (let depth = 0; depth < 16; depth++) {
+    // Two manifests, each a stat and a read: charged to the decision's count. A caller whose answer must refuse
+    // when the count is spent asks \`confinementSpent(0)\` after this returns.
+    confinementSpent(4);
     if (namesCtoc(dir)) {
       const rel = path.relative(dir, real).split(path.sep).join('/').toLowerCase();
       if (rel === 'src/commands/start.js') return 'menu';
@@ -973,8 +1058,11 @@ function subagentMenuRefusal(command, base) {
 function withoutMenuStdin(command) {
   const head = /^(\s*node\s+(?:"[^"\n]*\/src\/commands\/start\.js"|[\w.~/-]*\/src\/commands\/start\.js)\s+inbox\s+answer\s+[\w.-]+\s+--stdin\s+<<'([A-Za-z_][\w.-]*)'[ \t]*)\n/.exec(command);
   if (!head) return command;
+  // The body is read line by line: its length is work, charged to the decision's count (a spent count
+  // leaves the text read whole, the refusing direction).
+  if (chargeWork(command.length)) return command;
   const lines = command.slice(head[0].length).replace(/\n$/, '').split('\n');
-  const isTag = (line) => line.replace(/[ \t]+$/, '') === head[2];
+  const isTag = (line) => trimBlanks(line) === head[2];
   // The closing line must be the LAST line: a tag line earlier ends the body, so text follows it.
   return lines.findIndex(isTag) === lines.length - 1 ? head[1] : command;
 }
@@ -996,21 +1084,50 @@ function sweepBypassRefusal(rawCommand, base) {
   if (!/[$`{*?[]/.test(command.split(PLUGIN_ROOT_TOKEN).join(''))) return null;
   const words = command.split(/[\s;&|<>()]+/).filter(Boolean);
   const bare = words.map((w) => w.replace(/['"`]/g, ''));
+  // Reading the words is work: the command's length at the text rate, once.
+  if (chargeWork(command.length)) return REFUSAL_SWEEP_PLAIN;
+  // The folders a `cd` names. `current` follows each plain `cd` or `pushd` that has a path, and moves on every one, a
+  // repeated folder included. It is NOT where the shell is after `cd -`, `popd`, `cd ~`, a bare `cd`, a failed `cd`
+  // or `cd -P`; those gaps were there before this change and are left to their own plan. `dirs` is the list of
+  // folders searched, each once and in order (a repeated folder asks the same questions again), and never drives
+  // `current`. Every step is work: a path built by `cd` after `cd` grows with the chain, and each runtime word
+  // below asks every folder for the next word (five stats and a real path each), so all of it is charged to the
+  // decision's count and a spent count refuses (the work sentence is given by `main`).
   const dirs = [base];
+  const seen = new Set(dirs);
+  let current = base;
   for (let i = 0; i < bare.length - 1; i++) {
-    if (bare[i] === 'cd' || bare[i] === 'pushd') dirs.push(path.resolve(dirs[dirs.length - 1], bare[i + 1]));
+    if (bare[i] !== 'cd' && bare[i] !== 'pushd') continue;
+    current = path.resolve(current, bare[i + 1]);
+    if (chargeWork(current.length + bare[i + 1].length)) return REFUSAL_SWEEP_PLAIN;
+    if (!seen.has(current)) { seen.add(current); dirs.push(current); }
+  }
+  // For each word, the index of the next word that is not an option (empty, or starting with '-'), or the word count:
+  // one pass from the end, so a long run of option-like words is not searched again from every runtime word in it.
+  // Each step of the pass is a unit, charged to the count: a search from every runtime word to the end of a run of
+  // options would cost that run's length once for each of them, which the same price per step turns into a spent count.
+  const isOption = (k) => bare[k] === '' || bare[k].startsWith('-');
+  const nextWord = new Int32Array(bare.length);
+  for (let k = bare.length - 1; k >= 0; k--) {
+    if (confinementSpent(1)) return REFUSAL_SWEEP_PLAIN;
+    nextWord[k] = k === bare.length - 1 ? bare.length : (isOption(k + 1) ? nextWord[k + 1] : k + 1);
   }
   const namesCommands = COMMANDS_TEXT_RE.test(command);
   for (let i = 0; i < words.length; i++) {
     if (!RUNTIME_WORD_RE.test(bare[i].split(/[\\/]/).pop())) continue;
-    const j = bare.findIndex((w, k) => k > i && w !== '' && !w.startsWith('-'));
-    if (j < 0) continue;
+    const j = nextWord[i];
+    if (j >= bare.length) continue;
     const raw = words[j];
     if (/[$`]/.test(raw)) return REFUSAL_SWEEP_PLAIN;
     if (/start\.js/i.test(bare[j]) || COMMANDS_TEXT_RE.test(bare[j])) return REFUSAL_SWEEP_PLAIN;
     if (namesCommands && /[*?[]/.test(raw)) return REFUSAL_SWEEP_PLAIN;
-    const real = dirs.map((dir) => resolveLikeNode(dir, bare[j])).find((r) => r !== null && ctocKind(r) === 'menu');
-    if (real) return REFUSAL_SWEEP_PLAIN;
+    for (const dir of dirs) {
+      // One lookup is up to five stats and a real path: six units, and the path's length at the text rate.
+      if (chargeWork(dir.length + bare[j].length) || confinementSpent(5)) return REFUSAL_SWEEP_PLAIN;
+      const real = resolveLikeNode(dir, bare[j]);
+      // The first match ends the search; the manifests `ctocKind` reads are charged, and a spent count refuses.
+      if ((real !== null && ctocKind(real) === 'menu') || confinementSpent(0)) return REFUSAL_SWEEP_PLAIN;
+    }
   }
   // The runtime itself may be a variable (`$NODE "…/start.js" …`) or reached through a wrapper
   // (`xargs node …`, `bash -c "…"`): any word naming the menu counts, but only when a word in command
@@ -1108,7 +1225,10 @@ function decide(payload) {
   // this line into a throw before the shell branch (Decision 35); the catch states what it absorbs.
   let budgetResolver = null;
   try { budgetResolver = require('../lib/real-path-confinement'); } catch { budgetResolver = null; }
-  if (budgetResolver !== null) budgetResolver.setDeadline(Date.now() + DECISION_BUDGET_MS);
+  if (budgetResolver !== null) {
+    budgetResolver.setWorkBudget(DECISION_WORK_UNITS);
+    budgetResolver.setDeadline(Date.now() + DECISION_BACKSTOP_MS);
+  }
   const root = findProjectRoot(payload.cwd || process.cwd());
   process.chdir(root); // the reused checks measure against process.cwd()
   const tool = payload.tool_name;
@@ -1141,6 +1261,22 @@ function decide(payload) {
 }
 
 /**
+ * The work sentence for a refusal made once the decision's count of work or its backstop clock is spent; an allow
+ * stays an allow, and a refusal made within the count keeps its own sentence. Never throws: a resolver that does
+ * not load leaves the check's own sentence.
+ * @param {string|null} sentence - the decision's verdict
+ * @returns {string|null}
+ */
+function workSentence(sentence) {
+  if (sentence === null) return null;
+  try {
+    return require('../lib/real-path-confinement').budgetSpent(0) ? REFUSAL_WORK : sentence;
+  } catch {
+    return sentence;
+  }
+}
+
+/**
  * Refuse: the sentence on stderr (what Claude Code shows the agent on exit 2), then the
  * decision JSON on stdout and exit 2.
  * @param {string} sentence
@@ -1159,7 +1295,7 @@ function main() {
   let refused;
   try {
     if (payload === null || typeof payload !== 'object') throw new TypeError('payload is not a JSON object');
-    refused = decide(payload);
+    refused = workSentence(decide(payload));
   } catch {
     // Fail rule: scan only what the call does when the payload parsed, else the raw text.
     const parsed = payload !== null && typeof payload === 'object';
