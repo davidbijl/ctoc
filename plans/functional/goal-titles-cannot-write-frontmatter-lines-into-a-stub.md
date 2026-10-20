@@ -22,6 +22,8 @@ Fixed means: every value written into a stub's frontmatter or heading is a singl
 
 The same file also produces an empty or degenerate file name when a title has no Latin letter or digit. `slugify` returns `''`, so `createStub` writes `<vision>-.md` and `mergeStubs` writes `plans/functional/.md`. That is the stub library's copy of the empty-name defect planned for vision files in `vision-file-names-and-planning-agent-orders.md`. It is fixed here because it lives in this file, and that plan reuses this `slugify`.
 
+`slugify` can also leave a hyphen at the end of a name. It strips the leading and trailing hyphen before it cuts to 60 characters, so a cut that lands just after a hyphen keeps that hyphen. Building CTOC with CTOC on 2026-10-20, the goal "Send-backs from review and security rounds count toward the three-per-step limit" produced the stub `ctoc-is-built-with-ctoc-send-backs-from-review-and-security-rounds-count-toward-the-.md`, whose name ends in `-.md`.
+
 ## Scope
 
 This plan changes `src/lib/vision-decomposer.js` (`createStub`, `mergeStubs`, `slugify`, and one new internal helper) and adds cases to `tests/vision-decomposer-coverage.test.js`. On the recommended answer to the owner question below, it also stops `mergeStubs` from deleting its own result. It does not change the stale detector's trust of a frontmatter `approved_by` line; that is reported under "Neighbours" for the owner to schedule.
@@ -56,6 +58,7 @@ The stale detector's trust of the frontmatter line does not depend on this injec
 - **read**: `slugify` (lines 130-136) keeps only `[a-z0-9]`. A title written only in non-Latin letters or symbols gives `''`. `createStub` then writes `<vision>-.md` (`baseSlug` line 160), a second such goal writes `<vision>--2.md`, and `mergeStubs` writes `plans/functional/.md` (line 374). `decomposeVision` slugifies the vision's own file name (line 226); a vision file named `.md` gives an empty vision slug and stub names starting with `-`.
 - **read**: the approval ledger keys a plan by its file name and accepts only `^[a-z0-9][a-z0-9-]*$` (`approval-ledger.SLUG_RE`, line 137). A name that is empty or starts with `-` is refused with "Invalid slug" (`ledgerPath`, lines 161-171). The residency check reports `ledger-unkeyable`, so such a plan can never be approved.
 - **read**: `mergeStubs` (lines 348-411) computes `plans/functional/<merged-slug>.md` with no existence check (lines 373-375). It writes the merged stub (line 399), then removes every original (line 405). When the merged name gives the same file name as one of the stubs being merged, the merged result is the file that gets deleted. When it gives the name of an unrelated existing stub, that stub is overwritten. `createStub` already avoids both with a `-2`, `-3` loop (lines 161-173).
+- **read**: `slugify` runs `.replace(/^-|-$/g, '')` (line 134) before `.slice(0, 60)` (line 135). The goal "Send-backs from review and security rounds count toward the three-per-step limit" becomes `send-backs-from-review-and-security-rounds-count-toward-the-three-per-step-limit`. Its 60th character is the hyphen after `the`, so the cut keeps it (counted by hand, not run). The stub file of that name from the 2026-10-20 run is in `plans/functional/`. The vision part of a stub name (line 226) and `mergeStubs`'s name (line 373) go through the same cut. Other stubs from that run are cut mid-word, for example `…-sent-back-to-technical-plan.md` for "…sent back to technical planning and keeps its title". That is the 60-character cap itself, not this defect.
 
 ## Implementation Details
 
@@ -86,7 +89,17 @@ The stale detector's trust of the frontmatter line does not depend on this injec
 
 3. **`mergeStubs`**: `const name = oneLine(mergedName)` is used for the slug, the `title:` line and the heading, and `parent_vision` goes through `oneLine`.
 
-4. **`slugify`**: end with `|| 'untitled'`, so a title with no Latin letter or digit gives the name `untitled`. `createStub`'s existing loop then gives `untitled-2`, `untitled-3`, and so on. The 60-character cap is unchanged.
+4. **`slugify`**: end with `|| 'untitled'`, so a title with no Latin letter or digit gives the name `untitled`. `createStub`'s existing loop then gives `untitled-2`, `untitled-3`, and so on. The 60-character cap is unchanged. The hyphen strip moves after the cut, so the order is: lowercase, collapse every run outside `[a-z0-9]` to one hyphen, cut to 60 characters, strip a leading and a trailing hyphen, then fall back to `untitled`:
+
+   ```js
+   return str
+     .toLowerCase()
+     .replace(/[^a-z0-9]+/g, '-')
+     .slice(0, 60)
+     .replace(/^-|-$/g, '') || 'untitled';
+   ```
+
+   One hyphen at each end is enough. The collapse leaves no two hyphens in a row, so the cut can leave at most one at the end.
 
 5. **`mergeStubs` no longer overwrites or deletes its own result** (on the recommended answer to the owner question):
 
@@ -143,6 +156,7 @@ T8 titles    日本語の目標   ¡¿!   (no Latin letter or digit)
 9. **Merging under the name of a stub being merged keeps the result** (on the recommended answer). Stubs `v-a.md` and `v-b.md` are merged under the name `v a`. Afterwards `v-a.md` exists and holds both scopes, and `v-b.md` is gone. Red today: the merged file is deleted.
 10. **Merging under the name of an unrelated stub leaves it alone** (on the recommended answer). Stub `v-c.md` exists and is not being merged; the merge is under the name `v c`. `v-c.md` is byte-identical afterwards and the merged stub is `v-c-2.md`. Red today: `v-c.md` is overwritten.
 11. **The existing collision case still passes.** The suite's existing "persists BOTH goals when their titles slugify to the same value" case is unchanged.
+12. **A cut that lands just after a hyphen leaves no trailing hyphen.** The title is the one from the 2026-10-20 run: "Send-backs from review and security rounds count toward the three-per-step limit". `decomposer.slugify` of it is exactly `send-backs-from-review-and-security-rounds-count-toward-the` (59 characters). `createStub('v', { title, scope: 's' }, visionPath, root)` writes `v-send-backs-from-review-and-security-rounds-count-toward-the.md`, and no file in `plans/functional/` ends in `-.md`. A title whose cut lands mid-word still gives exactly 60 characters: "A plan in the build queue can be sent back to technical planning and keeps its title" gives `a-plan-in-the-build-queue-can-be-sent-back-to-technical-plan`. Red today on the first two assertions.
 
 ## Security review
 
@@ -158,7 +172,8 @@ T8 titles    日本語の目標   ¡¿!   (no Latin letter or digit)
 2. A title containing quotes round-trips unchanged through `state.parseMetadata`.
 3. A title with no Latin letter or digit gives a file named `…untitled.md` (then `-2`, `-3`), never `.md` or a name ending in `-.md`, and the name passes `approval-ledger.SLUG_RE`.
 4. On the recommended answer: `mergeStubs` never deletes its own result and never overwrites a stub it was not asked to merge.
-5. `npm test` passes: fail 0, skipped 0, coverage at or above the floor. The linter reports zero warnings on `src/lib/vision-decomposer.js`.
+5. When the 60-character cut of a title lands just after a hyphen, the stub's file name ends in a letter or digit before `.md`, never in `-.md`. The 2026-10-20 goal "Send-backs from review and security rounds count toward the three-per-step limit" gives `…-count-toward-the.md`. When the cut lands mid-word, the goal part of the name (`slugify`'s result) is still exactly 60 characters.
+6. `npm test` passes: fail 0, skipped 0, coverage at or above the floor. The linter reports zero warnings on `src/lib/vision-decomposer.js`.
 
 ## Questions for the owner
 
@@ -175,17 +190,20 @@ While reading `mergeStubs` to apply the escaping, a data-loss defect turned up i
 2. **The fallback name is `untitled`.** Keeping non-Latin letters in file names was considered and set aside. The approval ledger accepts only `[a-z0-9-]` keys (`SLUG_RE`), which is also its path-traversal guard. Widening a security predicate to fix a naming defect is the wrong trade, and macOS and Linux file systems also normalise Unicode file names differently. A short fingerprint of the title was considered too; it is just as unreadable as `untitled` and adds code.
 3. **`oneLine` stays internal**, because both callers are in this file. `src/tabs/vision.js` reuses `slugify`, not `oneLine`.
 4. **A merge that reuses a merged stub's name clears that stub's status file**, because the status belonged to the old content.
+5. **The trailing-hyphen defect is noted here, not filed as a new plan.** It was found on 2026-10-20 while building CTOC with CTOC. The CTO Chief reported the run as CTOC v6.14.133; that version was not checked here. The owner ruled that day that a friction already covered by an existing plan is noted in that plan. This plan already changes `slugify` and adds its cases to `tests/vision-decomposer-coverage.test.js`, both of which are in its `files:` list. The fix moves one existing call, and its test sits beside the empty-name case. Stubs already on disk keep their names, because this plan renames no file.
+6. **The 60-character cut stays a hard cut, not a word-boundary cut.** Mid-word names such as `…-technical-plan.md` stay. The reason is that the name rule stays one rule shared by two writers. "Vision files are never overwritten or left without a name, and planning agents are never ordered to run code they cannot run" reuses this `slugify` and states the same rule in words for the vision-advisor agent. A hard cut can be stated and followed exactly in both places. A word-boundary rule would need restating in both, and its only gain is how a file name looks. The plan's full title stays in its `title:` line. What would flip this: the owner wanting file names that read as whole words. The rule would then be "cut at the last hyphen at or before character 60, and hard-cut only a first word longer than 60", changed the same way in that plan's vision-advisor sentence.
 
 ## Neighbours (seen, not built here; scheduling is the owner's)
 
 - **The stale-plan cleanup trusts a frontmatter `approved_by` line** (stale-detector.js lines 524-525, used at 806, 824 and 834). Any agent with Write can put that line into a plan under `plans/`, so a never-approved plan can be shown as approved and offered a one-click move to done. The consistent fix is for `verifyStaleCandidate` to ask `approval-residency.classifyResidency` for the plan's real edge, the same predicate the approval sweep uses. Not planned; the owner decides when.
 - **`listStubs` matches the parent vision by substring** (`parentVision.includes(visionSlug)`, line 306). A vision named `export` also lists the stubs of `export-csv`. The `untitled` fallback makes this more likely for non-Latin titles (`untitled` also matches `untitled-2`). This defect existed before this plan.
+- **`src/lib/plan-index/sync-unit.js` line 135 has its own `slugify` with the same strip-then-cut order** (`.replace(/^-+|-+$/g, '').slice(0, 60)`), so a section id can end in `-`. Seen there, not fixed here.
 
 ## Execution Plan
 
 ### Step 8: TEST
-- [ ] Write test cases 1 to 10 in `tests/vision-decomposer-coverage.test.js` (cases 9 and 10 only on the recommended answer).
-- [ ] Run `node --test tests/vision-decomposer-coverage.test.js`. Expect RED on cases 1, 2, 3, 5, 6, 7, 8, 9 and 10, and GREEN on 4 and 11. Record the failing lines.
+- [ ] Write test cases 1 to 10 and 12 in `tests/vision-decomposer-coverage.test.js` (cases 9 and 10 only on the recommended answer).
+- [ ] Run `node --test tests/vision-decomposer-coverage.test.js`. Expect RED on cases 1, 2, 3, 5, 6, 7, 8, 9, 10 and 12, and GREEN on 4 and 11. Record the failing lines.
 
 ### Step 9: PREPARE
 - [ ] Reproduce the forgery end to end in a scratch git repository. Write a stub through `createStub` with a title that injects `approved_by: human` and a `files:` list naming a real file, commit it, commit a change to that file, then run `stale-detector.verifyStaleCandidate` and `classifyStaleCandidate` on it. Record the category and the evidence lines in full. This confirms or corrects the severity above.
@@ -193,7 +211,7 @@ While reading `mergeStubs` to apply the escaping, a data-loss defect turned up i
 - [ ] Record `node --version`.
 
 ### Step 10: IMPLEMENT
-- [ ] `src/lib/vision-decomposer.js`: `oneLine`; `createStub` and `mergeStubs` use it for every frontmatter and heading value; `slugify` falls back to `untitled`; `mergeStubs` uses the no-overwrite loop and keeps its own result (on the recommended answer).
+- [ ] `src/lib/vision-decomposer.js`: `oneLine`; `createStub` and `mergeStubs` use it for every frontmatter and heading value; `slugify` strips the hyphen after the 60-character cut and then falls back to `untitled`; `mergeStubs` uses the no-overwrite loop and keeps its own result (on the recommended answer).
 - [ ] Run `node --test tests/vision-decomposer-coverage.test.js tests/cache-freshness.test.js`. Expect GREEN.
 
 ### Step 11: REVIEW
@@ -210,7 +228,7 @@ While reading `mergeStubs` to apply the escaping, a data-loss defect turned up i
 - [ ] Run `npm run lint`: zero warnings.
 
 ### Step 15: DOCUMENT
-- [ ] Write the JSDoc for `oneLine`, and update the JSDoc of `slugify` (the fallback) and `mergeStubs` (the no-overwrite rule).
+- [ ] Write the JSDoc for `oneLine`, and update the JSDoc of `slugify` (the order: collapse, cut to 60, strip the end hyphens, fall back to `untitled`) and `mergeStubs` (the no-overwrite rule).
 
 ### Step 16: FINAL-REVIEW
 - [ ] Show the owner, in full, the stub `createStub` writes for the T1 title before and after the change.

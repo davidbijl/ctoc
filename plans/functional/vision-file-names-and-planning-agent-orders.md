@@ -138,7 +138,7 @@ for (let n = 2; safeFs.existsSync(filePath); n += 1) {      // the -2, -3 rule c
 | "## Writing questions to the streaming store", lines 608-633 | the call-the-writer section | the shared section below, vision-advisor form |
 
 ```markdown
-**File path:** `plans/vision/{slug}.md` where `{slug}` is the title lowercased, every run of characters other than the Latin letters `a`-`z` and the digits `0`-`9` replaced by one hyphen, leading and trailing hyphens removed, and cut to 60 characters; if nothing is left (a title written only in non-Latin letters or symbols), `{slug}` is `untitled`.
+**File path:** `plans/vision/{slug}.md` where `{slug}` is the title lowercased, every run of characters other than the Latin letters `a`-`z` and the digits `0`-`9` replaced by one hyphen, then cut to 60 characters, and only then a leading and a trailing hyphen removed, so the name never ends in a hyphen; if nothing is left (a title written only in non-Latin letters or symbols), `{slug}` is `untitled`.
 ```
 
 ### `agents/planning/product-owner.md`
@@ -428,7 +428,7 @@ Delete `markNeedsInput` and its export. After the agent rewrite its only callers
 ## Acceptance criteria
 
 1. A second vision, or a second functional plan from `convertToFunctional`, whose title gives an existing name lands at `-2`, and the existing file is byte-identical.
-2. A title with no Latin letter or digit gives `untitled` (then `-2`), never `.md`, in the library. The vision-advisor rule states the same, with the 60-character cap.
+2. A title with no Latin letter or digit gives `untitled` (then `-2`), never `.md`, in the library. The vision-advisor rule states the same rule in the library's order: cut to 60 characters, then strip a leading and a trailing hyphen, then fall back to `untitled`. A title whose 60-character cut lands just after a hyphen gives a name that ends in a letter or digit before `.md`, never in `-.md`.
 3. A question written exactly as a planning agent's definition says appears on that plan's decision screen on the next `/ctoc:start` render (test 13 through `nextUnansweredQuestion`).
 4. Two producers' question sets for the same plan revision both appear, in either order. A later set never removes another producer's question.
 5. On the recommended answer, an empty quarantine list is refused with `empty-questions`.
@@ -480,6 +480,7 @@ The count is unknown until Step 9 runs the widened scanner over all agent defini
 7. **The vision-advisor keeps its streaming section**, though `pendingGateDecisions` never lists a vision plan (it covers functional, implementation and review). Whether a vision should get streaming questions is a product question, reported below.
 8. **The stamp is printed unrounded**, since a stamp rounded down reads as superseded.
 9. **Not split into slices of one to three files**: the owner's instruction for this work is one plan per defect, merged when two share a file. Question 1 offers the split.
+10. **The vision-advisor's name rule cuts before it strips the end hyphens.** Found on 2026-10-20 while building CTOC with CTOC: the stub library's `slugify` stripped the end hyphens before its 60-character cut, and a goal title produced a stub file name ending in `-.md`. That library fix is planned in "A goal title cannot write extra frontmatter lines into a functional stub" (its `slugify` item, its test case 12, and its decisions 5 and 6). This plan's replacement sentence for the vision-advisor had the same strip-then-cut order, so it would have kept the defect for vision file names and broken the claim in decision 2 that library and agent follow one rule. The sentence now states the library's order: lowercase, one hyphen per run, cut to 60, strip a leading and a trailing hyphen, fall back to `untitled`. The cut stays a hard cut, not a word-boundary cut, as that plan's decision 6 records. This plan adds no test for the order: `src/tabs/vision.js` reuses that `slugify`, so the library half is proven by that plan's test case 12, and the agent half is prose that the final review reads against acceptance criterion 2.
 
 ## Neighbours (seen, not built here; scheduling is the owner's)
 

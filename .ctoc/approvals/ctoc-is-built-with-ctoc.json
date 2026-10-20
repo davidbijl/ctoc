@@ -1,0 +1,10 @@
+{
+  "content_sha256": "72b61568310151a80c7b6fe33e1808a1fdea073ccc850818814d2b6cb09b791e",
+  "hash_scope": "file",
+  "stage_from": "vision",
+  "stage_to": "done",
+  "approved_at": "2026-10-20T14:02:42.809Z",
+  "advanced_by": "pipeline",
+  "evidence": "vision-decomposed",
+  "plan_basename": "ctoc-is-built-with-ctoc"
+}
