@@ -1,0 +1,10 @@
+{
+  "content_sha256": "ab39ab57bf483fe69cc10cc1c0283631255e9a96d3b84352950f59cf33758af2",
+  "hash_scope": "specification",
+  "stage_from": "implementation",
+  "stage_to": "todo",
+  "approved_at": "2026-10-19T13:22:18.537Z",
+  "advanced_by": "sufficiency",
+  "evidence": "sufficiency: implementation/four-defects-in-the-menu-and-the-release-found-on-2026-10-11-s21-background-agents-do-not-open-the-dashboard.md — no questions were computed (0 question(s) computed), 0 answered; 0 unanswered, 0 blocking; attested by: not recorded; 19 recorded answer(s) did not bind to this revision; enough (no unanswered fork)",
+  "plan_basename": "four-defects-in-the-menu-and-the-release-found-on-2026-10-11-s21-background-agents-do-not-open-the-dashboard"
+}
