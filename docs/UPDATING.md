@@ -47,10 +47,20 @@ git add -A && git commit -m "…"
 git push origin my-change
 ```
 
-## 2. Pull the latest from your fork (routine update)
+## 2. Pull the latest from your fork (automatic at boot)
 
 Changes were pushed to your fork (`davidbijl/ctoc`) from elsewhere and you want
 them here.
+
+> [!NOTE]
+> You rarely need to do this by hand. ctoc-remote's **boot sweep**
+> (`scripts/boot-sweep.sh`) runs this fast-forward-only pull of your fork's
+> `main` at every host boot. It never pulls `upstream`. A dirty tree or a
+> diverged history is skipped and named in the boot summary, never merged or
+> stashed. Between reboots, run the same sweep on demand from the ctoc-remote
+> checkout with `npm run update:now`. Note that this also rebuilds and
+> recreates the sandbox if a new Claude CLI is out, ending every tmux session.
+> Use the commands below when you only want the fork pull.
 
 ```bash
 cd ~/projects/ctoc/ctoc
@@ -61,18 +71,44 @@ git pull --ff-only origin main
 
 If `status` is **not** clean, stash or commit first. Then reload (§4).
 
-## 3. Sync new features from upstream (robotijn/ctoc)
+## 3. Sync new features from upstream (robotijn/ctoc) — the weekly update
 
-Pull new work from the **original** project into your fork.
+Pull new work from the **original** project into your fork. **This is the
+typical update**: the one you do roughly weekly, prompted by the upstream
+review report.
+
+### How you find out there's something to sync
+
+ctoc-remote's **upstream review** (`scripts/upstream-review.js`) checks
+whether `robotijn/ctoc` has moved past what you last reviewed. It runs at boot
+when more than 7 days have passed since the last check, with a weekly systemd
+timer as the floor. When there is something new it sends one report over the
+notification webhook: a plain-language "what's new" summary plus a conflict
+analysis (files both sides touched, and changed behaviour worth a look). It
+**never merges**; you decide, then merge with the commands below.
+
+**Acknowledge the report once you've read it**, whether you merged or not:
+
+```bash
+cd ~/projects/ctoc-remote
+npm run upstream-review:ack
+```
+
+This marks everything the report covered as reviewed, so the next report
+starts after it. Until you ack, the same report is re-sent on every check, so
+an unread report never silently drops. To install the review on the host, see
+ctoc-remote's `docs/sandbox-setup.md` → **Weekly upstream review**.
+
+### Merging
 
 > [!NOTE]
 > As of the **2026-10-21 re-fork**, your `main` was re-based onto robotijn's
 > history, so the fork now **shares a common ancestor** with `upstream/main`.
 > That means this is a **normal 3-way merge** — no more "unrelated histories"
 > problem. (Before that date the fork had no shared ancestor and a clean merge
-> was impossible; that is fixed now.) Still do it deliberately, not as a reflex,
-> and expect ordinary conflicts where your reintroduced customizations overlap
-> robotijn's changes.
+> was impossible; that is fixed now.) Still do it deliberately, not as a reflex.
+> Your only local changes are the `davidbijl` identity and this file, so
+> conflicts should be rare and small.
 
 ```bash
 cd ~/projects/ctoc/ctoc
