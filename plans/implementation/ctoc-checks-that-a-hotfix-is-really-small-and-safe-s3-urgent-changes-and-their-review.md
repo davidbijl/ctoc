@@ -22,6 +22,10 @@ Slice 3 of 4 of `plans/functional/ctoc-checks-that-a-hotfix-is-really-small-and-
 the emergency path, its one question about stored data, and the review item with its two
 answers.
 
+**Amended 2026-10-08:** the emergency commit is written in slice 1's form,
+`git --literal-pathspecs commit --only -m 'emergency: …' -- <files>`, staged by
+`git --literal-pathspecs add -- <files>`. Nothing else changed.
+
 ## Problem statement
 
 After slices 1 and 2, a change the owner called urgent is judged like any hotfix: small and
@@ -69,9 +73,10 @@ as in slice 1.
      refusal with that clause.
 - **All conditions hold** → `verdict: 'emergency'`, `text` = `That is bigger than a hotfix
   (<first reason>), so it goes ahead as an emergency change and waits for your review among
-  your open decisions.`, `commit` (`files`, `add` = `git add -- '<file>' ...` — `git add` of a
-  deleted path stages the deletion — and `message` = `git commit -m 'emergency: <what
-  changed>'`), and `record`. The record is written first; no emergency pass is reported
+  your open decisions.`, `commit` (`files`, `add` = `git --literal-pathspecs add -- '<file>'
+  ...` — `git add` of a deleted path stages the deletion — and `message` =
+  `git --literal-pathspecs commit --only -m 'emergency: <what changed>' -- '<file>' ...`,
+  slice 1's form), and `record`. The record is written first; no emergency pass is reported
   without it.
 
 **The emergency record** is slice 2's record with `kind: 'emergency'` (the binding covers
@@ -93,7 +98,8 @@ committed now as an emergency change and waits for your review among your open d
 change': "hotfix go-ahead <binding> '<file>' ..."`.
 
 - `hotfix decline` → `verdict: 'refused'`, `text` = the emergency refusal with the clause
-  `it changes stored data, and reverting the commit cannot undo that`. It writes nothing.
+  `it changes stored data, and reverting the commit cannot undo that`. It writes nothing but
+  its log line (below).
 - `hotfix go-ahead <binding> [<file> ...]` → recomputes the change of those files. A rule-1
   failure → the emergency refusal with that clause. A binding different from `<binding>` →
   nothing is recorded; `text` = `The change has moved on since you were asked, so nothing was
@@ -105,6 +111,17 @@ change': "hotfix go-ahead <binding> '<file>' ..."`.
 
 The owner's go-ahead is recorded only in the protected folder, never carried as an option a
 caller could add to `hotfix check`.
+
+### The urgent outcomes in the log
+
+Slice 1's log of verdicts (`.ctoc/logs/hotfix-checks.jsonl`) gains the urgent outcomes, through
+the same `logVerdict`: every answer whose verdict is `hotfix`, `emergency` or `refused` writes
+one line, whichever route produced it; `checking`, `ask`, the review answers and the usage
+answer write none. A call with `--urgent`, and `hotfix decline` and `hotfix go-ahead`, write
+`urgent: true`. An emergency pass writes `verdict: 'emergency'` with `cause` the first hotfix
+cause; an emergency refusal writes `verdict: 'refused'` with `cause` one of slice 1's words
+(`unreadable`, `tests-fail`, `no-test-ran`) or `emergency-too-big`, `governs-the-work` or
+`stored-data-declined`. No file name, path or wording is written.
 
 ### The review in the owner's open decisions
 
@@ -199,8 +216,9 @@ by `attachEmergencyReviews`.
 - [ ] Urgent, 40 changed lines in 4 files with logic in `src/cart.js`, tests passing: the
   answer's `text` is exactly `That is bigger than a hotfix (it changes program logic in
   src/cart.js), so it goes ahead as an emergency change and waits for your review among your
-  open decisions.`; after `commit.add` and `git commit -m 'emergency: checkout crashes when the
-  cart is empty'` the loaded hook allows the commit; the next default menu screen lists
+  open decisions.`; after `commit.add` and `commit.message` with `<what changed>` filled in
+  (`git --literal-pathspecs commit --only -m 'emergency: checkout crashes when the cart is
+  empty' -- '<file>' …`) the loaded hook allows the commit; the next default menu screen lists
   "Emergency change: checkout crashes when the cart is empty" with the four files, 40 changed
   lines, the reason, the test result and `git revert <commit id>`, and asks the review
   question.
@@ -218,6 +236,9 @@ by `attachEmergencyReviews`.
   title, priority HIGH and the commit id; `HEAD` and the working tree are unchanged.
 - [ ] A background agent may run `hotfix check --urgent`; it is refused `hotfix go-ahead`,
   `hotfix decline` and `hotfix review`.
+- [ ] Every urgent final answer writes one log line with `urgent: true`: the emergency pass
+  `verdict: 'emergency'` with its first hotfix cause, each emergency refusal `verdict:
+  'refused'` with its cause; the stored-data question and the review answers write none.
 - [ ] `npm test` passes: lint, typecheck, all tests, coverage at or above the floor, 0
   skipped; CLAUDE.md's test-file count updated.
 
@@ -225,9 +246,9 @@ by `attachEmergencyReviews`.
 
 | Risk | Mitigation |
 |---|---|
-| The emergency path becomes routine | Each review stays on the owner's default screen until answered, with the count of open reviews on top |
+| The emergency path becomes routine | Each review stays on the owner's default screen until answered, with the count of open reviews on top; the log's `emergency` lines count them |
 | An emergency record for a change that was later rewritten never shows, and an emergency commit slips through unreviewed | The hook allows an "emergency:" commit only with a record whose binding equals the staged change, and the review finds the commit by that same binding; a commit with that label and no matching record cannot exist |
-| A session or agent claims "urgent" the owner never said | The emergency commit still lands in the owner's review with its reason and the undo command; recorded in the hook's cannot-catch list (slice 2) |
+| A session or agent claims "urgent" the owner never said | The emergency commit still lands in the owner's review with its reason and the undo command; recorded in the hook's cannot-catch list (slice 2); the CTO Chief's instructions (slice 4) add `--urgent` only for the owner's own word |
 | Looking up commits on every menu open is slow | It runs only when an open emergency record exists, at most one `git log` plus one `git diff-tree` per candidate commit |
 | The commit subject, written by a session, carries control characters or markup into the menu and the new plan | Control characters removed and length capped at the one place the subject is read; the plan's title is JSON-quoted in its frontmatter; plan text is data to every agent that reads it |
 
@@ -267,6 +288,10 @@ by `attachEmergencyReviews`.
    decisions like any functional plan.
 10. **A failing test run under `--urgent` ends in the emergency refusal at once**, because
     passing tests is one of the emergency conditions and a second run would only repeat it.
+11. **The check cannot tell who added `--urgent`.** Since 2026-10-08 the CTO Chief runs the
+    check on fixes the owner never named; the rule that only the owner's own "urgent" adds the
+    option is an instruction (slice 4), and every emergency change still reaches his review, so
+    a wrongly added option costs a review item, never an unreviewed change.
 
 ## Execution Plan
 
@@ -284,11 +309,12 @@ by `attachEmergencyReviews`.
      `docs/`), tests passing: first answer `checking` with `next` holding `--urgent
      --run-tests`; second answer `verdict: 'emergency'` and the exact sentence; the record holds
      `kind: 'emergency'`, `firstReason`, `review.status: 'open'`.
-  3. After case 2, `commit.add` and `git commit -m 'emergency: checkout crashes when the cart is
-     empty'` (the loaded hook allows it), the default screen's text holds the subject, the four
-     files, `40 changed lines`, `it changes program logic in src/cart.js`, the test result and
-     `git revert <the commit id>`; `ask.questions` holds the review question with exactly the
-     two options; `actions` maps them to `hotfix review <binding> keep|replan`.
+  3. After case 2, `commit.add` and `commit.message` with `<what changed>` = `checkout crashes
+     when the cart is empty` (the loaded hook allows it), the default screen's text holds the
+     subject, the four files, `40 changed lines`, `it changes program logic in src/cart.js`,
+     the test result and `git revert <the commit id>`; `ask.questions` holds the review
+     question with exactly the two options; `actions` maps them to `hotfix review <binding>
+     keep|replan`.
   4. Urgent, 40 lines, a failing test: the exact emergency refusal with `the existing tests
      fail (tests/…: …)`; no record; an `emergency:` commit is refused by the hook.
   5. Urgent, 350 lines in 12 files: the size clause; the suite's marker file shows no test ran.
@@ -305,7 +331,7 @@ by `attachEmergencyReviews`.
   9. "Go ahead" after the migration file changed again: nothing recorded; the answer starts
      with the moved-on sentence and asks the question again.
   10. "Make a normal plan" (`hotfix decline`): the exact emergency refusal with the stored-data
-      clause; nothing written.
+      clause; nothing written but its log line.
   11. Review keep: `hotfix review <binding> keep` → the record's review is `kept`; the next
       default screen lists no emergency change; `HEAD` unchanged.
   12. Review replan: `hotfix review <binding> replan` → the plan file named in the acceptance
@@ -322,6 +348,10 @@ by `attachEmergencyReviews`.
       shows); an unreadable record file is skipped and the screen still renders.
   17. Urgent with a change git cannot read (not a repository): the emergency refusal with the
       rule-1 clause.
+  18. The log: after case 2 one line `verdict: 'emergency'`, `cause: 'program-logic'`,
+      `urgent: true`, `files: 4`, `lines: 40`; after cases 4, 5, 6 (`CLAUDE.md`) and 10 one line
+      each, `verdict: 'refused'` with `tests-fail`, `emergency-too-big`, `governs-the-work` and
+      `stored-data-declined`; cases 7, 11 and 12 add none.
 - [ ] Add to `tests/protect-records.test.js` (numbered after the file's last case, real hook
   process, `agent_id` set): `… start.js hotfix check --urgent README.md` allowed (red once
   keeps-working slice 2 is in and before this plan's slice 2 lists `hotfix check` — guard after
@@ -334,14 +364,15 @@ by `attachEmergencyReviews`.
 ### Step 9: PREPARE
 - [ ] Read this plan's slices 1 and 2 as built, and keeps-working slice 2's final
   `streamingGateScreen` and `start.js` no-arguments branch.
-- [ ] Confirm `git add -- <deleted path>` stages the deletion and `git diff-tree -r -z --raw
-  --no-renames --no-abbrev <base> <commit>` lists the same entries as the staged change on the
-  installed git.
+- [ ] Confirm `git --literal-pathspecs add -- <deleted path>` stages the deletion,
+  `git --literal-pathspecs commit --only -- <deleted path>` commits it, and `git diff-tree -r
+  -z --raw --no-renames --no-abbrev <base> <commit>` lists the same entries as the staged
+  change on the installed git.
 
 ### Step 10: IMPLEMENT
 - [ ] `src/lib/hotfix-check.js`: `--urgent`, the emergency conditions and sentences, the
   emergency record, the stored-data question, `go-ahead`, `decline`, `review`, the plan writer,
-  `attachEmergencyReviews`.
+  the urgent outcomes in the log, `attachEmergencyReviews`.
 - [ ] `src/commands/start.js`: attach the emergency reviews on the default screen.
 - [ ] `CLAUDE.md`: the test-file count.
 
@@ -356,18 +387,21 @@ by `attachEmergencyReviews`.
 - [ ] The security scanner checks: a crafted commit subject cannot inject into the menu text,
   the actions, the plan's frontmatter or a shell command; the plan file name cannot leave
   `plans/functional/`; a binding argument is validated before any path is built from it; a
-  background agent cannot record any of the owner's three answers.
+  background agent cannot record any of the owner's three answers; the log holds no file name,
+  path or wording.
 
 ### Step 14: VERIFY
 - [ ] `npm test`: lint, typecheck, all tests, coverage at or above the floor in
   `.ctoc/coverage-baseline.json`, 0 skipped, 0 flaky.
 - [ ] Live once in a scratch CTOC project: an urgent logic fix goes ahead, is committed through
   the loaded hook, appears on `/ctoc:start`, and is closed with "Keep it and make a normal
-  plan"; quote the screen text and the new plan's first lines in the build record.
+  plan"; quote the screen text, the new plan's first lines and the log's lines in the build
+  record.
 
 ### Step 15: DOCUMENT
 - [ ] JSDoc on `attachEmergencyReviews` and every new internal function; the module header gains
-  the emergency conditions, the question, the review and its two answers.
+  the emergency conditions, the question, the review and its two answers, and the urgent
+  outcomes in the log.
 
 ### Step 16: FINAL-REVIEW
 - [ ] Every acceptance box above is checked against its evidence; the live screen is quoted.

@@ -7,7 +7,7 @@ created: 2026-10-07
 priority: HIGH
 effort: medium
 depends_on: none
-acceptance_criteria_count: 25
+acceptance_criteria_count: 36
 risk_level: HIGH
 ---
 
@@ -17,7 +17,37 @@ risk_level: HIGH
 
 > "also we need a hotfix agent or check. with a change is it small enough that it is a hotfix, like changing some text or the color of a button etc. websearch what a safe hotfix is and make certain that ctoc checks whether a hotfix is ok" (2026-10-07)
 
-In plain words: when a change is called a hotfix, CTOC must look at the change itself and say whether it really is one. When it is not, the work goes through a normal plan. When the change is urgent but too big to be a hotfix, CTOC must say how it is handled.
+> "is the hotfix agent implemented? the CTO chief should always check whehter a fix can be a hotfix t ospeed up development or not" (2026-10-08)
+
+In plain words: when a change is called a hotfix, CTOC must look at the change itself and say whether it really is one. When it is not, the work goes through a normal plan. When the change is urgent but too big to be a hotfix, CTOC must say how it is handled. Since 2026-10-08 the judgement does not wait for anyone to say "hotfix": the CTO Chief looks at every fix or small change on its own and sends whatever can be a hotfix down the fast path, so development goes faster.
+
+## The owner's decision (2026-10-09)
+
+**Question:** should the hotfix check keep every file format it handles, or only the formats it can read exactly?
+
+**Answer: a — only the formats it can read exactly.** His reason: five rounds of security attacks, each with real runs, found new ways to get a change of behaviour committed as a hotfix. The last ones were in Vue, MDX, reStructuredText and Less files, where a reader written by hand disagrees with the real compiler. A hotfix skips the normal review, so a wrong "safe" ships behaviour nobody reviewed.
+
+**The formats that qualify from now on, and nothing else:**
+
+- Visible text in plain HTML (`.html`, `.htm`).
+- A colour in plain CSS (`.css`), on a real colour property, or in a custom property whose name contains `color` or `colour`, when the whole value is exactly one colour before and after.
+- Catalogue wording in `.json`, `.yaml`, `.yml` and `.properties` files.
+- Prose in Markdown (`.md`) and plain text (`.txt`).
+
+**The formats that no longer qualify:** `.vue`, `.svelte`, `.jsx`, `.tsx`, `.mdx`, `.rst`, `.scss`, `.sass`, `.less` and gettext `.po`. For these the check answers that it does not recognise the file, and the change goes through the normal build loop, which in this plan means a normal plan.
+
+**Decisions the session took the same day under that decision** (each recorded below as a session decision, numbers 27 to 30):
+
+- Text inside a component or custom element never qualifies.
+- Text inside `<svg>` and `<math>` never qualifies.
+- A plain HTML file outside a strict, well-formed subset is refused whole.
+- A Markdown heading qualifies only when its generated anchor stays the same.
+
+**What it changes:** rule 4 (the kinds and the formats), the table of refusal sentences (one new sentence, decision 31), the prediction the CTO Chief makes (point 2 of the requirement of 2026-10-08), the tests of the check (one trap for every removed format and for each refusal above), the out-of-scope list, and seven new scenarios. No scenario that existed before is changed: none of them used a removed format.
+
+**What it does not change:** the size limits, the other rules (sensitive areas, risk markers in wording, no test edited, the existing tests pass), the urgent path and its review, the rule in the one loaded hook that refuses a labelled commit without a passing check, and the instructions that tell every session. Those pieces change only where they name a removed format.
+
+The reason and the formats are the owner's words. Nothing in this amendment was run.
 
 ## Problem Statement
 
@@ -25,7 +55,9 @@ Today the words "hotfix", "trivial fix", "trivial change", "quick fix" and "urge
 
 The owner's own examples of a real hotfix are changing some text or the colour of a button. The research below says what separates those from dangerous changes is the kind of change, not only its size. Tiny edits to program logic, settings, data, permissions, dependencies and money are behind some of the best-documented outages. The word "urgent" says how fast the owner wants it, not how small it is.
 
-This plan gives CTOC one deterministic check of the actual change, run by the session when the owner uses one of those words and before the change is committed. When the change passes, the owner sees nothing extra. When it does not, the owner reads one plain sentence saying why, and the work goes through a normal plan. When the owner said "urgent" and the change is too big for a hotfix, it goes ahead now under conditions taken from emergency-change practice, and waits for the owner's review.
+This plan gives CTOC one deterministic check of the actual change, run before the change is committed. When the change passes, the owner sees nothing extra. When it does not, the owner reads one plain sentence saying why, and the work goes through a normal plan. When the owner said "urgent" and the change is too big for a hotfix, it goes ahead now under conditions taken from emergency-change practice, and waits for the owner's review.
+
+The other half of the problem is that a fast path nobody takes speeds nothing up. A word the owner has to remember to type makes the fast path depend on him. Since 2026-10-08 the CTO Chief judges every fix or small change itself, without being told and without asking him: what can be a hotfix takes the fast path, everything else is planned.
 
 ## How this was gathered
 
@@ -39,6 +71,8 @@ The agent that wrote this plan holds four tools: read a file, write a file, sear
 - A menu route is a call of `node "${CLAUDE_PLUGIN_ROOT}/src/commands/start.js" <route> <arguments>`. `src/commands/start.js` hands the arguments to `route` in `src/lib/menu-screens.js` and prints the JSON result (`text`, `ask`, `actions`). `src/commands/start.md` splits routes into instant ones (answered synchronously) and background work. The menu is the one legitimate writer of the check records folder (`.ctoc/state/verify/`), which the loaded write protection keeps agents out of.
 - `src/lib/quality-agent.js` exports `runSmartTests` and `runFullTests`. The existing functional plan `affected-tests-while-building-whole-suite-before-push.md` records, by reading, that `runSmartTests` has two exits that report a pass with zero tests run. A hotfix check that reused that pass would treat "no test ran" as "the tests pass".
 - The inbox question stream (`createQuestion` in `src/lib/inbox.js`, already used for scope-growth requests per `docs/ENFORCEMENT.md`) is an existing place where an item waiting for the owner can live.
+- The CTO Chief's own instructions (`agents/coordinator/cto-chief.md`) say only, at Step 6.5, that the escape phrases skip the threat model; nothing in them asks whether a fix can be a hotfix. Its rules are held by the compaction inventory `tests/compaction-eval/cto-chief/rule-inventory.json`.
+- `CLAUDE.md` is held at or under 15,000 bytes by `tests/claude-md-keeps-every-rule.test.js`; its last recorded measurement was 14,971 bytes, and its managed lessons block must equal `.ctoc/templates/operating-lessons.md`.
 
 ## Research
 
@@ -83,19 +117,19 @@ All rows were read on 2026-10-07 through web search. "Seen" means the claim appe
 
 ## Business Alignment
 
-**Job to Be Done:** When I tell CTOC a change is a hotfix and want it done without the whole planning pipeline, I want CTOC to check that the change really is small and safe, so I can fix a text or a colour in one move and never ship a risky change that skipped every review.
+**Job to Be Done:** When I ask CTOC for a fix, I want CTOC to see on its own whether the change is small and safe enough to be a hotfix and then check that it really is, so a text or a colour is fixed in one move without my having to say "hotfix", and a risky change never ships having skipped every review.
 
 **Impact Map:**
-- **Goal:** The pipeline's ceremony matches the risk of the change: tiny safe changes go straight through, everything else is planned. This traces to the reason the escape phrases exist (the header of `src/lib/escape-phrases.js`: pipeline ceremony must not exceed the change cost) and to the owner's request.
-- **Actor:** The owner, the human who commands CTOC, and the sessions that work for him.
-- **Impact:** A word like "hotfix" no longer skips planning by itself. A change of at most 20 changed lines of wording or colour goes through with no extra step and no extra message. Any other change is refused in one sentence and planned, unless the owner said "urgent", in which case it goes ahead and waits for his review.
-- **Deliverable:** One deterministic check, a menu route that runs it, a fixed set of refusal sentences, the emergency path with its review item, the rule in the one loaded hook that refuses a labelled commit without a passing check, and the instructions that make the session run the check.
+- **Goal:** The pipeline's ceremony matches the risk of the change: tiny safe changes go straight through, everything else is planned. This traces to the reason the escape phrases exist (the header of `src/lib/escape-phrases.js`: pipeline ceremony must not exceed the change cost), to the owner's request and to his requirement of 2026-10-08 that the CTO Chief always looks for the fast path to speed up development.
+- **Actor:** The owner, the human who commands CTOC, and the sessions that work for him, the CTO Chief first among them.
+- **Impact:** No word skips planning by itself, and no word is needed to reach the fast path. A change of at most 20 changed lines of wording or colour goes through with no extra step and no extra message, whether or not the owner called it a hotfix. Any other change is refused or planned with one sentence saying why, unless the owner said "urgent", in which case it goes ahead and waits for his review.
+- **Deliverable:** One deterministic check, a menu route that runs it, a fixed set of refusal sentences, the emergency path with its review item, the rule in the one loaded hook that refuses a labelled commit without a passing check, a log line for every verdict so the fast path can be counted, and the instructions that make the CTO Chief judge every fix and the session run the check.
 
 **Alignment checks:**
 1. The goal traces to the request and to the purpose of the escape phrases: YES.
 2. The actor is the owner named in the request: YES.
-3. The impact is observable (a sentence shown or not shown, a commit made or not made, an item listed or not): YES.
-4. The deliverable stays in one functional area, judging a change that claims to skip planning: YES. The emergency path is part of it because the owner asked for it in the same request.
+3. The impact is observable (a sentence shown or not shown, a commit made or not made, an item listed or not, a line in the log): YES.
+4. The deliverable stays in one functional area, judging a change that claims to skip planning: YES. The emergency path is part of it because the owner asked for it in the same request, and the CTO Chief's judgement is part of it because the owner asked for it about this same check.
 
 ## The hotfix test
 
@@ -108,13 +142,13 @@ The change is exactly the set of files that will go into the commit, compared wi
 1. **The change can be read.** The folder is a git repository with at least one commit, and every changed file can be read as text. If not, the test fails and says it could not read the change.
 2. **Same files, same names.** No file is added, deleted, renamed or copied. No file changes its permissions. No binary file or symbolic link is involved.
 3. **Size.** At most 3 files and at most 20 changed lines in total (lines added plus lines removed; a difference in line endings alone does not count).
-4. **Only kinds that qualify.** Every file is one of the four kinds below, and every changed line is an edit of the kind's own shape:
-   - **Documentation:** `.md`, `.txt` and `.rst` files outside the places that instruct or govern the work (`CLAUDE.md`, and anything under `.claude/`, `.ctoc/`, `agents/`, `skills/`, `commands/` and `plans/`). Any wording edit.
-   - **Visible text in web page markup and component templates:** `.html`, `.htm`, `.jsx`, `.tsx`, `.vue` and `.svelte` files. Only characters between a closing `>` and the next `<`, outside script, style and text-area blocks, with no template or script characters.
-   - **Message catalogue values:** `.json`, `.yaml`, `.yml`, `.po` and `.properties` files inside a folder named `locales`, `locale`, `i18n`, `lang`, `translations` or `messages`. Only the value text changes; the keys do not, and the placeholders (for example `{name}`, `{{name}}` or `%s`) are the same in number and in text before and after.
-   - **Colour values in stylesheets:** `.css`, `.scss`, `.sass` and `.less` files. Only a colour (`#rgb`, `#rrggbb`, `#rrggbbaa`, `rgb()`, `rgba()`, `hsl()`, `hsla()` or a named colour) replaced by another colour, with the rest of the line unchanged.
+4. **Only kinds that qualify, and only in formats the check can read exactly.** Every file is one of the four kinds below, in one of the formats named for it, and every changed line is an edit of the kind's own shape. A format that is not named here does not qualify (the owner's decision of 2026-10-09, above):
+   - **Documentation:** `.md` and `.txt` files outside the places that instruct or govern the work (`CLAUDE.md`, and anything under `.claude/`, `.ctoc/`, `agents/`, `skills/`, `commands/` and `plans/`). Prose only: a wording edit. A Markdown heading qualifies only when the anchor generated from it stays the same.
+   - **Visible text in plain HTML:** `.html` and `.htm` files. Only characters between a closing `>` and the next `<`, outside script, style and text-area blocks, with no template or script characters. Text inside a component or custom element (for example `<my-card>`) never qualifies, and neither does text inside `<svg>` or `<math>`. A file outside a strict, well-formed subset of HTML is refused whole, however small the edit.
+   - **Message catalogue values:** `.json`, `.yaml`, `.yml` and `.properties` files inside a folder named `locales`, `locale`, `i18n`, `lang`, `translations` or `messages`. Only the value text changes; the keys do not, and the placeholders (for example `{name}`, `{{name}}` or `%s`) are the same in number and in text before and after.
+   - **Colour values in plain CSS:** `.css` files only. Only a colour (`#rgb`, `#rrggbb`, `#rrggbbaa`, `rgb()`, `rgba()`, `hsl()`, `hsla()` or a named colour) replaced by another colour, with the rest of the line unchanged, on a real colour property (for example `color`, `background-color` or `border-color`) or in a custom property whose name contains `color` or `colour`, and only when the whole value is exactly one colour before and after.
 
-   Everything else fails, including: program code (`.js`, `.ts`, `.py` and the like), settings files (`.json`, `.yaml`, `.yml`, `.toml`, `.ini`, `.env`, `.conf` outside a catalogue folder), dependency lists and lock files, database query and migration files, build and continuous-integration files, and tests.
+   Everything else fails, including: program code (`.js`, `.ts`, `.py` and the like), settings files (`.json`, `.yaml`, `.yml`, `.toml`, `.ini`, `.env`, `.conf` outside a catalogue folder), dependency lists and lock files, database query and migration files, build and continuous-integration files, and tests. It also fails, for every change in it, a file of a format the owner removed on 2026-10-09: `.vue`, `.svelte`, `.jsx`, `.tsx`, `.mdx`, `.rst`, `.scss`, `.sass`, `.less` and gettext `.po`, including a `.po` file inside a catalogue folder. These get the clause "I do not recognise {file} as wording or a colour", also `.jsx` and `.tsx`, which are program code too.
 5. **Not in a sensitive area.** No part of any changed file's path, split at every character that is not a letter, equals one of these whole words: auth, login, logout, password, session, token, secret, credential, key, permission, role, admin, payment, billing, checkout, price, pricing, invoice, tax, legal, terms, privacy, consent, cookie, gdpr, license, migration, schema, database, sql, deploy, workflow, ci.
 6. **The wording carries no risk marker.** In markup text and catalogue values, the old and the new wording (outside placeholders) contain none of: a digit, a currency symbol, a percent sign, a web address (`://` or `www.`), an e-mail address (`@`), or any of the characters `<`, `>`, `{`, `}`, `$` and the backtick. Prices, legal numbers, links and template code never ride through as "text".
 7. **No test is edited.** A hotfix may not change a test file (a file under `test`, `tests`, `__tests__` or `spec`, or named `*.test.*` or `*.spec.*`). Fix the code, not the tests.
@@ -132,21 +166,22 @@ A hotfix is committed as one commit holding only those files, with a subject tha
 | Does something outside the folder depend on the old text or colour (a screenshot suite elsewhere, a script that reads a label)? | Nothing in the folder says so. | Unknowable. The project's own tests are the only evidence. |
 | Is this the right fix for the problem? | It is not a safety question. | Not judged. |
 
-**Agent or check:** a check. None of these questions goes to an agent, existing or new. A model's opinion on risk is the unrepeatable judgement this check exists to remove; an agent run adds time to the one path meant to be quick; and a refusal costs one normal plan while a wrong pass costs an incident. What would change this: if the owner's real text edits inside code files are refused often, one agent could be asked question one only, and every other rule would still apply.
+**Agent or check:** a check. None of these questions goes to an agent, existing or new. A model's opinion on risk is the unrepeatable judgement this check exists to remove; an agent run adds time to the one path meant to be quick; and a refusal costs one normal plan while a wrong pass costs an incident. What would change this: if the owner's real text edits inside code files are refused often, one agent could be asked question one only, and every other rule would still apply. The CTO Chief's prediction (below) only decides whether to try the fast path; it never decides that a change is a hotfix.
 
 ## Where it runs and what the owner sees
 
-**When.** The session runs the check when the owner's message holds "hotfix", "quick fix", "trivial fix", "trivial change" or "urgent", after it has made the edit and before it commits. The session is told so in the instruction file every session reads in a CTOC project and in the menu's instruction file. CTOC's other hooks stay hidden, so nothing else starts the check; but the one loaded hook, the write protection for the records, refuses a commit whose message starts with "hotfix:" or "emergency:" unless a passing check record matches exactly the staged change (the owner's decision below). "skip planning" and "skip iron loop" are not judged: they are the owner's explicit order.
+**When.** The CTO Chief — CTOC's coordinator, and the session acting for it — judges every request to fix or change something small on its own, without being told and without asking the owner (the owner's requirement of 2026-10-08, below). When the change plausibly fits the rules above, the session makes the edit, runs the check before it commits, and commits only what passes; when it plainly does not, the session makes no edit, starts a normal plan and says why in one sentence. When the owner's message holds "hotfix", "quick fix", "trivial fix", "trivial change" or "urgent", the session makes the edit and runs the check whatever it predicted, as before. The session is told so in the CTO Chief's own instructions, in the instruction file every session reads in a CTOC project and in the menu's instruction file. CTOC's other hooks stay hidden, so nothing else starts the check; but the one loaded hook, the write protection for the records, refuses a commit whose message starts with "hotfix:" or "emergency:" unless a passing check record matches exactly the staged change (the owner's decision below). "skip planning" and "skip iron loop" are not judged: they are the owner's explicit order.
 
 **How.** Through a menu route (working name `hotfix check`, with `--urgent` when the owner said "urgent" and the named files after it): `node "${CLAUDE_PLUGIN_ROOT}/src/commands/start.js" hotfix check [--urgent] [<file> ...]`. The rules that look at the change answer instantly, as an instant route. The test run is background work like any quality run, with one status line while it runs ("Checking the hotfix against the existing tests."), because silence over a long test run is the grinding with no feedback that the owner named as broken.
 
 | The owner says | Small and safe | Not small or not safe |
 |---|---|---|
+| no hotfix word (a fix or small change) | Committed as "hotfix:". The owner sees the status line while the tests run and the commit, nothing else. | Predicted not to fit: no edit, one sentence, then a normal plan. Predicted to fit but refused by the check: one sentence, then a normal plan, and the edits stay in place. |
 | hotfix, quick fix, trivial fix, trivial change | Committed as "hotfix:". The owner sees nothing extra. | One sentence, then a normal plan. |
 | urgent (alone or with another word) | The same as a hotfix. | The emergency path below when its conditions hold; otherwise one sentence and a normal plan marked high priority. |
 | skip planning, skip iron loop | Not judged, as today. | Not judged, as today. |
 
-**What the owner sees.** Passing: nothing beyond the status line while the tests run. Refused: one sentence of the shape "I did not treat this as a hotfix because {reason}; it goes through a normal plan, and your edits stay in place, not committed." The reason is one fixed clause per cause, so a test can assert it:
+**What the owner sees.** Passing: nothing beyond the status line while the tests run, and the commit. Predicted not to fit, before any edit: one sentence of the shape "I did not treat this as a hotfix because {reason}; it goes through a normal plan.", the reason being the clause of the table below that fits the change, naming the file when it is known. Refused by the check: one sentence of the shape "I did not treat this as a hotfix because {reason}; it goes through a normal plan, and your edits stay in place, not committed." The reason is one fixed clause per cause, so a test can assert it:
 
 | Cause | Clause |
 |---|---|
@@ -159,7 +194,8 @@ A hotfix is committed as one commit holding only those files, with a subject tha
 | dependency list or lock file | "it changes the dependencies in {file}" |
 | database file | "it changes stored data in {file}" |
 | build or continuous-integration file | "it changes how the project is built or shipped in {file}" |
-| anything else | "I do not recognise {file} as wording or a colour" |
+| anything else, among it every file of a format removed on 2026-10-09 | "I do not recognise {file} as wording or a colour" |
+| a change the check cannot read exactly: text in a component or custom element, text inside `<svg>` or `<math>`, an HTML file outside the strict subset, a Markdown heading whose anchor changes, a colour that is not the whole value of a colour property | "it changes {file} in a way the check cannot read exactly, and only what it can read exactly qualifies" |
 | sensitive area | "{file} sits in an area named {word}, and such areas are never a hotfix" |
 | risk marker in wording | "the wording in {file} contains a number, a price, a web address or an e-mail address" |
 | a test is edited | "it changes a test ({file})" |
@@ -170,7 +206,7 @@ A refusal never deletes, reverts or stashes the edit. It only declines to call i
 
 ## Urgent but not small: the emergency path
 
-"Urgent" is the owner's word, and in emergency-change practice the person with authority approving a fast route is the approval. So the owner's word opens the path; the words "hotfix", "quick fix", "trivial fix" and "trivial change" only claim smallness and never open it. The path applies only after the hotfix test has refused the change. All of these must hold:
+"Urgent" is the owner's word, and in emergency-change practice the person with authority approving a fast route is the approval. So the owner's word opens the path; the words "hotfix", "quick fix", "trivial fix" and "trivial change" only claim smallness and never open it, and the CTO Chief's own judgement never opens it either. The path applies only after the hotfix test has refused the change. All of these must hold:
 
 1. **The owner said "urgent".**
 2. **The change can be read** (rule 1 above).
@@ -193,6 +229,8 @@ An emergency change always leaves a record in the protected check records (writt
 
 **As the owner,** **I want** a small wording or colour change to go through without any extra step or message, **so that** I fix a button label in one move and the pipeline does not cost more than the change.
 
+**As the owner,** **I want** the CTO Chief to see on its own whether a fix I ask for can be a hotfix, without my saying "hotfix" and without asking me, **so that** every fix that can take the fast path does, and development goes faster.
+
 **As the owner,** **I want** a change called a hotfix that is really logic, settings, security, data, dependencies or money to be refused in one plain sentence, **so that** a single word never silently skips every review for a risky change.
 
 **As the owner,** **I want** a hotfix that is too big, edits a test, or breaks an existing test to be refused with the specific cause, **so that** I know exactly why it needs a plan and can trust that a pass was real.
@@ -202,6 +240,8 @@ An emergency change always leaves a record in the protected check records (writt
 **As the owner,** **I want** an urgent change that is too big for a hotfix to go ahead now under conditions and wait for my review, **so that** a real emergency is not stuck behind the pipeline and nothing unreviewed stays unreviewed.
 
 **As the owner,** **I want** to answer the review of an emergency change with one choice, **so that** the emergency is closed or turned into a normal plan.
+
+**As the owner,** **I want** to be able to count how many fixes took the fast path and how many were refused, and why, **so that** I can see the speedup and whether the rules are too strict.
 
 ## Acceptance Criteria
 
@@ -216,6 +256,12 @@ An emergency change always leaves a record in the protected check records (writt
   When the owner says "quick fix: make the Save button #0b5ed7" and only that colour changes
   Then the owner sees no message beyond the status line during the test run
   And the change may be committed as one "hotfix:" commit holding only `src/styles/button.css`
+
+- [ ] **Scenario: A colour in a custom property named for colour passes**
+  Given `src/styles/theme.css` with `:root { --brand-color: #0a58ca; }` and a project whose tests pass
+  When the owner says "hotfix: change the brand colour to #0b5ed7" and only that colour changes
+  Then the owner sees no message beyond the status line during the test run
+  And the change may be committed as one "hotfix:" commit holding only `src/styles/theme.css`
 
 - [ ] **Scenario: A message catalogue value passes when its placeholders are unchanged**
   Given `locales/en.json` with `"save": "Save {count} items"` and a project whose tests pass
@@ -232,6 +278,26 @@ An emergency change always leaves a record in the protected check records (writt
   Given a one-word wording change in `src/pages/home.html` and a project whose tests pass
   When the owner says "urgent: the Save button says Safe" and the session fixes the one word
   Then it is committed with a subject starting "hotfix:", no review item is created and the owner sees nothing extra
+
+- [ ] **Scenario: A wording fix with no hotfix word takes the fast path**
+  Given `src/pages/home.html` with the line `<button>Save</button>` and a project whose tests pass
+  When the owner says "the Save button should say Store" and uses none of the hotfix words
+  Then the CTO Chief judges it a likely hotfix without asking him, makes the edit and runs the hotfix check
+  And it is committed as one commit whose subject starts with "hotfix:" holding only `src/pages/home.html`
+  And the owner sees the status line while the tests run and the commit, and nothing else
+
+- [ ] **Scenario: A logic fix with no hotfix word goes to a normal plan before any edit**
+  Given `src/cart.js` where an empty cart shows a total of 1
+  When the owner says "the cart total is off by one when the cart is empty" and uses none of the hotfix words
+  Then no file is edited and the check is not run
+  And the owner reads one sentence that starts "I did not treat this as a hotfix because" and names program logic
+  And a normal plan for the request is started
+
+- [ ] **Scenario: A predicted hotfix that the check refuses goes to a normal plan with its edit in place**
+  Given `src/pages/home.html` with `<p>Only 9 euro a month</p>`
+  When the owner says "the page should say 7 euro a month" with none of the hotfix words, and the session edits the price because the change looks like visible text
+  Then the owner reads "I did not treat this as a hotfix because the wording in src/pages/home.html contains a number, a price, a web address or an e-mail address; it goes through a normal plan, and your edits stay in place, not committed."
+  And nothing is committed, the edit stays in place, and a normal plan for the request is started
 
 - [ ] **Scenario: Program logic is refused**
   Given `src/cart.js` where `if (items.length > 0)` is changed to `if (items.length >= 0)`
@@ -299,10 +365,53 @@ An emergency change always leaves a record in the protected check records (writt
   When the owner says "hotfix" for that change
   Then the owner reads the clause "I do not recognise docs/diagram.svg as wording or a colour"
 
+- [ ] **Scenario: A file format the owner removed is not recognised**
+  Given `src/components/SaveButton.vue` where `<button>Save</button>` is changed to `<button>Store</button>`
+  When the owner says "hotfix" for that change
+  Then the owner reads the clause "I do not recognise src/components/SaveButton.vue as wording or a colour"
+  And nothing is committed, the edit stays in place, and no test is run
+  And the same clause, naming the file, is given for a one-line wording or colour change in a file of each other removed format: `.svelte`, `.jsx`, `.tsx`, `.mdx`, `.rst`, `.scss`, `.sass`, `.less`, and a `.po` file inside `locales`
+
+- [ ] **Scenario: Text inside a component or custom element is refused**
+  Given `src/pages/home.html` with the line `<my-card>Save</my-card>`
+  When the owner says "hotfix" and the session changes the word to "Store"
+  Then the owner reads the clause "it changes src/pages/home.html in a way the check cannot read exactly, and only what it can read exactly qualifies"
+  And nothing is committed
+
+- [ ] **Scenario: Text inside an svg or math element is refused**
+  Given `src/pages/home.html` with the line `<svg><text>Save</text></svg>`
+  When the owner says "hotfix" and the session changes the word to "Store"
+  Then the owner reads the clause "it changes src/pages/home.html in a way the check cannot read exactly, and only what it can read exactly qualifies"
+  And the same clause is given when the text sits inside a `<math>` element
+
+- [ ] **Scenario: A plain HTML file outside the strict subset is refused whole**
+  Given `src/pages/home.html` that holds a `<div>` which is never closed, and `<p>Save</p>` on another line
+  When the owner says "hotfix" and the session changes only the word in that paragraph to "Store"
+  Then the owner reads the clause "it changes src/pages/home.html in a way the check cannot read exactly, and only what it can read exactly qualifies"
+  And nothing is committed, although the edited line is plain text
+
+- [ ] **Scenario: A Markdown heading whose anchor would change is refused**
+  Given `docs/guide.md` with the heading `## Getting started`
+  When the owner says "hotfix" and the session changes it to `## Getting going`
+  Then the owner reads the clause "it changes docs/guide.md in a way the check cannot read exactly, and only what it can read exactly qualifies"
+  And nothing is committed
+
+- [ ] **Scenario: A colour inside a longer value is refused**
+  Given `src/styles/button.css` with `.save { border: 1px solid #0a58ca; }`
+  When the owner says "hotfix" and only that colour changes to `#0b5ed7`
+  Then the owner reads the clause "it changes src/styles/button.css in a way the check cannot read exactly, and only what it can read exactly qualifies"
+  And nothing is committed
+
 - [ ] **Scenario: The owner's explicit order to skip planning is not judged**
   Given a change of 300 lines across 12 files
   When the owner says "skip planning" and no other escape word
   Then the check is not run and the session proceeds as it does today
+
+- [ ] **Scenario: How many fixes took the fast path can be counted**
+  Given three fixes judged by the check, two that passed and one refused for program logic
+  When the check's log is read
+  Then it holds three lines, two with the verdict "hotfix" and one with the verdict "refused" and its cause
+  And no line holds a file name or any wording from the change
 
 - [ ] **Scenario: An urgent change that is too big for a hotfix goes ahead and waits for review**
   Given the owner says "urgent: checkout crashes when the cart is empty" and the session's fix changes 40 lines in 4 files, with logic in `src/cart.js`, and the affected tests pass
@@ -354,8 +463,10 @@ An emergency change always leaves a record in the protected check records (writt
 - The fixed refusal sentences and clauses, one per cause. Covers the refusal scenarios.
 - The meaning of the phrases kept in the one phrase list: the small family is judged, "urgent" opens the emergency path, the two skip phrases stay unjudged. Covers the urgent and skip scenarios.
 - The emergency path, its record in the protected check records, its review item with two answers and the one question about stored data. Covers the emergency and review scenarios.
+- The CTO Chief's judgement of every fix or small change (the owner's requirement of 2026-10-08): its own instructions in `agents/coordinator/cto-chief.md` (held by the compaction inventory `tests/compaction-eval/cto-chief/rule-inventory.json`), the menu's instruction file, and the lessons block every session reads. Covers the three no-word scenarios.
+- One log line for every final verdict of the check, so the fast path and the refusals can be counted. Covers the counting scenario.
 - The instructions that make the session run the check: the file every session reads in a CTOC project, the menu's instruction file, the routing reminder text and `docs/ENFORCEMENT.md`.
-- Tests that build temporary git repositories, a corpus of at least 40 edit shapes (half of them traps for the classifier), Windows line endings and backslash paths.
+- Tests that build temporary git repositories, a corpus of at least 40 edit shapes (half of them traps for the classifier), Windows line endings and backslash paths. Since the owner's decision of 2026-10-09 the corpus holds one file of every removed format, each answered as not recognised, and one trap for each refusal of that decision: text in a component or custom element, text inside `<svg>` and inside `<math>`, an HTML file outside the strict subset, a Markdown heading whose anchor changes, and a colour that is not the whole value of a colour property. Covers the scenarios of the owner's decision of 2026-10-09.
 - The owner's decision of 2026-10-07 (below): the one loaded hook, `src/hooks/protect-records.js`, refuses a `git commit` whose message starts with "hotfix:" or "emergency:" unless a passing hotfix check record exists for exactly the staged change (bound to the staged content and the commit it builds on). Every passing check writes that record in the protected check records under `.ctoc/state/verify/`, which agents cannot write; only the menu's `hotfix check` route writes it.
 
 ### Out of Scope (this plan only; each item is the owner's to schedule, and none is deferred by this plan)
@@ -366,6 +477,9 @@ An emergency change always leaves a record in the protected check records (writt
 - Changing the zero-test pass in `runSmartTests` that the plan `affected-tests-while-building-whole-suite-before-push.md` describes. The hotfix run refuses a zero-test pass itself.
 - Making the limits (20 lines and 3 files for a hotfix, 200 lines and 10 files for an emergency) settings. They are fixed values in the check; changing them is a normal plan.
 - Staged rollout, canaries or rollback in the owner's own project. CTOC does not deploy.
+- A menu route that judges a described change before it is edited. The CTO Chief's prediction decides only whether to try; the check judges the actual change (decision 20).
+- A menu view of the fast-path counts. The log can be read and counted today; a view is a small addition if the owner wants one.
+- The hotfix fast path for Vue, Svelte, JSX, TSX, MDX, reStructuredText, Sass, Less and gettext files, removed by the owner's decision of 2026-10-09. The check does not recognise them and their changes go through the normal build loop. Whether any of them returns, with a reader that matches its real compiler, is the owner's decision.
 
 ## Risks
 
@@ -373,7 +487,7 @@ An emergency change always leaves a record in the protected check records (writt
 - **The classifier mistakes a code change for text** (template expressions, text inside script or style blocks, entity-encoded characters, a text node whose edit crosses a tag, a multi-line text node) and passes an unsafe change.
   - Likelihood: MEDIUM
   - Impact: HIGH
-  - Mitigation: Write the corpus of at least 40 edit shapes, half of them traps, as failing tests before the classifier exists; treat anything not positively recognised as a refusal.
+  - Mitigation: Write the corpus of at least 40 edit shapes, half of them traps, as failing tests before the classifier exists; treat anything not positively recognised as a refusal; and, by the owner's decision of 2026-10-09, read only the formats the check can read exactly, so no component, Sass or Less file ever reaches the classifier.
 - **The test run is slow.** This repository's whole gated suite has over 500 test files and its framework detection reports no framework, so by the existing plan's reading the whole suite runs. A hotfix would feel like grinding.
   - Likelihood: HIGH for this repository
   - Impact: MEDIUM
@@ -394,12 +508,16 @@ An emergency change always leaves a record in the protected check records (writt
   - Likelihood: LOW
   - Impact: MEDIUM
   - Mitigation: Keep the sensitive-word list in one place, review it against the owner's real project folders at first live use, and extend it through a normal plan.
+- **The CTO Chief predicts too eagerly** and edits files that the check then refuses, outside any plan.
+  - Likelihood: MEDIUM
+  - Impact: LOW
+  - Mitigation: The prediction names only the four kinds of the hotfix test, so an eager prediction edits a wording or colour file at worst; the refusal leaves the edit in place for the normal plan; the refusal counts in the log show how often it happens.
 
 ### Business Risks
-- **Too strict.** Real hotfixes are refused so often that the owner says "skip planning" instead, which nothing checks.
+- **Too strict.** Real hotfixes are refused so often that the owner says "skip planning" instead, which nothing checks. The owner's decision of 2026-10-09 accepts this cost knowingly for the formats it removed: a project written in Vue, Svelte, JSX, TSX, MDX, reStructuredText, Sass, Less or gettext gets a normal plan for every change in those files.
   - Likelihood: MEDIUM
   - Impact: MEDIUM
-  - Mitigation: Count refusals by cause from the first live uses and show the counts in the build record; loosen a rule only when the counts show its cause was wrong.
+  - Mitigation: Count refusals by cause in the check's log from the first live uses and show the counts in the build record; loosen a rule only when the counts show its cause was wrong.
 - **The emergency path becomes routine.** DORA counts a hotfix as a failure of an earlier change (secondary), so a rising number is a signal.
   - Likelihood: MEDIUM
   - Impact: MEDIUM
@@ -408,12 +526,20 @@ An emergency change always leaves a record in the protected check records (writt
   - Likelihood: MEDIUM
   - Impact: LOW
   - Mitigation: State the narrow reading in plain words at his approval and widen by kind only with evidence from refusals.
+- **A hotfix is committed without the owner asking for that commit.** CTOC's own `CLAUDE.md` says commits wait for an explicit request.
+  - Likelihood: LOW
+  - Impact: LOW
+  - Mitigation: The owner's requirement of 2026-10-08 is that request, for "hotfix:" commits the check passed and nothing else (decision 19); each is one commit that one revert undoes, and pushing stays his decision.
 
 ### Dependency Risks
 - **A commit that does not carry the label is not stopped.** CTOC's other hooks stay hidden, so nothing starts the check by itself. The one loaded hook refuses only a commit labelled "hotfix:" or "emergency:" without a passing check, and it reads the label from the command; a session that never labels its commit, or labels it falsely, is not caught.
   - Likelihood: MEDIUM
   - Impact: HIGH
-  - Mitigation: Put the instruction in the file every session reads and in the menu's instruction file, label commits "hotfix:" and "emergency:" so they can be found, and refuse a labelled commit without a passing check in the one loaded hook (the owner's decision below).
+  - Mitigation: Put the instruction in the CTO Chief, in the file every session reads and in the menu's instruction file, label commits "hotfix:" and "emergency:" so they can be found, and refuse a labelled commit without a passing check in the one loaded hook (the owner's decision below).
+- **A session that never opened the menu** sees only the one sentence in the lessons block: it can take the fast path for wording or colour, but it does not know the emergency path or the rest of the recipe, and whether Claude Code sets `CLAUDE_PLUGIN_ROOT` in the session's shell, so that the session can find the menu, is not verified.
+  - Likelihood: MEDIUM
+  - Impact: LOW
+  - Mitigation: Such a session plans instead, which is the conservative failure; the loaded hook's refusal of an unchecked "hotfix:" commit names the menu's real path; slice 4's build observes and records whether the variable is set.
 - **Git must be installed and the folder must be a repository.**
   - Likelihood: LOW
   - Impact: LOW
@@ -431,7 +557,7 @@ An emergency change always leaves a record in the protected check records (writt
 
 **Priority: HIGH** (Score: 7/9)
 - Dependency: MEDIUM (2) -- nothing depends on it, and it overlaps the test-selection plan only at the zero-test pass.
-- Business Impact: HIGH (3) -- today a single word skips every review for any change, and the owner asked for the check by name.
+- Business Impact: HIGH (3) -- today a single word skips every review for any change, and the owner asked for the check by name and, on 2026-10-08, for the CTO Chief to use it on every fix.
 - Technical Risk: MEDIUM (2) -- classifying edits is moderate work; the risk is a wrong pass, handled by refusing everything unrecognised.
 
 ## The owner's decision (2026-10-07)
@@ -442,9 +568,24 @@ An emergency change always leaves a record in the protected check records (writt
 
 The earlier alternative, a refusal at `/ctoc:push`, is dropped. What the rule cannot catch: a commit that does not carry the label, or carries a false one.
 
+## The owner's requirement (2026-10-08)
+
+> "is the hotfix agent implemented? the CTO chief should always check whehter a fix can be a hotfix t ospeed up development or not"
+
+**Is it built:** no. None of the four slices of this plan is built; all four wait in `plans/implementation/`.
+
+**What it changes:**
+
+1. **Who starts the check.** The CTO Chief, for every request to fix or change something small, without being told and without asking the owner. The escape words keep working as before.
+2. **The prediction.** Before editing, the CTO Chief predicts from the request whether the change fits the hotfix test: it changes nothing but prose in Markdown or plain text, visible text in plain HTML pages, message-catalogue values in JSON, YAML or properties files, or colours in plain CSS stylesheets (the formats named in rule 4 since the owner's decision of 2026-10-09); at most 3 files and 20 changed lines; no sensitive word of rule 5 in any path; no test file; and no file a build in progress declares. A plausible fit is edited and checked; a plain misfit is planned without an edit, with one sentence saying why. A prediction never replaces the check: only a passing check makes a change a hotfix, and the loaded hook still refuses a "hotfix:" commit without one.
+3. **Where it is written.** The CTO Chief's own instructions (`agents/coordinator/cto-chief.md`, a new section "Fixes and small changes — the hotfix fast path", with its two Step 6.5 sentences about escape phrases rewritten to match, recorded in its compaction inventory), the menu's instruction file (`src/commands/start.md`), and one sentence in lesson 3 of the lessons block every session reads ("No ad-hoc edits to plan-covered files" gains its exceptions). Slice 4 carries all of them.
+4. **No new code for the prediction.** Before the edit there is no change to read, only a description, and judging a description is the unrepeatable model judgement the check exists to replace. The check's first call already answers instantly, without a test run, so a refused edit costs only the edit, which stays in place for the normal plan.
+5. **Measured.** Every final verdict of the check appends one line to `.ctoc/logs/hotfix-checks.jsonl`: the verdict ("hotfix", "refused" or, from slice 3, "emergency"), its cause, whether "urgent" was given, and the numbers of files and changed lines; no file name and no wording. Slice 1 writes it; slice 3 adds the emergency outcomes. The fast path is the "hotfix" lines. Fixes the CTO Chief planned without editing never reach the check and are not counted.
+6. **Unchanged.** The eight rules and their clauses, the emergency path (opened only by the owner's "urgent"; the CTO Chief never declares an emergency itself), the hook rule of the owner's decision of 2026-10-07, and the review item.
+
 ## Decisions Taken Under Ambiguity
 
-1. **What "etc." covers**: chose wording (documentation, markup text, message catalogue values) and colour values, because the owner's examples are exactly those and the research puts logic, settings and the other kinds on the dangerous side. One-line bug fixes get a normal plan unless the owner says "urgent".
+1. **What "etc." covers**: chose wording (documentation, markup text, message catalogue values) and colour values, because the owner's examples are exactly those and the research puts logic, settings and the other kinds on the dangerous side. One-line bug fixes get a normal plan unless the owner says "urgent". The formats are narrowed to the ones the check can read exactly by decision 26.
 2. **A check, not an agent**: chose a deterministic check because an agent's risk opinion is unrepeatable, adds time, and a wrong refusal is cheap. It flips to one agent for the single text-in-code question only if refusals of real text edits prove frequent.
 3. **Settings never qualify**, although the research brief listed a configuration value as commonly low risk, because Google's own experience is that a majority of incidents come from binary or configuration pushes (research point 3).
 4. **The limits**: 3 files and 20 changed lines for a hotfix; 10 files and 200 changed lines for an emergency. The hotfix numbers are chosen, not derived: the owner's examples are one to four lines. The emergency number comes from the review-size evidence (secondary, unverified against the original). Only a normal plan changes them.
@@ -462,8 +603,22 @@ The earlier alternative, a refusal at `/ctoc:push`, is dropped. What the rule ca
 16. **Contrast is not computed**, because one changed line does not show the other colour of the pair; the cost is stated as a risk.
 17. **The commit subject prefixes "hotfix:" and "emergency:"** are a naming convention so the owner can find them in the history he already has, and, since the owner's decision of 2026-10-07, the label the loaded hook reads.
 18. **Plan level only**: this plan names no new file or module; the implementation planner chooses them and keeps the route reachable from the menu in the same unit of work.
+19. **The owner's requirement of 2026-10-08 is the advance authorisation of the standard change** (research point 1): the CTO Chief applies the hotfix test to every fix without asking, and a fix the check passes is committed without a further question. That is the owner's explicit request for "hotfix:" commits; it covers no other commit, and pushing stays his decision.
+20. **The prediction is written instructions, not new code.** A route that judged a request before the edit would judge a description, not a change; the check already answers its fast rules instantly after the edit. What would change this: refusal counts in the log showing that predictions miss often, which is fixed by tightening the instructions first.
+21. **The CTO Chief never declares an emergency change itself.** Only the owner's "urgent" adds the urgent option; a change the CTO Chief judged on its own and the check refused goes through a normal plan, because the emergency path rests on the owner's own authority to approve a fast route.
+22. **The instruction every session reads is one sentence added to lesson 3**, naming the exceptions to "No ad-hoc edits to plan-covered files": "skip planning", "skip iron loop", and a wording or colour fix committed as "hotfix:" once the check passes it. `CLAUDE.md` is held at or under 15,000 bytes and had 29 bytes of room at its last recorded measurement, so the sentence is paid for by removing the sentence of CTOC's own `CLAUDE.md` that listed the seven escape phrases (the two skip phrases move into lesson 3; the full recipe lives in the CTO Chief and the menu's instructions). A paragraph of its own does not fit.
+23. **Measurement is one log line per final verdict**, written by the check route: no file name and no wording, because a count needs neither. A check run twice on the same change is counted twice; fixes planned without an edit are not counted, because nothing records them without new code.
+24. **On the fast path the owner sees the status line while the tests run and the commit** (decision 11 stands), because the test run can be long.
+25. **The fast path is not taken for a file that a build in progress declares**, because the hotfix edit and the build would change the same file at once; such a fix goes through a plan.
+26. **Only the formats the check can read exactly qualify** (the owner's decision of 2026-10-09, answer "a"). His reason: five rounds of security attacks with real runs found new ways to get a behaviour change committed as a hotfix, the last in Vue, MDX, reStructuredText and Less, where a reader written by hand disagrees with the real compiler, and a hotfix skips the normal review. So the kinds of decision 1 now exist only in `.html`, `.htm`, `.css`, `.json`, `.yaml`, `.yml`, `.properties`, `.md` and `.txt`; a colour qualifies only on a real colour property, or in a custom property whose name contains `color` or `colour`, as the whole value. The cost is that a project written in the removed formats gets a normal plan for each change in them; the log's refusal counts show how often (the risk "Too strict").
+27. **Text inside a component or custom element never qualifies** (session decision, 2026-10-09, under decision 26), because that text is handed to a program that may use it for anything, which no check can read; it is the reasoning of decision 5, applied to a page.
+28. **Text inside `<svg>` and `<math>` never qualifies** (session decision, 2026-10-09, under decision 26), because those two embed other languages in the page and the check reads plain HTML only.
+29. **A plain HTML file outside a strict, well-formed subset is refused whole** (session decision, 2026-10-09, under decision 26), wherever the edit is in the file and however small it is: a file the check cannot read exactly cannot be trusted to say which characters are text. The implementation plan defines the subset and keeps it small; whatever it does not positively recognise is outside it.
+30. **A Markdown heading qualifies only when its generated anchor stays the same** (session decision, 2026-10-09, under decision 26), because links to a heading point at its anchor and the check cannot read the links elsewhere in the project. The implementation plan names the anchor rule it follows. Other prose in Markdown and plain text is not affected by this decision.
+31. **One new clause for the refusals of decisions 26 to 30 that are not a removed format**: "it changes {file} in a way the check cannot read exactly, and only what it can read exactly qualifies". The clause "I do not recognise {file} as wording or a colour" says the file is not known, which is untrue of an HTML, CSS or Markdown file the check does read; a removed format gets the "do not recognise" clause, as the owner said. What would change this: if he wants no new sentence, the "do not recognise" clause serves for all, and the five scenarios that use the new clause change by that clause only.
 
 ## Neighbours (seen, not built here; scheduling is the owner's)
 
 - `plans/functional/affected-tests-while-building-whole-suite-before-push.md` describes the zero-test passes in `runSmartTests`. If that plan is built first, the hotfix run can use its result; if not, the hotfix run still refuses a zero-test pass on its own.
 - `plans/functional/ctocs-hooks-are-actually-loaded-by-claude-code.md` (written 2026-09-30) would load the edit hooks. The owner's decision of 2026-10-07 keeps them hidden. If they are ever loaded, the edit hook would still allow an edit on any phrase, and this check at commit time would remain the judgement. Whether that earlier plan stands is his call.
+- `plans/implementation/the-manual-and-the-docs-stop-claiming-what-ctoc-no-longer-does.md` also changes `agents/coordinator/cto-chief.md` (other orders), its compaction inventory, `src/commands/start.md` and `CLAUDE.md`. Plans that touch the same file build one at a time; whichever builds second starts from the other's text.
