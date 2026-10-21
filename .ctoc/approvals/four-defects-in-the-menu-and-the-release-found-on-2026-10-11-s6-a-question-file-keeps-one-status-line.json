@@ -1,0 +1,10 @@
+{
+  "content_sha256": "5c51a21986bceecea9b14b3b597cfc45ff43eda5555a6e3203f01672d94fd014",
+  "hash_scope": "specification",
+  "stage_from": "review",
+  "stage_to": "done",
+  "approved_at": "2026-10-12T15:12:54.385Z",
+  "advanced_by": "pipeline",
+  "evidence": "evidence: review→done — checks passed, recorded 2026-10-12T11:03:36.205Z in .ctoc/state/verify/four-defects-in-the-menu-and-the-release-found-on-2026-10-11-s6-a-question-file-keeps-one-status-line.json (VERIFY passed — ran: lint, typecheck, tests); coverage 99.88% against a floor of 99%, 0 skipped; every required step 8–16 is checked in the plan, including REVIEW, SECURE and FINAL-REVIEW (checked by the build itself); questions: none were stored; crossed on evidence, not approved by the human",
+  "plan_basename": "four-defects-in-the-menu-and-the-release-found-on-2026-10-11-s6-a-question-file-keeps-one-status-line"
+}

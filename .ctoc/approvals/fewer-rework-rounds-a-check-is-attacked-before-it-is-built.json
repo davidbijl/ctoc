@@ -1,0 +1,9 @@
+{
+  "content_sha256": "531c2e36fe02815d3a032a93abd23a7df89fa32b574b012c6ca8de7e5474bafe",
+  "hash_scope": "specification",
+  "stage_from": "functional",
+  "stage_to": "implementation",
+  "approved_at": "2026-10-10T09:25:22.545Z",
+  "approved_by": "human",
+  "plan_basename": "fewer-rework-rounds-a-check-is-attacked-before-it-is-built"
+}

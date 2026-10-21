@@ -1,0 +1,9 @@
+{
+  "content_sha256": "24225c2dc2d8a2e25d1f98cb50da1f4fdcf2124c19af6bdb956d89f221d31c2c",
+  "hash_scope": "specification",
+  "stage_from": "review",
+  "stage_to": "done",
+  "approved_at": "2026-10-18T12:22:00.170Z",
+  "approved_by": "human",
+  "plan_basename": "four-defects-in-the-menu-and-the-release-found-on-2026-10-11-s11-ladder-tests-use-non-build-tasks"
+}

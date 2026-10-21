@@ -1,0 +1,9 @@
+{
+  "content_sha256": "e112b8191ae4eff1c0a748ab35d46076f733d4cfccfd3366d2860a29f3c52c8f",
+  "hash_scope": "specification",
+  "stage_from": "review",
+  "stage_to": "done",
+  "approved_at": "2026-10-18T12:22:01.161Z",
+  "approved_by": "human",
+  "plan_basename": "four-defects-in-the-menu-and-the-release-found-on-2026-10-11-s18-a-task-next-action-is-a-plain-read-only-route"
+}

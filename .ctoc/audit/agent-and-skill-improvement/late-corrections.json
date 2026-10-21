@@ -2371,6 +2371,1238 @@
         "covered_by": ".ctoc/audit/improvement-run-notes/s5-npm-test-final.md (the fifth end-of-slice run, s5-npm-test-final-5.out, on agent sha256:357b4c701da3e5ee0fefa3bbe8858a7eb784a3e309d1d9a55837a76ca6563b92 and skill sha256:9ebb12d21c2c3342964913a98fe8e6546a47195ff1b49bb618896ede021fd033). Written before that run because the run's own record check reads this field; had the run failed it would read fail (plan decision 43)."
       },
       "validated_by": "d-s5-step10-return-revalidate (citation-validator, on its second read, current line numbers): the mktemp sentence, the collection-block prose, the keycap pattern and its repository result, and the three-shell and live runs of the 50-second form VERIFIED. Its three open items were sourced afterwards: \"with and without --pcre2\" by the executor's note s5-second-step10-return-executor.md (pointer added); the -q form's run by the session note s5-skill-round3-session-runs.md, \"After the second return\" (the promise replaced by the result); and what -q does by curl's manual, quoted in s5-curl-q-manual.md (the validator had no fetch left). The quiet re-read (d-s5-step10-return-revalidate-2, over unchanging files) is the one that counts; the first read overlapped the second return's edits. On the agent it examined 21 claims: 19 VERIFIED or carried over as verified (the curl manual sentence also on curl.se), 1 MISATTRIBUTED — the bash -n and zsh -n check of the -q form pointed to the session note instead of the executor note, corrected by its leftover 1 — and 1 left as labelled (\"observed, not documented\", the symbolic-link sentence)."
+    },
+    {
+      "id": "lc-s6-agent-1",
+      "path": "agents/architecture/dependency-analyzer.md",
+      "date": "2026-10-05",
+      "found_by": {
+        "path": "skills/architecture/dependency-analyzer/SKILL.md",
+        "round": 2
+      },
+      "source": {
+        "url": "skills/architecture/dependency-analyzer/SKILL.md",
+        "quote": "If no TypeScript, JavaScript, Python, Java, C#, Go, Rust or PHP file remains, report \"no source files found\" with the globs used, name the C, C++ and SQL files found, if any, and give no count and no score"
+      },
+      "before": "If no file remains, stop: report \"no source files found\" with the globs used, and never\nreport \"no cycles\" or a score for an empty graph.\nAlso run Glob(\"**/*.{c,h,cc,cpp,hpp,sql}\"); if it finds files, list those languages under\n\"Limits of this run\" as present but not analyzed.",
+      "after": "Also run Glob(\"**/*.{c,h,cc,cpp,hpp,sql}\"); if it finds files, list those languages under\n\"Limits of this run\" as present but not analyzed.\n\nIf no file from globs 1 to 7 remains, stop: report \"no source files found\" with the globs\nused, name the C, C++ and SQL files the last glob found, if any, and report no count and\nno score. Never report \"no cycles\" for an empty graph.",
+      "validator_verdict": "VALIDATED",
+      "applied": true,
+      "not_applied_because": null,
+      "for_the_human_id": "h-s6-skill-r2-agent-gaps-closed-in-the-skill",
+      "fences": [
+        {
+          "test": "tests/agent-and-skill-improvement-record.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-contract-load.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-dispatch-resolution.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-honest-status-fence.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-layer-reachability.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-model-floor.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-modernization.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-resolver.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-shared-not-dispatchable.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-slots.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/architecture-invariants.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/compliance-claims-match-code.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/compliance-seam-is-executable.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/corpus-audit-ledger.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/cto-chief-toplevel.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/cu5-wrapper-coverage-completeness.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/export-reachability.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/gate-numbers-fence.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/instruction-surfaces-say-the-moment.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/iron-loop-enforcer.test.js",
+          "result": "fail",
+          "note": "Three subtests fail on the block finding gate-destinations-approved, raised by plans/implementation/agent-tool-grants.md, which another build wrote on 2026-10-05 and which is not approved into the implementation stage; this slice's edits do not cause it. Every other subtest of the file passes."
+        },
+        {
+          "test": "tests/no-model-optimized-for.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/no-tier-3.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/reachability-surface-scan-is-linear.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/reachability.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/readme-numbers.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/refinement-loop-claims-match-code.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/registry-integrity.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/session-start-hook.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/session-start-question-dispatch.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/skill-loading.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/streaming-render.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/tier1-no-peer-dispatch.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/unexecutable-instruction-fence.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/w10-live-agent-reconcile.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/watcher-shape.test.js",
+          "result": "pass"
+        }
+      ],
+      "full_gate": {
+        "command": "npm test",
+        "result": "fail",
+        "note": "npm test on 2026-10-05 over the agent at sha256:be621e789a58f4f64f5a6b8c66d24b53620dc551455ddf9ca2a7db6ccc330a33 and the skill at sha256:0abe7ee89ac3c3b02ce150730b59a709ffbf93adf53fe9dcf8e843066e7fe9c9: 12,071 tests, 12,068 passed, 3 failed, 0 skipped; coverage 99.89% against 99; offline claims ledger PASS. The three failures are the gate-destinations-approved block finding from plans/implementation/agent-tool-grants.md, not caused by this slice. The end-of-slice npm test will be recorded here when it runs."
+      },
+      "fingerprints": {
+        "before": "sha256:4a101c93f2e34e5cfcffe8beb6baf0a39587e3ab28019b12cc6f9984ba86c286",
+        "after": "sha256:be621e789a58f4f64f5a6b8c66d24b53620dc551455ddf9ca2a7db6ccc330a33"
+      },
+      "found_by_dispatches": [
+        "d-s6-skill-r2-critic",
+        "d-s6-skill-r2-validate",
+        "d-s6-skill-r2-revalidate"
+      ]
+    },
+    {
+      "id": "lc-s6-agent-2",
+      "path": "agents/architecture/dependency-analyzer.md",
+      "date": "2026-10-05",
+      "found_by": {
+        "path": "skills/architecture/dependency-analyzer/SKILL.md",
+        "round": 2
+      },
+      "source": {
+        "url": "https://docs.python.org/3/reference/lexical_analysis.html",
+        "quote": "Comments are ignored by the syntax."
+      },
+      "before": "For every import the script records the importing file, the line number, the specifier, and the kind:",
+      "after": "Outside Python, whose files `ast` parses and whose comments \"are ignored by the syntax\" (Python language reference, section 2.1.3 Comments, https://docs.python.org/3/reference/lexical_analysis.html, read 2026-10-05), the script skips comments and the inside of string and template literals, apart from the specifier of the import it is reading, so that a commented-out `import`, `require`, `using` or `use` never becomes an edge. For every import the script records the importing file, the line number, the specifier, and the kind:",
+      "validator_verdict": "VALIDATED",
+      "applied": true,
+      "not_applied_because": null,
+      "for_the_human_id": "h-s6-skill-r2-agent-gaps-closed-in-the-skill",
+      "fences": [
+        {
+          "test": "tests/agent-and-skill-improvement-record.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-contract-load.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-dispatch-resolution.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-honest-status-fence.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-layer-reachability.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-model-floor.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-modernization.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-resolver.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-shared-not-dispatchable.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-slots.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/architecture-invariants.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/compliance-claims-match-code.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/compliance-seam-is-executable.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/corpus-audit-ledger.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/cto-chief-toplevel.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/cu5-wrapper-coverage-completeness.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/export-reachability.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/gate-numbers-fence.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/instruction-surfaces-say-the-moment.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/iron-loop-enforcer.test.js",
+          "result": "fail",
+          "note": "Three subtests fail on the block finding gate-destinations-approved, raised by plans/implementation/agent-tool-grants.md, which another build wrote on 2026-10-05 and which is not approved into the implementation stage; this slice's edits do not cause it. Every other subtest of the file passes."
+        },
+        {
+          "test": "tests/no-model-optimized-for.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/no-tier-3.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/reachability-surface-scan-is-linear.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/reachability.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/readme-numbers.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/refinement-loop-claims-match-code.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/registry-integrity.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/session-start-hook.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/session-start-question-dispatch.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/skill-loading.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/streaming-render.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/tier1-no-peer-dispatch.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/unexecutable-instruction-fence.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/w10-live-agent-reconcile.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/watcher-shape.test.js",
+          "result": "pass"
+        }
+      ],
+      "full_gate": {
+        "command": "npm test",
+        "result": "fail",
+        "note": "npm test on 2026-10-05 over the agent at sha256:be621e789a58f4f64f5a6b8c66d24b53620dc551455ddf9ca2a7db6ccc330a33 and the skill at sha256:0abe7ee89ac3c3b02ce150730b59a709ffbf93adf53fe9dcf8e843066e7fe9c9: 12,071 tests, 12,068 passed, 3 failed, 0 skipped; coverage 99.89% against 99; offline claims ledger PASS. The three failures are the gate-destinations-approved block finding from plans/implementation/agent-tool-grants.md, not caused by this slice. The end-of-slice npm test will be recorded here when it runs."
+      },
+      "fingerprints": {
+        "before": "sha256:4a101c93f2e34e5cfcffe8beb6baf0a39587e3ab28019b12cc6f9984ba86c286",
+        "after": "sha256:be621e789a58f4f64f5a6b8c66d24b53620dc551455ddf9ca2a7db6ccc330a33"
+      },
+      "found_by_dispatches": [
+        "d-s6-skill-r2-critic",
+        "d-s6-skill-r2-validate",
+        "d-s6-skill-r2-revalidate"
+      ]
+    },
+    {
+      "id": "lc-s6-agent-3",
+      "path": "agents/architecture/dependency-analyzer.md",
+      "date": "2026-10-05",
+      "found_by": {
+        "path": "skills/architecture/dependency-analyzer/SKILL.md",
+        "round": 2
+      },
+      "source": {
+        "url": "https://www.typescriptlang.org/docs/handbook/release-notes/typescript-5-0.html",
+        "quote": "TypeScript 5.0 adds support for both of these forms"
+      },
+      "before": "The kind is `type-only` only for a declaration-level `import type { … } from '…'` or `export type { … } from '…'`;",
+      "after": "The kind is `type-only` only for a declaration-level `import type { … } from '…'`, `export type { … } from '…'`, `export type * from '…'` or `export type * as ns from '…'`;",
+      "validator_verdict": "VALIDATED",
+      "applied": true,
+      "not_applied_because": null,
+      "for_the_human_id": "h-s6-skill-r2-agent-gaps-closed-in-the-skill",
+      "fences": [
+        {
+          "test": "tests/agent-and-skill-improvement-record.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-contract-load.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-dispatch-resolution.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-honest-status-fence.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-layer-reachability.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-model-floor.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-modernization.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-resolver.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-shared-not-dispatchable.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-slots.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/architecture-invariants.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/compliance-claims-match-code.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/compliance-seam-is-executable.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/corpus-audit-ledger.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/cto-chief-toplevel.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/cu5-wrapper-coverage-completeness.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/export-reachability.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/gate-numbers-fence.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/instruction-surfaces-say-the-moment.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/iron-loop-enforcer.test.js",
+          "result": "fail",
+          "note": "Three subtests fail on the block finding gate-destinations-approved, raised by plans/implementation/agent-tool-grants.md, which another build wrote on 2026-10-05 and which is not approved into the implementation stage; this slice's edits do not cause it. Every other subtest of the file passes."
+        },
+        {
+          "test": "tests/no-model-optimized-for.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/no-tier-3.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/reachability-surface-scan-is-linear.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/reachability.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/readme-numbers.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/refinement-loop-claims-match-code.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/registry-integrity.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/session-start-hook.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/session-start-question-dispatch.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/skill-loading.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/streaming-render.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/tier1-no-peer-dispatch.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/unexecutable-instruction-fence.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/w10-live-agent-reconcile.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/watcher-shape.test.js",
+          "result": "pass"
+        }
+      ],
+      "full_gate": {
+        "command": "npm test",
+        "result": "fail",
+        "note": "npm test on 2026-10-05 over the agent at sha256:be621e789a58f4f64f5a6b8c66d24b53620dc551455ddf9ca2a7db6ccc330a33 and the skill at sha256:0abe7ee89ac3c3b02ce150730b59a709ffbf93adf53fe9dcf8e843066e7fe9c9: 12,071 tests, 12,068 passed, 3 failed, 0 skipped; coverage 99.89% against 99; offline claims ledger PASS. The three failures are the gate-destinations-approved block finding from plans/implementation/agent-tool-grants.md, not caused by this slice. The end-of-slice npm test will be recorded here when it runs."
+      },
+      "fingerprints": {
+        "before": "sha256:4a101c93f2e34e5cfcffe8beb6baf0a39587e3ab28019b12cc6f9984ba86c286",
+        "after": "sha256:be621e789a58f4f64f5a6b8c66d24b53620dc551455ddf9ca2a7db6ccc330a33"
+      },
+      "found_by_dispatches": [
+        "d-s6-skill-r2-critic",
+        "d-s6-skill-r2-validate",
+        "d-s6-skill-r2-revalidate"
+      ]
+    },
+    {
+      "id": "lc-s6-agent-4",
+      "path": "agents/architecture/dependency-analyzer.md",
+      "date": "2026-10-05",
+      "found_by": {
+        "path": "skills/architecture/dependency-analyzer/SKILL.md",
+        "round": 2
+      },
+      "source": {
+        "url": "https://www.typescriptlang.org/docs/handbook/release-notes/typescript-5-0.html",
+        "quote": "cannot be used as a value because it was exported using 'export type'"
+      },
+      "before": "- Only a declaration-level `import type { … }`, or `export type { … } from` (Step 2), is type-only.",
+      "after": "- Only a declaration-level `import type { … }`, `export type { … } from`, `export type * from` or `export type * as ns from` (Step 2) is type-only. Of the two star forms, \"TypeScript 5.0 adds support for both of these forms\", and its example fails with \"cannot be used as a value because it was exported using 'export type'\" (TypeScript 5.0 release notes, section Support for `export type *`, https://www.typescriptlang.org/docs/handbook/release-notes/typescript-5-0.html, read 2026-10-05).",
+      "validator_verdict": "VALIDATED",
+      "applied": true,
+      "not_applied_because": null,
+      "for_the_human_id": "h-s6-skill-r2-agent-gaps-closed-in-the-skill",
+      "fences": [
+        {
+          "test": "tests/agent-and-skill-improvement-record.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-contract-load.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-dispatch-resolution.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-honest-status-fence.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-layer-reachability.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-model-floor.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-modernization.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-resolver.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-shared-not-dispatchable.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-slots.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/architecture-invariants.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/compliance-claims-match-code.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/compliance-seam-is-executable.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/corpus-audit-ledger.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/cto-chief-toplevel.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/cu5-wrapper-coverage-completeness.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/export-reachability.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/gate-numbers-fence.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/instruction-surfaces-say-the-moment.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/iron-loop-enforcer.test.js",
+          "result": "fail",
+          "note": "Three subtests fail on the block finding gate-destinations-approved, raised by plans/implementation/agent-tool-grants.md, which another build wrote on 2026-10-05 and which is not approved into the implementation stage; this slice's edits do not cause it. Every other subtest of the file passes."
+        },
+        {
+          "test": "tests/no-model-optimized-for.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/no-tier-3.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/reachability-surface-scan-is-linear.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/reachability.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/readme-numbers.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/refinement-loop-claims-match-code.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/registry-integrity.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/session-start-hook.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/session-start-question-dispatch.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/skill-loading.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/streaming-render.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/tier1-no-peer-dispatch.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/unexecutable-instruction-fence.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/w10-live-agent-reconcile.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/watcher-shape.test.js",
+          "result": "pass"
+        }
+      ],
+      "full_gate": {
+        "command": "npm test",
+        "result": "fail",
+        "note": "npm test on 2026-10-05 over the agent at sha256:be621e789a58f4f64f5a6b8c66d24b53620dc551455ddf9ca2a7db6ccc330a33 and the skill at sha256:0abe7ee89ac3c3b02ce150730b59a709ffbf93adf53fe9dcf8e843066e7fe9c9: 12,071 tests, 12,068 passed, 3 failed, 0 skipped; coverage 99.89% against 99; offline claims ledger PASS. The three failures are the gate-destinations-approved block finding from plans/implementation/agent-tool-grants.md, not caused by this slice. The end-of-slice npm test will be recorded here when it runs."
+      },
+      "fingerprints": {
+        "before": "sha256:4a101c93f2e34e5cfcffe8beb6baf0a39587e3ab28019b12cc6f9984ba86c286",
+        "after": "sha256:be621e789a58f4f64f5a6b8c66d24b53620dc551455ddf9ca2a7db6ccc330a33"
+      },
+      "found_by_dispatches": [
+        "d-s6-skill-r2-critic",
+        "d-s6-skill-r2-validate",
+        "d-s6-skill-r2-revalidate"
+      ]
+    },
+    {
+      "id": "lc-s6-agent-5",
+      "path": "agents/architecture/dependency-analyzer.md",
+      "date": "2026-10-05",
+      "found_by": {
+        "path": "skills/architecture/dependency-analyzer/SKILL.md",
+        "round": 2
+      },
+      "source": {
+        "url": ".ctoc/audit/improvement-run-notes/s6-skill-round2-revalidate-d-s6-skill-r2-revalidate.md",
+        "quote": "so \"Both quotes\" now has four quotes in view."
+      },
+      "before": "(Both quotes: https://www.typescriptlang.org/tsconfig/verbatimModuleSyntax.html, read 2026-10-01.)",
+      "after": "(Both `verbatimModuleSyntax` quotes: https://www.typescriptlang.org/tsconfig/verbatimModuleSyntax.html, read 2026-10-01.)",
+      "validator_verdict": "VALIDATED",
+      "applied": true,
+      "not_applied_because": null,
+      "for_the_human_id": "h-s6-skill-r2-agent-gaps-closed-in-the-skill",
+      "fences": [
+        {
+          "test": "tests/agent-and-skill-improvement-record.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-contract-load.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-dispatch-resolution.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-honest-status-fence.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-layer-reachability.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-model-floor.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-modernization.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-resolver.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-shared-not-dispatchable.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-slots.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/architecture-invariants.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/compliance-claims-match-code.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/compliance-seam-is-executable.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/corpus-audit-ledger.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/cto-chief-toplevel.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/cu5-wrapper-coverage-completeness.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/export-reachability.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/gate-numbers-fence.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/instruction-surfaces-say-the-moment.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/iron-loop-enforcer.test.js",
+          "result": "fail",
+          "note": "Three subtests fail on the block finding gate-destinations-approved, raised by plans/implementation/agent-tool-grants.md, which another build wrote on 2026-10-05 and which is not approved into the implementation stage; this slice's edits do not cause it. Every other subtest of the file passes."
+        },
+        {
+          "test": "tests/no-model-optimized-for.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/no-tier-3.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/reachability-surface-scan-is-linear.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/reachability.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/readme-numbers.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/refinement-loop-claims-match-code.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/registry-integrity.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/session-start-hook.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/session-start-question-dispatch.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/skill-loading.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/streaming-render.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/tier1-no-peer-dispatch.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/unexecutable-instruction-fence.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/w10-live-agent-reconcile.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/watcher-shape.test.js",
+          "result": "pass"
+        }
+      ],
+      "full_gate": {
+        "command": "npm test",
+        "result": "fail",
+        "note": "npm test on 2026-10-05 over the agent at sha256:be621e789a58f4f64f5a6b8c66d24b53620dc551455ddf9ca2a7db6ccc330a33 and the skill at sha256:0abe7ee89ac3c3b02ce150730b59a709ffbf93adf53fe9dcf8e843066e7fe9c9: 12,071 tests, 12,068 passed, 3 failed, 0 skipped; coverage 99.89% against 99; offline claims ledger PASS. The three failures are the gate-destinations-approved block finding from plans/implementation/agent-tool-grants.md, not caused by this slice. The end-of-slice npm test will be recorded here when it runs."
+      },
+      "fingerprints": {
+        "before": "sha256:4a101c93f2e34e5cfcffe8beb6baf0a39587e3ab28019b12cc6f9984ba86c286",
+        "after": "sha256:be621e789a58f4f64f5a6b8c66d24b53620dc551455ddf9ca2a7db6ccc330a33"
+      },
+      "found_by_dispatches": [
+        "d-s6-skill-r2-critic",
+        "d-s6-skill-r2-validate",
+        "d-s6-skill-r2-revalidate"
+      ]
+    },
+    {
+      "id": "lc-s6-agent-6",
+      "path": "agents/architecture/dependency-analyzer.md",
+      "date": "2026-10-05",
+      "found_by": {
+        "path": "skills/architecture/dependency-analyzer/SKILL.md",
+        "round": 2
+      },
+      "source": {
+        "url": "https://go.dev/ref/mod",
+        "quote": "A package path is the module path joined with the subdirectory containing the package (relative to the module root)."
+      },
+      "before": "Put every Go import whose path begins with the `module` path in `go.mod`,",
+      "after": "Put every Go import whose path equals the `module` path of a `go.mod` in the repository, or begins with that path followed by `/` (\"A package path is the module path joined with the subdirectory containing the package (relative to the module root).\", Go Modules Reference, https://go.dev/ref/mod, read 2026-10-05; so module `github.com/org/api` does not claim `github.com/org/api-client`),",
+      "validator_verdict": "VALIDATED",
+      "applied": true,
+      "not_applied_because": null,
+      "for_the_human_id": "h-s6-skill-r2-agent-gaps-closed-in-the-skill",
+      "fences": [
+        {
+          "test": "tests/agent-and-skill-improvement-record.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-contract-load.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-dispatch-resolution.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-honest-status-fence.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-layer-reachability.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-model-floor.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-modernization.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-resolver.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-shared-not-dispatchable.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-slots.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/architecture-invariants.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/compliance-claims-match-code.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/compliance-seam-is-executable.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/corpus-audit-ledger.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/cto-chief-toplevel.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/cu5-wrapper-coverage-completeness.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/export-reachability.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/gate-numbers-fence.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/instruction-surfaces-say-the-moment.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/iron-loop-enforcer.test.js",
+          "result": "fail",
+          "note": "Three subtests fail on the block finding gate-destinations-approved, raised by plans/implementation/agent-tool-grants.md, which another build wrote on 2026-10-05 and which is not approved into the implementation stage; this slice's edits do not cause it. Every other subtest of the file passes."
+        },
+        {
+          "test": "tests/no-model-optimized-for.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/no-tier-3.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/reachability-surface-scan-is-linear.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/reachability.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/readme-numbers.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/refinement-loop-claims-match-code.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/registry-integrity.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/session-start-hook.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/session-start-question-dispatch.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/skill-loading.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/streaming-render.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/tier1-no-peer-dispatch.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/unexecutable-instruction-fence.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/w10-live-agent-reconcile.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/watcher-shape.test.js",
+          "result": "pass"
+        }
+      ],
+      "full_gate": {
+        "command": "npm test",
+        "result": "fail",
+        "note": "npm test on 2026-10-05 over the agent at sha256:be621e789a58f4f64f5a6b8c66d24b53620dc551455ddf9ca2a7db6ccc330a33 and the skill at sha256:0abe7ee89ac3c3b02ce150730b59a709ffbf93adf53fe9dcf8e843066e7fe9c9: 12,071 tests, 12,068 passed, 3 failed, 0 skipped; coverage 99.89% against 99; offline claims ledger PASS. The three failures are the gate-destinations-approved block finding from plans/implementation/agent-tool-grants.md, not caused by this slice. The end-of-slice npm test will be recorded here when it runs."
+      },
+      "fingerprints": {
+        "before": "sha256:4a101c93f2e34e5cfcffe8beb6baf0a39587e3ab28019b12cc6f9984ba86c286",
+        "after": "sha256:be621e789a58f4f64f5a6b8c66d24b53620dc551455ddf9ca2a7db6ccc330a33"
+      },
+      "found_by_dispatches": [
+        "d-s6-skill-r2-critic",
+        "d-s6-skill-r2-validate",
+        "d-s6-skill-r2-revalidate"
+      ]
+    },
+    {
+      "id": "lc-s6-agent-7",
+      "path": "agents/architecture/dependency-analyzer.md",
+      "date": "2026-10-05",
+      "found_by": {
+        "path": "skills/architecture/dependency-analyzer/SKILL.md",
+        "round": 2
+      },
+      "source": {
+        "url": "https://doc.rust-lang.org/edition-guide/rust-2018/path-changes.html",
+        "quote": "You can use a relative path from the current scope, a path starting from an external crate name, or a path starting with `::`, `crate`, `super`, or `self`."
+      },
+      "before": "and name the language under \"Limits of this run\". Never classify them as external.",
+      "after": "and name the language under \"Limits of this run\". Never classify them as external. A Rust `use` can also begin with a name in the current scope (\"You can use a relative path from the current scope, a path starting from an external crate name, or a path starting with `::`, `crate`, `super`, or `self`.\", Rust Edition Guide, page Path and module system changes, section `use` paths, https://doc.rust-lang.org/edition-guide/rust-2018/path-changes.html, read 2026-10-05); this file cannot tell such a `use` of one of the crate's own modules from a `use` of another crate, so rule 9 makes it external, and the report says so under \"Limits of this run\".",
+      "validator_verdict": "VALIDATED",
+      "applied": true,
+      "not_applied_because": null,
+      "for_the_human_id": "h-s6-skill-r2-agent-gaps-closed-in-the-skill",
+      "fences": [
+        {
+          "test": "tests/agent-and-skill-improvement-record.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-contract-load.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-dispatch-resolution.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-honest-status-fence.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-layer-reachability.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-model-floor.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-modernization.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-resolver.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-shared-not-dispatchable.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-slots.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/architecture-invariants.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/compliance-claims-match-code.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/compliance-seam-is-executable.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/corpus-audit-ledger.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/cto-chief-toplevel.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/cu5-wrapper-coverage-completeness.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/export-reachability.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/gate-numbers-fence.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/instruction-surfaces-say-the-moment.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/iron-loop-enforcer.test.js",
+          "result": "fail",
+          "note": "Three subtests fail on the block finding gate-destinations-approved, raised by plans/implementation/agent-tool-grants.md, which another build wrote on 2026-10-05 and which is not approved into the implementation stage; this slice's edits do not cause it. Every other subtest of the file passes."
+        },
+        {
+          "test": "tests/no-model-optimized-for.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/no-tier-3.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/reachability-surface-scan-is-linear.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/reachability.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/readme-numbers.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/refinement-loop-claims-match-code.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/registry-integrity.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/session-start-hook.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/session-start-question-dispatch.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/skill-loading.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/streaming-render.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/tier1-no-peer-dispatch.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/unexecutable-instruction-fence.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/w10-live-agent-reconcile.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/watcher-shape.test.js",
+          "result": "pass"
+        }
+      ],
+      "full_gate": {
+        "command": "npm test",
+        "result": "fail",
+        "note": "npm test on 2026-10-05 over the agent at sha256:be621e789a58f4f64f5a6b8c66d24b53620dc551455ddf9ca2a7db6ccc330a33 and the skill at sha256:0abe7ee89ac3c3b02ce150730b59a709ffbf93adf53fe9dcf8e843066e7fe9c9: 12,071 tests, 12,068 passed, 3 failed, 0 skipped; coverage 99.89% against 99; offline claims ledger PASS. The three failures are the gate-destinations-approved block finding from plans/implementation/agent-tool-grants.md, not caused by this slice. The end-of-slice npm test will be recorded here when it runs."
+      },
+      "fingerprints": {
+        "before": "sha256:4a101c93f2e34e5cfcffe8beb6baf0a39587e3ab28019b12cc6f9984ba86c286",
+        "after": "sha256:be621e789a58f4f64f5a6b8c66d24b53620dc551455ddf9ca2a7db6ccc330a33"
+      },
+      "found_by_dispatches": [
+        "d-s6-skill-r2-critic",
+        "d-s6-skill-r2-validate",
+        "d-s6-skill-r2-revalidate"
+      ]
     }
   ]
 }

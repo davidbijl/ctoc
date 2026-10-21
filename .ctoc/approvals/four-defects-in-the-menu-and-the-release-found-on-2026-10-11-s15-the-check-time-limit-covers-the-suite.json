@@ -1,0 +1,10 @@
+{
+  "content_sha256": "ab31fc56dc148f3c5bf7163c4ece647fd6a2a08c0c79e7478c32fe0613cde263",
+  "hash_scope": "specification",
+  "stage_from": "review",
+  "stage_to": "done",
+  "approved_at": "2026-10-12T09:00:41.055Z",
+  "advanced_by": "pipeline",
+  "evidence": "evidence: review→done — checks passed, recorded 2026-10-11T19:20:22.007Z in .ctoc/state/verify/four-defects-in-the-menu-and-the-release-found-on-2026-10-11-s15-the-check-time-limit-covers-the-suite.json (VERIFY passed — ran: lint, typecheck, tests); coverage 99.88% against a floor of 99%, 0 skipped; every required step 8–16 is checked in the plan, including REVIEW, SECURE and FINAL-REVIEW (checked by the build itself); questions: none were stored; crossed on evidence, not approved by the human",
+  "plan_basename": "four-defects-in-the-menu-and-the-release-found-on-2026-10-11-s15-the-check-time-limit-covers-the-suite"
+}

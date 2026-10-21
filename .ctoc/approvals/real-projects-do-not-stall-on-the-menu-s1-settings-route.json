@@ -1,0 +1,10 @@
+{
+  "content_sha256": "e408b3017d86211ebae68c9060f6a00e6a54b6e0542e2681d9b7e622769c8a32",
+  "hash_scope": "specification",
+  "stage_from": "implementation",
+  "stage_to": "todo",
+  "approved_at": "2026-10-19T17:47:41.346Z",
+  "advanced_by": "sufficiency",
+  "evidence": "sufficiency: implementation/real-projects-do-not-stall-on-the-menu-s1-settings-route.md — 1 question(s) computed, 1 answered (q10-forgeable-approval-record-residual-r1792323794709); 0 unanswered, 0 blocking; attested by: not recorded; enough (no unanswered fork)",
+  "plan_basename": "real-projects-do-not-stall-on-the-menu-s1-settings-route"
+}
