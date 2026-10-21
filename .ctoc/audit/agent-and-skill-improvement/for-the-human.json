@@ -718,6 +718,210 @@
           "cons": "Findings stay free text, and the critic's Integration cap stays."
         }
       ]
+    },
+    {
+      "id": "h-s6-skill-r1-letter-and-critic-mode",
+      "date": "2026-10-05",
+      "path": "skills/architecture/dependency-analyzer/SKILL.md",
+      "round": 1,
+      "kind": "pinned-contract",
+      "evidence": "The triage-to-letter paragraph, the letter schema and the critic-mode section (baseline lines 351 to 409) describe a refinement loop that docs/REFINEMENT_LOOP.md lines 8 to 26 record as not running. The letter matches neither contract: not .ctoc/architecture/refinement-loop-schema.json, whose issue requires id, fingerprint, file, current_behaviour, expected_behaviour, observable_test_conditions and raised_by (its lines 50 to 59) and whose fingerprint is sha256(critic_id + file + line_range + finding_type)[:12] (line 67), against the skill's sha256(engine+file+line+kind)[:12]; and not the finding of .ctoc/architecture/dispatch-schema.yaml, whose required fields are [id, severity, type, file, message, confidence, citations] (line 141): the letter lacks 5 of the 7, and its confidence is lower-case. No running code checks either schema: src/lib/refinement-loop.js names the refinement-loop schema but its letter format has no live caller (docs/REFINEMENT_LOOP.md lines 16 to 19), and src/lib/v8-dispatcher.js, the only src/ module naming the dispatch schema, is on the unreachable list. Two values point at things that do not hold: the engine list includes jdeps, which has no option that finds cycles, and delta_to_baseline names .ctoc/baselines/dependency-graph.json, while the directory .ctoc/baselines/ does not exist. This round marked the three sections NOT RUNNING and stated the mismatches (f40, f41, f44); no field changed. This entry overlaps h-s6-agent-r3-structured-output-schema; the two answers need to agree. Source: .ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, \"For the owner\", with the evidence corrections of s6-skill-round1-validate-d-s6-skill-r1-validate.md, \"Final lists\".",
+      "options": [
+        {
+          "key": "delete-the-three-sections",
+          "label": "Delete the three sections and keep only the Markdown report, as the agent does",
+          "pros": "Nothing in the skill describes a mechanism that does not run, and there is no field list to keep in step with two schemas.",
+          "cons": "The machine-readable finding design leaves this file and must be written again if a consumer is wired."
+        },
+        {
+          "key": "keep-marked-not-running",
+          "label": "Keep them as this round leaves them, marked NOT RUNNING with the mismatches stated",
+          "pros": "No contract change; the design stays visible.",
+          "cons": "The skill keeps a letter that matches neither schema, with jdeps and an absent baseline file in it."
+        },
+        {
+          "key": "realign-to-dispatch-schema",
+          "label": "Realign the letter to .ctoc/architecture/dispatch-schema.yaml (kind to type, target_file to file, upper-case confidence, citations.evidence; tools in tags, cycle path and metrics in rationale, unresolved imports in self_assessment.unknowns)",
+          "pros": "One contract across agents; the agent's schema question can take the same answer.",
+          "cons": "Changes what another agent would read; the schema's only consumer is unreachable, so no running code checks it."
+        },
+        {
+          "key": "extend-shared-schema",
+          "label": "Extend the shared dispatch schema with optional dependency fields and point the letter at it",
+          "pros": "Dependency-specific fields live in a schema every agent shares.",
+          "cons": "Changes a contract every agent uses and needs its own approved change; still unchecked by running code."
+        }
+      ],
+      "recommended": {
+        "key": "delete-the-three-sections",
+        "reason": "The highest-quality file states only what runs. A letter that no code writes or reads, matching neither schema and naming a tool and a baseline file that do not hold, can only mislead a reader; the wrapper agent already reports in Markdown, so deleting makes the pair agree. A machine-readable contract is better designed once, for both files, when a consumer exists (the open question h-s6-agent-r3-structured-output-schema), than kept here as an unchecked second design."
+      }
+    },
+    {
+      "id": "h-s6-skill-r1-categories-without-a-source",
+      "date": "2026-10-05",
+      "path": "skills/architecture/dependency-analyzer/SKILL.md",
+      "round": 1,
+      "kind": "pinned-contract",
+      "evidence": "Three kind values rest on a cut-off no source gives (round-1 research, unsourceable; Martin gives no threshold, settled in the agent's record): high_efferent_coupling (Ce budgets 0 to 3, 0 to 5, 0 to 10 and 0 to 15), high_afferent_coupling_without_abstraction (Ca of 8 or more, with \"concrete\" undefined) and missing_module_boundary (path depth above 2). The agent reports none of the three, and agents/quality/architecture-checker.md line 3 also claims \"missing module boundaries\". The stable-dependencies violation the skill now reports (Martin 2000, page 24, as the agent does) has no kind value. This round labelled the three as this skill's own heuristics. Source: .ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, \"For the owner\", with the evidence corrections of s6-skill-round1-validate-d-s6-skill-r1-validate.md, \"Final lists\".",
+      "options": [
+        {
+          "key": "remove-three-add-stable-dependencies",
+          "label": "Remove the three categories, their rows and penalties, and add a stable-dependencies kind",
+          "pros": "The skill reports what the agent reports; no unsourced cut-off remains.",
+          "cons": "Loses three signals some readers use; changes the letter's kind list."
+        },
+        {
+          "key": "keep-three-labelled-add-stable-dependencies",
+          "label": "Keep the three, labelled, and add a stable-dependencies kind",
+          "pros": "Keeps the signals; the stable-dependencies finding gets a machine name.",
+          "cons": "Three unsourced cut-offs stay, and the skill reports what the agent does not."
+        },
+        {
+          "key": "keep-kind-list",
+          "label": "Keep the kind list as it is; the stable-dependencies violation appears only in the Markdown report",
+          "pros": "No contract change.",
+          "cons": "A letter can never carry the one coupling finding with a published source."
+        }
+      ],
+      "recommended": {
+        "key": "remove-three-add-stable-dependencies",
+        "reason": "It brings the skill's findings close to the agent's and removes the three cut-offs no source gives (the layer grades stay labelled as this skill's own weighting, and D > 0.5 is the separate question h-s6-skill-r1-distance-from-the-main-sequence): the three cut-offs have no source and the agent reports none of them, while the stable-dependencies violation is Martin's published rule and the one coupling finding both files compute. If the letter is deleted (h-s6-skill-r1-letter-and-critic-mode), the kind change reduces to naming the finding in the Markdown report."
+      }
+    },
+    {
+      "id": "h-s6-skill-r1-distance-from-the-main-sequence",
+      "date": "2026-10-05",
+      "path": "skills/architecture/dependency-analyzer/SKILL.md",
+      "round": 1,
+      "kind": "pinned-contract",
+      "evidence": "The skill flags D > 0.5 at baseline lines 44, 57, 73, 132, 308, 338 and 359. JDepend defines D, \"The perpendicular distance of a package from the idealized line A + I = 1.\", and gives no cut-off (https://raw.githubusercontent.com/clarkware/jdepend/master/docs/JDepend.html, read 2026-10-05); NDepend says a normalized distance per assembly \"higher than 0.7 might be problematic\" (https://www.ndepend.com/docs/code-metrics, read 2026-10-05); the agent computes no abstractness (agent line 264). Options that drop D touch the frozen instability_mismatch value and the abstractness and distance metric fields. This round labelled 0.5 as this skill's own cut-off. Source: .ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, \"For the owner\", with the evidence corrections of s6-skill-round1-validate-d-s6-skill-r1-validate.md, \"Final lists\".",
+      "options": [
+        {
+          "key": "remove-abstractness-and-distance",
+          "label": "Remove A, D and instability_mismatch from the skill, matching the agent",
+          "pros": "One fact set across the pair; no unsourced cut-off.",
+          "cons": "Loses the abstractness signal; changes the letter's kind list and metric fields."
+        },
+        {
+          "key": "report-distance-without-cut-off",
+          "label": "Keep A and D with no cut-off, reporting D as a number (as JDepend does)",
+          "pros": "Matches the defining tool; nothing invented.",
+          "cons": "instability_mismatch is then never emitted."
+        },
+        {
+          "key": "use-ndepend-threshold",
+          "label": "Use NDepend's 0.7 on the normalized D, applied per module rather than per assembly",
+          "pros": "A published figure.",
+          "cons": "Applied at a different unit than NDepend's; the source says only \"might be problematic\"."
+        },
+        {
+          "key": "keep-own-cut-off",
+          "label": "Keep 0.5, labelled as this skill's own",
+          "pros": "No change from this round.",
+          "cons": "An unsourced cut-off stays, and the pair still disagrees."
+        }
+      ],
+      "recommended": {
+        "key": "remove-abstractness-and-distance",
+        "reason": "The wrapper agent computes no abstractness (agent line 264), so any D in the skill describes a measurement the agent never makes; removing it gives the pair one fact set and drops the only unsourced cut-off on it. It also removes the \"concrete\" input that the unsourced god-module category depends on, consistent with h-s6-skill-r1-categories-without-a-source."
+      }
+    },
+    {
+      "id": "h-s6-skill-r1-model-and-effort-keys",
+      "date": "2026-10-05",
+      "path": "skills/architecture/dependency-analyzer/SKILL.md",
+      "round": 1,
+      "kind": "frontmatter-key-finding",
+      "evidence": "The skill declares model: sonnet and effort_level: medium (lines 21 and 19); the agent declares model: opus and effort: xhigh (agent lines 5 and 6). tests/agent-model-floor.test.js line 132 holds the agent to Opus; tests/skill-loading.test.js line 33 requires effort_level; no skill under skills/ declares effort_level: xhigh (presence check). Not checked: whether anything reads a skill's model key, and the plan line 51 reference. Both keys are frozen in this slice (plan lines 51 and 324). The same question is open for another file in h-s5-skill-r1-effort-level-mismatch. Source: .ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, \"For the owner\", with the evidence corrections of s6-skill-round1-validate-d-s6-skill-r1-validate.md, \"Final lists\".",
+      "options": [
+        {
+          "key": "align-to-agent",
+          "label": "Set the skill's two keys to the agent's values",
+          "pros": "One model and one effort for the pair.",
+          "cons": "Edits frozen keys; xhigh passes only because no code reads effort_level's value, and no other skill declares it."
+        },
+        {
+          "key": "keep-both",
+          "label": "Keep both as they are, recorded",
+          "pros": "No frontmatter change.",
+          "cons": "The pair keeps declaring different models and efforts."
+        },
+        {
+          "key": "remove-model-keep-effort",
+          "label": "Remove model: from the skill and keep effort_level",
+          "pros": "Removes a key with no known reader.",
+          "cons": "Also edits a frozen key; if an installed copy does honour the key, removing it changes behaviour."
+        }
+      ],
+      "recommended": {
+        "key": "align-to-agent",
+        "reason": "The pair should declare one model and one effort, and the agent's values are the ones a test enforces (the Opus floor). Aligning the skill to them removes the disagreement without guessing which value is right; xhigh breaks no check: tests/skill-loading.test.js line 33 requires only that effort_level is present, and no other file under src/ or tests/ names the key (presence check, 2026-10-05), although no skill under skills/ declares xhigh yet."
+      }
+    },
+    {
+      "id": "h-s6-skill-r1-agent-misses-virtual-environments",
+      "date": "2026-10-05",
+      "path": "agents/architecture/dependency-analyzer.md",
+      "round": 1,
+      "kind": "out-of-scope-file",
+      "evidence": "The agent's \"Always exclude\" list (agent lines 504 to 512) has no .venv/, while its Step 1 globs **/*.py, so the packages installed in a virtual environment inside the repository would become graph nodes. The skill excludes .venv/ (f16), so the pair differs on this one point. The agent's three rounds are closed. Not run. Source: .ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, \"For the owner\", with the evidence corrections of s6-skill-round1-validate-d-s6-skill-r1-validate.md, \"Final lists\".",
+      "options": [
+        {
+          "key": "add-venv-to-agent",
+          "label": "Add .venv/ to the agent's exclusions through a late change",
+          "pros": "The pair agrees; a virtual environment no longer floods the graph.",
+          "cons": "Edits a file whose rounds are closed; needs your go-ahead and a record entry."
+        },
+        {
+          "key": "leave-agent",
+          "label": "Leave the agent as it is",
+          "pros": "No edit to a closed file.",
+          "cons": "The agent can graph installed third-party Python files, and the pair disagrees."
+        }
+      ],
+      "recommended": {
+        "key": "add-venv-to-agent",
+        "reason": "Installed third-party files are not the project's code; graphing them adds nodes, imports and possibly cycles that are not the codebase's, so the agent's result is wrong for any repository with an in-tree virtual environment. A one-line exclusion fixes it and makes the pair agree."
+      }
+    },
+    {
+      "id": "h-s6-skill-r2-agent-gaps-closed-in-the-skill",
+      "date": "2026-10-05",
+      "path": "agents/architecture/dependency-analyzer.md",
+      "round": 2,
+      "kind": "out-of-scope-file",
+      "evidence": "Skill round 2 puts five rules in the skill that the agent, whose three rounds were closed, did not have (agent line numbers below are those of sha256:4a101c93f2e34e5cfcffe8beb6baf0a39587e3ab28019b12cc6f9984ba86c286, before this correction; in the corrected file the comment rule is at line 77, the export type * rule at lines 79 and 863, the Go and Rust rules at line 111, the C, C++ and SQL glob at lines 66 to 71, and the ast parse at line 81): (1) comments and string literals: agent Step 2 gave no rule for them, so for TypeScript, JavaScript, Java, C# and Go, whose parser the agent does not name, whether a commented-out import becomes an edge depends on the script that gets written, and such an edge can close a high-severity runtime cycle (skill f6); Python is not affected, because the agent parses it with ast, which ignores comments (agent line 79); (2) export type * from: agent lines 77 and 861 treated only the braces form as type-only, so export type * from would count as a runtime export * from (skill f8); the TypeScript 5.0 release notes confirm the form: \"TypeScript 5.0 adds support for both of these forms\" (https://www.typescriptlang.org/docs/handbook/release-notes/typescript-5-0.html, read 2026-10-05); (3) the Go module path: agent line 109 matched imports that \"begin with\" the module path, so module github.com/org/api also matched github.com/org/api-client, and a single go.mod left repositories with several modules open (skill f1); \"A package path is the module path joined with the subdirectory containing the package (relative to the module root).\" (Go Modules Reference, https://go.dev/ref/mod, read 2026-10-05); (4) Rust: agent rule 9 treated a Rust use of the crate's own module written without crate:: as external and did not say so (skill f1); the source is the Rust Edition Guide (https://doc.rust-lang.org/edition-guide/rust-2018/path-changes.html, read 2026-10-05), not the Rust Reference; (5) C, C++ and SQL only: agent Step 1 (lines 66 to 69) stopped before its C, C++ and SQL glob, so those files were never named (skill f2). Route: the agent is in this plan's files: list (plan line 10) and the plan is approved and in progress, so the edit is an in-slice correction (\"corrected here\", plan line 65) and needs no scope-growth request; plan decision 2 covers finished files only. The kind is kept as the critic filed it. The validator also noted that reopening a file whose rounds are closed is a proceed-or-hold call and, under Operating Lesson 17, would be shown without a recommendation; the owner rule of 2026-10-05 requires every entry to name one recommended option, and the CTO Chief session decided it. Sources: .ctoc/audit/improvement-run-notes/s6-skill-round2-critic-d-s6-skill-r2-critic.md, \"Owner item\"; .ctoc/audit/improvement-run-notes/s6-skill-round2-validate-d-s6-skill-r2-validate.md, \"Final lists\".",
+      "options": [
+        {
+          "key": "late-correction-to-agent",
+          "label": "Apply the five changes to the agent as an in-slice correction (the agent is in this plan's files: list)",
+          "pros": "The pair agrees again; items 1 and 2 remove high-severity cycles that do not exist.",
+          "cons": "Edits a file whose rounds are closed; needs your go-ahead, a record entry and a re-run of the agent's tests."
+        },
+        {
+          "key": "leave-agent-record-divergence",
+          "label": "Leave the agent; both records name the five differences",
+          "pros": "No edit to a closed file.",
+          "cons": "The pair disagrees on five rules, and the agent can still report a cycle through a commented-out or erased import."
+        },
+        {
+          "key": "settle-with-wrapper-duplication",
+          "label": "Decide these together with h-s6-agent-r1-wrapper-duplicates-skill",
+          "pros": "One decision removes this whole class of disagreement.",
+          "cons": "The disagreement stays until that larger question is answered."
+        }
+      ],
+      "recommended": {
+        "key": "late-correction-to-agent",
+        "reason": "Items 1 and 2 make the agent report a high-severity cycle that does not exist, and a person would act on it. Each fix is a sentence or two, making the pair agree is what plan criterion 9 requires, and it does not decide the wrapper-duplication question."
+      },
+      "decided": {
+        "by": "the CTO Chief session",
+        "on": "2026-10-05",
+        "option": "late-correction-to-agent",
+        "note": "Applied as an in-slice correction to agents/architecture/dependency-analyzer.md in skill round 2, with the validator's evidence corrections folded in."
+      }
     }
   ]
 }
