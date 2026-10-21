@@ -1,0 +1,2202 @@
+{
+  "schema": 1,
+  "path": "skills/architecture/dependency-analyzer/SKILL.md",
+  "prerequisite": null,
+  "rounds": [
+    {
+      "round": 1,
+      "date": "2026-10-05",
+      "resumed_after_unrecorded_edit": false,
+      "fingerprint_before": "sha256:8391851a10ea61938333a00cf3b3c8bf6661c330fbb21e9fb674f93551f6491f",
+      "fingerprint_after": "sha256:dd792715ef47d2d493649e46a05f80fadf31efa720db9b896032511b0ef7ab79",
+      "instruments": [
+        {
+          "path": "agents/pipeline/agent-critic.md",
+          "fingerprint": "sha256:8ef32ac31d91fd9fbc209fbe9a2f27668e4ed2fe8357859e26e98fb11a62682f"
+        },
+        {
+          "path": "agents/ai-quality/citation-validator.md",
+          "fingerprint": "sha256:0b99b97bb8530375a56e59203769d2a8c9a7d97d92f0c7c90cd5b358b0f7dc23"
+        }
+      ],
+      "dispatches": [
+        {
+          "id": "d-s6-skill-r1-research",
+          "agent": "ai-quality/citation-validator",
+          "purpose": "research-and-critique",
+          "declared_effort": "xhigh"
+        },
+        {
+          "id": "d-s6-skill-r1-research-gaps",
+          "agent": "ai-quality/citation-validator",
+          "purpose": "research-and-critique",
+          "declared_effort": "xhigh"
+        },
+        {
+          "id": "d-s6-skill-r1-critic",
+          "agent": "pipeline/agent-critic",
+          "purpose": "research-and-critique",
+          "declared_effort": "xhigh"
+        },
+        {
+          "id": "d-s6-skill-r1-validate",
+          "agent": "ai-quality/citation-validator",
+          "purpose": "validate",
+          "declared_effort": "xhigh"
+        },
+        {
+          "id": "d-s6-skill-r1-revalidate",
+          "agent": "ai-quality/citation-validator",
+          "purpose": "re-validate",
+          "declared_effort": "xhigh"
+        }
+      ],
+      "queries": [
+        {
+          "text": "Who did the research: the web research of this round was done by ai-quality/citation-validator (dispatches d-s6-skill-r1-research and d-s6-skill-r1-research-gaps), because the installed agent-critic (CTOC 6.14.67) holds only Read and Grep and has no web tool; the critic (d-s6-skill-r1-critic) worked from those two reports and the agent's settled record. Question researched first: does jdeps have an option that finds cycles, and what does --check report (Java SE 25 manual, read for any use of \"split\" or \"cycle\")",
+          "source_class": "vendor documentation",
+          "repeated_because": null
+        },
+        {
+          "text": "dependency-cruiser: the --output-type reporter list (is SARIF in it), the default configuration file names, the err reporter's exit code, the current version, and the rule fields for a cycle rule (circular, from.pathNot)",
+          "source_class": "vendor documentation",
+          "repeated_because": null
+        },
+        {
+          "text": "import-linter and grimp: the contract types, the order of layers, [importlinter] and root_package, the acyclic-siblings contract, lint-imports --config, and the grimp version import-linter requires",
+          "source_class": "vendor documentation",
+          "repeated_because": null
+        },
+        {
+          "text": "pydeps, madge and cinclude2dot: how pydeps finds imports and shows cycles, madge --image and Graphviz and its tsConfig option, and cinclude2dot's options",
+          "source_class": "vendor documentation",
+          "repeated_because": null
+        },
+        {
+          "text": "Java and .NET tools: ArchUnit's layered and cycle examples and whether it analyses bytecode; JDepend's formulas for I and D, its command lines and cycle reporting; NsDepCop's configuration elements; NDepend.Console's first argument and NDepend's metric definitions and thresholds",
+          "source_class": "vendor documentation",
+          "repeated_because": null
+        },
+        {
+          "text": "C and C++ tools: include-what-you-use's usage line and --no_fwd_decls; clang -MD, -MMD and -MF; what scan-build outputs; cpp-dependencies --dir, --graph, --stats and C++20 modules; CMake's C++ modules manual",
+          "source_class": "vendor documentation",
+          "repeated_because": null
+        },
+        {
+          "text": "tsort: its input format and how it signals a cycle (GNU coreutils manual)",
+          "source_class": "vendor documentation",
+          "repeated_because": "the research pass got HTTP 429 and read it on retry; the validator got HTTP 429 three times, and the re-validation read it on its second try"
+        },
+        {
+          "text": "PostgreSQL information schema: unique_constraint_name, the schema columns of the three views, whether constraint names are unique, and which rows each view shows to the current role",
+          "source_class": "vendor documentation",
+          "repeated_because": null
+        },
+        {
+          "text": "The original paper for the strongly-connected-components search: Tarjan 1972, its journal, volume, issue, pages and digital object identifier (Crossref record)",
+          "source_class": "original paper",
+          "repeated_because": null
+        },
+        {
+          "text": "Python and TypeScript type-only imports: the typing specification on TYPE_CHECKING; the support status of Python and .NET versions named in the skill; Poetry's packages key",
+          "source_class": "standards body",
+          "repeated_because": null
+        },
+        {
+          "text": "SemVer's rule on deprecation before removal, and whether any third-party SARIF reporter exists for dependency-cruiser (npm registry search)",
+          "source_class": "broad web",
+          "repeated_because": null
+        },
+        {
+          "text": "Repository facts by presence check: the refinement-loop schema's required fields, the dispatch schema's finding, whether src/lib/v8-dispatcher.js is on the unreachable list, whether .ctoc/baselines/ exists, the integrator's tool grant, and whether \"6.9.8\" or \"leaf-node sweep\" appears in the changelog or docs",
+          "source_class": "publisher",
+          "repeated_because": null
+        }
+      ],
+      "sources": [
+        {
+          "url": "https://docs.oracle.com/en/java/javase/25/docs/specs/man/jdeps.html",
+          "read_on": "2026-10-05",
+          "bore_on": "baseline lines 41, 204, 287 and 370: jdeps named as a cycle engine and --check as flagging split packages; f5, f28, f37d",
+          "outcome": "refuted",
+          "quote": "It also identifies any unused qualified exports.",
+          "error": null
+        },
+        {
+          "url": "https://raw.githubusercontent.com/sverweij/dependency-cruiser/main/doc/cli.md",
+          "read_on": "2026-10-05",
+          "bore_on": "baseline line 283, \"JSON/SARIF output\": no sarif in the --output-type list; f37a",
+          "outcome": "refuted",
+          "quote": null,
+          "error": null
+        },
+        {
+          "url": "https://import-linter.readthedocs.io/en/stable/contract_types.html",
+          "read_on": "2026-10-05",
+          "bore_on": "import-linter contract types (replaced by the per-contract pages)",
+          "outcome": "unreachable",
+          "quote": null,
+          "error": "HTTP 404"
+        },
+        {
+          "url": "https://import-linter.readthedocs.io/en/stable/",
+          "read_on": "2026-10-05",
+          "bore_on": "baseline line 291: the contract list also has Protected and Acyclic siblings; f37f",
+          "outcome": "supported",
+          "quote": "Forbidden, Protected, Layers, Independence, Acyclic siblings",
+          "error": null
+        },
+        {
+          "url": "https://registry.npmjs.org/dependency-cruiser/latest",
+          "read_on": "2026-10-05",
+          "bore_on": "dependency-cruiser version and description (18.5.0)",
+          "outcome": "supported",
+          "quote": "JavaScript, TypeScript, CoffeeScript. ES6, CommonJS, AMD.",
+          "error": null
+        },
+        {
+          "url": "https://raw.githubusercontent.com/thebjorn/pydeps/master/README.rst",
+          "read_on": "2026-10-05",
+          "bore_on": "baseline lines 184 and 290: pydeps --show-cycles and bytecode import discovery; f5",
+          "outcome": "supported",
+          "quote": "pydeps finds imports by looking for import-opcodes in python bytecodes",
+          "error": null
+        },
+        {
+          "url": "https://import-linter.readthedocs.io/en/stable/contract_types/acyclic_siblings/",
+          "read_on": "2026-10-05",
+          "bore_on": "the acyclic-siblings contract checks sibling packages only; f5",
+          "outcome": "supported",
+          "quote": "forbids dependency cycles between siblings",
+          "error": null
+        },
+        {
+          "url": "https://import-linter.readthedocs.io/en/stable/contract_types/layers/",
+          "read_on": "2026-10-05",
+          "bore_on": "baseline lines 189 to 198: the layer order in .importlinter",
+          "outcome": "supported",
+          "quote": "The order is from higher to lower level layers.",
+          "error": null
+        },
+        {
+          "url": "https://pypi.org/pypi/import-linter/json",
+          "read_on": "2026-10-05",
+          "bore_on": "baseline line 185, \"grimp 3.14+ current\": import-linter 2.15 requires grimp>=3.17; f26",
+          "outcome": "refuted",
+          "quote": "grimp>=3.17",
+          "error": null
+        },
+        {
+          "url": "https://pypi.org/pypi/grimp/json",
+          "read_on": "2026-10-05",
+          "bore_on": "the current grimp version; the summarizer was partly wrong on the release list",
+          "outcome": "supported",
+          "quote": null,
+          "error": null
+        },
+        {
+          "url": "https://import-linter.readthedocs.io/en/stable/get_started/configure/",
+          "read_on": "2026-10-05",
+          "bore_on": "the .importlinter sample lacks root_package; f27",
+          "outcome": "refuted",
+          "quote": "(Either this or `root_packages` is required.)",
+          "error": null
+        },
+        {
+          "url": "https://www.archunit.org/userguide/html/000_Index.html",
+          "read_on": "2026-10-05",
+          "bore_on": "baseline lines 208 and 286, \"runtime test library\": ArchUnit analyses bytecode; the layered and cycle examples match; f28, f37c",
+          "outcome": "refuted",
+          "quote": "It does so by analyzing given Java bytecode",
+          "error": null
+        },
+        {
+          "url": "https://github.com/clarkware/jdepend",
+          "read_on": "2026-10-05",
+          "bore_on": "JDepend repository page; nothing useful",
+          "outcome": "did-not-bear",
+          "quote": null,
+          "error": null
+        },
+        {
+          "url": "https://github.com/realvizu/NsDepCop",
+          "read_on": "2026-10-05",
+          "bore_on": "NsDepCop repository page; partial read",
+          "outcome": "did-not-bear",
+          "quote": null,
+          "error": null
+        },
+        {
+          "url": "https://raw.githubusercontent.com/clarkware/jdepend/master/docs/JDepend.html",
+          "read_on": "2026-10-05",
+          "bore_on": "baseline lines 43, 44 and 206: I = Ce / (Ce + Ca), D with no cut-off, the textui command and -file, and package dependency cycles reported; f5, f7, f8, f28 and leftover C1",
+          "outcome": "supported",
+          "quote": "Package dependency cycles are reported along with the hierarchical paths of packages participating in package dependency cycles.",
+          "error": null
+        },
+        {
+          "url": "https://raw.githubusercontent.com/realvizu/NsDepCop/master/docs/Help.md",
+          "read_on": "2026-10-05",
+          "bore_on": "NsDepCop help (wrong path; replaced by doc/Help.md)",
+          "outcome": "unreachable",
+          "quote": null,
+          "error": "HTTP 404"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/realvizu/NsDepCop/master/README.md",
+          "read_on": "2026-10-05",
+          "bore_on": "NsDepCop version and .NET SDK requirement",
+          "outcome": "supported",
+          "quote": null,
+          "error": null
+        },
+        {
+          "url": "https://www.ndepend.com/docs/ndepend-console",
+          "read_on": "2026-10-05",
+          "bore_on": "baseline line 229, `NDepend.Console MySolution.sln`: the first argument must be the .ndproj file; f30 and leftover C2",
+          "outcome": "refuted",
+          "quote": "It must be specified as the first argument.",
+          "error": null
+        },
+        {
+          "url": "https://raw.githubusercontent.com/realvizu/NsDepCop/master/doc/Help.md",
+          "read_on": "2026-10-05",
+          "bore_on": "baseline lines 233 to 241: the config.nsdepcop elements and attributes",
+          "outcome": "supported",
+          "quote": null,
+          "error": null
+        },
+        {
+          "url": "https://raw.githubusercontent.com/include-what-you-use/include-what-you-use/master/README.md",
+          "read_on": "2026-10-05",
+          "bore_on": "baseline lines 245 and 246: iwyu_tool.py -p and C support",
+          "outcome": "supported",
+          "quote": null,
+          "error": null
+        },
+        {
+          "url": "https://www.gnu.org/software/coreutils/manual/html_node/tsort-invocation.html",
+          "read_on": "2026-10-05",
+          "bore_on": "baseline line 252, \"non-empty output = cycle\": tsort reads pairs and writes the first cycle to standard error; f31 and leftover B4. The validator's three attempts returned HTTP 429; the re-validation read it on its second try",
+          "outcome": "refuted",
+          "quote": "writes the first cycle encountered to standard error",
+          "error": null
+        },
+        {
+          "url": "https://raw.githubusercontent.com/tomtom-international/cpp-dependencies/master/README.md",
+          "read_on": "2026-10-05",
+          "bore_on": "baseline lines 261 to 264 and 293: --stats reports nodes in cycles, no C++20 modules, no deplint; f33, f34, f37g",
+          "outcome": "supported",
+          "quote": "Detected 2 nodes in cycles",
+          "error": null
+        },
+        {
+          "url": "https://cmake.org/cmake/help/latest/manual/cmake-cxxmodules.7.html",
+          "read_on": "2026-10-05",
+          "bore_on": "baseline lines 259, 260 and 264: version 3.28, P1689R5, .ddi, CXXModules.json, not a stable interface; f34",
+          "outcome": "supported",
+          "quote": "The implementation details are not a stable interface.",
+          "error": null
+        },
+        {
+          "url": "https://www.postgresql.org/docs/current/infoschema-referential-constraints.html",
+          "read_on": "2026-10-05",
+          "bore_on": "baseline lines 267 to 276: unique_constraint_name, and that the view shows only constraints whose referencing table the current user can write to; f35, f36",
+          "outcome": "supported",
+          "quote": "Only those constraints are shown for which the current user has write access to the referencing table",
+          "error": null
+        },
+        {
+          "url": "https://semver.org/",
+          "read_on": "2026-10-05",
+          "bore_on": "baseline line 45, the deprecation rule: SemVer supports \"one minor release\", the \"= high finding\" is the skill's own; the rule was removed by f9 as outside the skill's categories",
+          "outcome": "did-not-bear",
+          "quote": "Before you completely remove the functionality in a new major release there should be at least one minor release that contains the deprecation",
+          "error": null
+        },
+        {
+          "url": "https://raw.githubusercontent.com/include-what-you-use/include-what-you-use/master/iwyu_globals.cc",
+          "read_on": "2026-10-05",
+          "bore_on": "baseline line 256: options are passed as -Xiwyu --no_fwd_decls; f32",
+          "outcome": "refuted",
+          "quote": "--no_fwd_decls: do not use forward declarations.",
+          "error": null
+        },
+        {
+          "url": "https://raw.githubusercontent.com/pahen/madge/master/README.md",
+          "read_on": "2026-10-05",
+          "bore_on": "baseline lines 165 to 167 and 284: fileExtensions default, tsConfig default, --image requires Graphviz, no named algorithm; f24, f37b",
+          "outcome": "supported",
+          "quote": "Save graph as a SVG image (requires Graphviz)",
+          "error": null
+        },
+        {
+          "url": "https://www.flourish.org/cinclude2dot/",
+          "read_on": "2026-10-05",
+          "bore_on": "baseline line 248, cinclude2dot --src=src: options documented only through --help; f31",
+          "outcome": "did-not-bear",
+          "quote": "For usage instructions, run the script with --help.",
+          "error": null
+        },
+        {
+          "url": "https://api.crossref.org/works/10.1137/0201010",
+          "read_on": "2026-10-05",
+          "bore_on": "Step 4: the Tarjan 1972 citation added by f19",
+          "outcome": "supported",
+          "quote": "Depth-First Search and Linear Graph Algorithms",
+          "error": null
+        },
+        {
+          "url": "https://raw.githubusercontent.com/python-poetry/poetry/main/docs/pyproject.md",
+          "read_on": "2026-10-05",
+          "bore_on": "baseline line 102, `[tool.poetry.packages]` as an alias: packages lists what goes into the distribution; f18 deletes the claim",
+          "outcome": "refuted",
+          "quote": "A list of packages and modules to include in the final distribution.",
+          "error": null
+        },
+        {
+          "url": "https://raw.githubusercontent.com/sverweij/dependency-cruiser/main/doc/rules-reference.md",
+          "read_on": "2026-10-05",
+          "bore_on": "baseline lines 169 to 177: the rule fields, and the circular rule added by f25",
+          "outcome": "supported",
+          "quote": "A Boolean indicating whether or not to match module dependencies that end up where you started (a.k.a. circular dependencies).",
+          "error": null
+        },
+        {
+          "url": "https://import-linter.readthedocs.io/en/stable/usage/",
+          "read_on": "2026-10-05",
+          "bore_on": "lint-imports usage (replaced by get_started/run/)",
+          "outcome": "unreachable",
+          "quote": null,
+          "error": "HTTP 404"
+        },
+        {
+          "url": "https://import-linter.readthedocs.io/en/stable/get_started/run/",
+          "read_on": "2026-10-05",
+          "bore_on": "baseline line 182, lint-imports --config",
+          "outcome": "supported",
+          "quote": "`lint-imports --config path/to/alternative-config.ini`",
+          "error": null
+        },
+        {
+          "url": "https://www.ndepend.com/docs/code-metrics",
+          "read_on": "2026-10-05",
+          "bore_on": "baseline lines 44 and 288: NDepend's normalized distance threshold and per-assembly metrics; CQLinq is mentioned on the page (the validator corrected the critic's evidence); f8, f37e and leftover C2",
+          "outcome": "supported",
+          "quote": "Assemblies where NormDistFromMainSeq is higher than 0.7 might be problematic.",
+          "error": null
+        },
+        {
+          "url": "https://docs.python.org/3/library/typing.html#typing.TYPE_CHECKING",
+          "read_on": "2026-10-05",
+          "bore_on": "TYPE_CHECKING in the Python documentation; truncated, replaced by the typing specification",
+          "outcome": "unreachable",
+          "quote": null,
+          "error": "The page was truncated before the `TYPE_CHECKING` entry."
+        },
+        {
+          "url": "https://typing.python.org/en/latest/spec/directives.html",
+          "read_on": "2026-10-05",
+          "bore_on": "baseline lines 47 and 94: the constant is False at runtime, and the typing.TYPE_CHECKING form; f9, f17",
+          "outcome": "supported",
+          "quote": "`False` at runtime",
+          "error": null
+        },
+        {
+          "url": "https://dotnet.microsoft.com/en-us/platform/support/policy/dotnet-core",
+          "read_on": "2026-10-05",
+          "bore_on": "baseline line 226, \".NET 9\": support ends on 2026-11-10 and .NET 10 is the current long-term release; f29",
+          "outcome": "refuted",
+          "quote": null,
+          "error": null
+        },
+        {
+          "url": "https://www.oracle.com/java/technologies/java-se-support-roadmap.html",
+          "read_on": "2026-10-05",
+          "bore_on": "the \"Java (21+)\" label; not read",
+          "outcome": "unreachable",
+          "quote": null,
+          "error": "HTTP 403 Forbidden"
+        },
+        {
+          "url": "https://devguide.python.org/versions/",
+          "read_on": "2026-10-05",
+          "bore_on": "the \"Python (3.12+)\" label: 3.12 is in security support",
+          "outcome": "supported",
+          "quote": null,
+          "error": null
+        },
+        {
+          "url": "https://registry.npmjs.org/-/v1/search?text=dependency-cruiser%20sarif&size=20",
+          "read_on": "2026-10-05",
+          "bore_on": "whether a third-party SARIF reporter exists for dependency-cruiser: none in 20 of 22 results; f37a",
+          "outcome": "supported",
+          "quote": "Module to help building SARIF log files",
+          "error": null
+        },
+        {
+          "url": "https://clang-analyzer.llvm.org/scan-build.html",
+          "read_on": "2026-10-05",
+          "bore_on": "scan-build; only a deprecation and redirect notice, followed to the new address",
+          "outcome": "did-not-bear",
+          "quote": null,
+          "error": null
+        },
+        {
+          "url": "https://clang.llvm.org/docs/ClangCommandLineReference.html",
+          "read_on": "2026-10-05",
+          "bore_on": "baseline line 250: -MD includes system headers, -MMD only user headers, -MF names the file; f31",
+          "outcome": "supported",
+          "quote": "Write a depfile containing user headers",
+          "error": null
+        },
+        {
+          "url": "https://clang.llvm.org/docs/analyzer/user-docs/CommandLineUsage.html",
+          "read_on": "2026-10-05",
+          "bore_on": "baseline line 249, scan-build as a source of dependency facts: it writes HTML bug reports; f31 removes it",
+          "outcome": "refuted",
+          "quote": "The output of scan-build is a set of HTML files, each one which represents a separate bug report.",
+          "error": null
+        },
+        {
+          "url": "https://www.postgresql.org/docs/current/information-schema.html",
+          "read_on": "2026-10-05",
+          "bore_on": "baseline lines 268 to 276: constraint names need not be unique, so a name-only join can pair the wrong tables; f35, f36",
+          "outcome": "refuted",
+          "quote": "but PostgreSQL does not enforce this restriction",
+          "error": null
+        },
+        {
+          "url": "https://www.postgresql.org/docs/current/infoschema-table-constraints.html",
+          "read_on": "2026-10-05",
+          "bore_on": "f36: table_constraints shows only tables the current user owns or holds a privilege other than SELECT on (validator, 2026-10-05)",
+          "outcome": "supported",
+          "quote": null,
+          "error": null
+        },
+        {
+          "url": "https://www.postgresql.org/docs/current/infoschema-constraint-column-usage.html",
+          "read_on": "2026-10-05",
+          "bore_on": "f36: constraint_column_usage shows only columns of tables owned by a currently enabled role (validator, 2026-10-05)",
+          "outcome": "supported",
+          "quote": "Only those columns are shown that are contained in a table owned by a currently enabled role.",
+          "error": null
+        },
+        {
+          "url": ".ctoc/architecture/dispatch-schema.yaml",
+          "read_on": "2026-10-05",
+          "bore_on": "baseline lines 362 to 387: the letter lacks 5 of the 7 required fields of the dispatch schema's finding; f41 and the owner entry on the letter",
+          "outcome": "refuted",
+          "quote": "required: [id, severity, type, file, message, confidence, citations]",
+          "error": null
+        },
+        {
+          "url": ".ctoc/architecture/refinement-loop-schema.json",
+          "read_on": "2026-10-05",
+          "bore_on": "baseline lines 362 to 387: the letter is not this schema's issue; its severity enum has no warn (line 406 holds); f41",
+          "outcome": "refuted",
+          "quote": null,
+          "error": null
+        },
+        {
+          "url": "src/lib/v8-dispatcher.js and .ctoc/reachability-baseline.json",
+          "read_on": "2026-10-05",
+          "bore_on": "whether running code checks the dispatch schema: the only module naming it is on the unreachable list; f41 and the owner entry on the letter",
+          "outcome": "supported",
+          "quote": null,
+          "error": null
+        },
+        {
+          "url": "docs/REFINEMENT_LOOP.md",
+          "read_on": "2026-10-05",
+          "bore_on": "baseline lines 351 to 409: the refinement loop is not running, and the integrator holds neither Task nor Bash; f40, f41, f42, f44",
+          "outcome": "refuted",
+          "quote": null,
+          "error": null
+        },
+        {
+          "url": "tests/skill-loading.test.js",
+          "read_on": "2026-10-05",
+          "bore_on": "baseline line 33, \"Auto-loaded when the user prompt matches\": the test header says nothing loads a specialist on a phrase match; line 33 of the test requires effort_level only; f3 and leftover E1",
+          "outcome": "refuted",
+          "quote": "nothing loads a specialist on a phrase match",
+          "error": null
+        }
+      ],
+      "findings": [
+        {
+          "id": "f-s6-skill-r1-1",
+          "kind": "new",
+          "text": "frontmatter `description` (allowed key). Boundary and accuracy; severity low. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f1; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-2",
+          "kind": "new",
+          "text": "`related_skills` additions (allowed key). Boundary; severity low. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f2; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-3",
+          "kind": "new",
+          "text": "lines 32–33, an invented label and a claimed loading mechanism (research candidate 17, corrected). Mechanism-not-running and invented-label; severity high. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f3; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-4",
+          "kind": "new",
+          "text": "line 37, the Role. Ownership, untrusted content, and changes-no-file; severity high. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f4; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-5",
+          "kind": "new",
+          "text": "line 41 (candidate 1, corrected). Gate number, fabricated claim, and ownership; severity critical. Applied with the validator's corrected text (JDepend kept among the cycle tools).",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f5; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS-WITH-CORRECTION and its corrected text",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-6",
+          "kind": "new",
+          "text": "line 42, the Ce budgets (candidate 7, labelled). Unsourced threshold; severity medium. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f6; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-7",
+          "kind": "new",
+          "text": "line 43, instability. Stale order and contradiction; severity medium. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f7; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-8",
+          "kind": "new",
+          "text": "line 44, distance from the main sequence (candidate 6 corrected, D8 merged). Unsourced threshold; severity medium. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f8; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-9",
+          "kind": "new",
+          "text": "lines 45–47, deprecation, ownership and type-only imports (candidates 7 and 18, D4). Scope, unsourced threshold, and wrong classification; severity high. Applied with the validator's corrected text (a cycle that closes only once such edges are counted).",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f9; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS-WITH-CORRECTION and its corrected text",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-10",
+          "kind": "new",
+          "text": "line 54, the cycle category (candidate 2). Unsourced grading; severity high. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f10; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-11",
+          "kind": "new",
+          "text": "line 56, the god-module cut-off (candidate 7, labelled). Unsourced threshold; severity medium. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f11; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-12",
+          "kind": "new",
+          "text": "lines 59–60, layer-violation definitions, plus a stable-dependencies row (candidate 18). Contradiction; severity high. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f12; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-13",
+          "kind": "new",
+          "text": "lines 66–70, the quick-reference table (candidate 3). Unsourced grading and contradiction; severity high. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f13; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-14",
+          "kind": "new",
+          "text": "lines 74–76, a stable-dependencies row and the weights labelled (candidate 3). Unsourced weighting; severity medium. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f14; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-15",
+          "kind": "new",
+          "text": "lines 78–85, the Performance section (candidates 7 and 18). Unsourced figures and contradiction; severity medium. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f15; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-16",
+          "kind": "new",
+          "text": "Step 1, line 90. Agreement and completeness; severity medium. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f16; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-17",
+          "kind": "new",
+          "text": "Step 2, lines 92–99 (D4; seven languages). Contradiction and coverage; severity high. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f17; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-18",
+          "kind": "new",
+          "text": "Step 3, line 102 (D2, corrected to a deletion). Fabricated claim and completeness; severity critical. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f18; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-19",
+          "kind": "new",
+          "text": "Step 4, lines 105–109 (candidate 4 corrected, D1 merged). Unsourced grading and missing citation; severity high. Applied with the validator's corrected text (abbreviations spelled out).",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f19; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS-WITH-CORRECTION and its corrected text",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-20",
+          "kind": "new",
+          "text": "Step 5, lines 112–121 (candidate 18). Contradiction; severity high. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f20; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-21",
+          "kind": "new",
+          "text": "Step 6, lines 123–132 (candidate 5). Refuted threshold and contradiction; severity high. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f21; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-22",
+          "kind": "new",
+          "text": "Step 7, line 135 (candidate 7, labelled). Unsourced threshold and overlap; severity medium. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f22; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-23",
+          "kind": "new",
+          "text": "the coverage section's opening. An order the paired agent forbids; severity high. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f23; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-24",
+          "kind": "new",
+          "text": "the madge recipes, lines 165–167 (candidate 9, corrected). Code example; severity high. Applied with the validator's corrected text (skipTypeImports skips an import only when every name has an inline type modifier).",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f24; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS-WITH-CORRECTION and its corrected text",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-25",
+          "kind": "new",
+          "text": "the dependency-cruiser rule, lines 169–177 (D3). Code example and completeness; severity medium. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f25; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-26",
+          "kind": "new",
+          "text": "line 185, the grimp version (candidate 12). Stale claim; severity low. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f26; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-27",
+          "kind": "new",
+          "text": "the `.importlinter` root package (candidate 12). Code example; severity medium. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f27; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-28",
+          "kind": "new",
+          "text": "the Java block, lines 203–207 (candidates 8 and 13). Fabricated and misattributed claims; severity critical. Applied with the validator's corrected text (JDepend reports cycles, -file made exact).",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f28; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS-WITH-CORRECTION and its corrected text",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-29",
+          "kind": "new",
+          "text": "line 226, the .NET version (D5). Stale claim; severity low. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f29; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-30",
+          "kind": "new",
+          "text": "the NDepend command and the Roslyn lines, lines 229–231 (candidate 14, corrected). Fabricated claim; severity critical. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f30; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-31",
+          "kind": "new",
+          "text": "the C block, lines 247–252 (candidate 14 corrected, D6). Fabricated claim; severity critical. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f31; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-32",
+          "kind": "new",
+          "text": "line 256, the include-what-you-use option (candidate 14). Code example; severity medium. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f32; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-33",
+          "kind": "new",
+          "text": "lines 261–262, cpp-dependencies (candidate 14). Unsourced claim and missing cycle recipe; severity medium. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f33; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-34",
+          "kind": "new",
+          "text": "line 264, C++ modules. Unsourced claim; severity medium. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f34; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-35",
+          "kind": "new",
+          "text": "the SQL query, lines 268–275 (D7, plus `DISTINCT`). Code example; severity high. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f35; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-36",
+          "kind": "new",
+          "text": "line 277, the SQL follow-up. Unsourced threshold and engine rule; severity medium. Applied with the validator's corrected text (the PostgreSQL visibility caveat added).",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f36; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS-WITH-CORRECTION and its corrected text",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-37",
+          "kind": "new",
+          "text": "tool-table cells (candidates 8, 10, 11, 12, 13, 14; D9, D10). Unsourced, misattributed and fabricated claims; severity high. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f37; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-38",
+          "kind": "new",
+          "text": "line 295, the corroboration rule and the sources (candidate 10). Unsourced rule, a mechanism that does not run, and missing read dates; severity high. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f38; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-39",
+          "kind": "new",
+          "text": "the worked report (candidate 18). Example arithmetic and contradiction; severity medium. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f39; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-40",
+          "kind": "new",
+          "text": "lines 353–360, the triage table (candidates 15 and 18). Ownership, mechanism not running, and length grading; severity high. Applied with the validator's corrected text (tier names in ordinary capitals).",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f40; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS-WITH-CORRECTION and its corrected text",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-41",
+          "kind": "new",
+          "text": "the letter-schema heading and a status line (candidate 15 and D12, in-file part only). Misattributed label and mechanism not running; severity high. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f41; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-42",
+          "kind": "new",
+          "text": "line 389, the integrator's behaviour. Mechanism not running; severity medium. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f42; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-43",
+          "kind": "new",
+          "text": "lines 393–397, the Red Lines (candidates 7 and 18). Ownership, unsourced threshold, and contradiction; severity high. Applied with the validator's corrected text (\"Never\" in place of \"NEVER\").",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f43; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS-WITH-CORRECTION and its corrected text",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-44",
+          "kind": "new",
+          "text": "the critic-mode heading and opening (candidate 15, in-file part). Mechanism not running and invented label; severity high. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f44; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-45",
+          "kind": "new",
+          "text": "line 409, the unsourced \"principle\". Unsourced claim; severity low. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, s6-skill-r1-f45; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-46",
+          "kind": "new",
+          "text": "The re-validation's leftovers in the skill, applied byte for byte: group A (A1, A2), the example report's code fence, which was broken before this round, widened to four backticks; group B (B1, B2, B3, B4, B5, B6), six texts this round introduced or carried (a self-import is a cycle; PHP has no section; a file in no layer; tsort; the optional f41 wording; \"AND\"); group C (C1, C2, C3), three unsourceable claims on unchanged lines made sourced (JDepend, NDepend, ArchUnit); group D (D1, D2, D3, D4, D5, D6, D7), abbreviations spelled out in prose. Group B amends this round's own f-s6-skill-r1-13 (B1), -23 (B2), -20 (B3), -31 (B4), -41 (B5) and -22 (B6).",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-revalidate-d-s6-skill-r1-revalidate.md, \"Leftovers\", groups A to D",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-47",
+          "kind": "new",
+          "text": "The re-validation's group E (E1, E2, E3, E4) in .ctoc/audit/agent-and-skill-improvement/for-the-human.json: the model and effort entry now answers its open question (xhigh breaks no check), the distance entry's reason drops the unconfirmed \"which is what runs\" (the fourth unsourceable claim), and the categories entry's reason no longer overstates.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-revalidate-d-s6-skill-r1-revalidate.md, \"Leftovers\", group E, and \"The four unsourceable claims\"",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-48",
+          "kind": "new",
+          "text": "The triage-to-letter paragraph, the letter schema and the critic-mode section describe a refinement loop that is not running, and the letter matches neither the refinement-loop schema nor the dispatch schema; whether to delete, keep, realign or extend is a contract decision.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, \"For the owner\", h-s6-skill-r1-letter-and-critic-mode; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, \"Final lists\", owner entries",
+          "decision": "reported-to-human",
+          "reason": null,
+          "for_the_human_id": "h-s6-skill-r1-letter-and-critic-mode"
+        },
+        {
+          "id": "f-s6-skill-r1-49",
+          "kind": "new",
+          "text": "Three kind values (high_efferent_coupling, high_afferent_coupling_without_abstraction, missing_module_boundary) rest on cut-offs no source gives, and the stable-dependencies violation has no kind value; removing or adding a kind changes the output contract.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, \"For the owner\", h-s6-skill-r1-categories-without-a-source; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, \"Final lists\", owner entries",
+          "decision": "reported-to-human",
+          "reason": null,
+          "for_the_human_id": "h-s6-skill-r1-categories-without-a-source"
+        },
+        {
+          "id": "f-s6-skill-r1-50",
+          "kind": "new",
+          "text": "D > 0.5 for instability_mismatch has no source (JDepend gives no cut-off; NDepend says 0.7 per assembly) and the agent computes no abstractness; dropping D touches the frozen kind value and metric fields.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, \"For the owner\", h-s6-skill-r1-distance-from-the-main-sequence; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, \"Final lists\", owner entries",
+          "decision": "reported-to-human",
+          "reason": null,
+          "for_the_human_id": "h-s6-skill-r1-distance-from-the-main-sequence"
+        },
+        {
+          "id": "f-s6-skill-r1-51",
+          "kind": "new",
+          "text": "The skill declares model: sonnet and effort_level: medium, the agent model: opus and effort: xhigh; both keys are frozen in this slice.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, \"For the owner\", h-s6-skill-r1-model-and-effort-keys; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, \"Final lists\", owner entries",
+          "decision": "reported-to-human",
+          "reason": null,
+          "for_the_human_id": "h-s6-skill-r1-model-and-effort-keys"
+        },
+        {
+          "id": "f-s6-skill-r1-52",
+          "kind": "new",
+          "text": "The agent excludes no .venv/ while globbing **/*.py; the skill now excludes it (f16). The agent's rounds are closed, so the edit is the human's call.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, \"For the owner\", h-s6-skill-r1-agent-misses-virtual-environments; .ctoc/audit/improvement-run-notes/s6-skill-round1-validate-d-s6-skill-r1-validate.md, \"Final lists\", owner entries",
+          "decision": "reported-to-human",
+          "reason": null,
+          "for_the_human_id": "h-s6-skill-r1-agent-misses-virtual-environments"
+        },
+        {
+          "id": "f-s6-skill-r1-53",
+          "kind": "new",
+          "text": "The NsDepCop example writes IsEnabled=\"True\" where the help shows \"true\".",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, \"Rejected with no change\" and \"Disposition of every research candidate\"",
+          "decision": "rejected",
+          "reason": "Decision, no change: not shown to matter (critic, \"Rejected with no change\").",
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-54",
+          "kind": "new",
+          "text": "Line 163 runs depcruise with no --config, so it may apply no rule.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, \"Rejected with no change\" and \"Disposition of every research candidate\"",
+          "decision": "rejected",
+          "reason": "Decision, no change: not checked this round; left for round 2 (critic, \"Rejected with no change\").",
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-55",
+          "kind": "new",
+          "text": "lint-imports --config .importlinter may be redundant, since import-linter looks for .importlinter by default.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, \"Rejected with no change\" and \"Disposition of every research candidate\"",
+          "decision": "rejected",
+          "reason": "Decision, no change: rests only on a search summary of older documentation (critic, \"Rejected with no change\"; research gaps, S4).",
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-56",
+          "kind": "new",
+          "text": "The \"Java (21+)\" and \"Python (3.12+)\" labels.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, \"Rejected with no change\" and \"Disposition of every research candidate\"",
+          "decision": "rejected",
+          "reason": "Decision, no change: Python 3.12 is in security support (devguide); the Java roadmap returned HTTP 403, and nothing read contradicts the label (critic, \"Rejected with no change\").",
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-57",
+          "kind": "new",
+          "text": "dispatch_protocol: v1 in the frontmatter.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, \"Rejected with no change\" and \"Disposition of every research candidate\"",
+          "decision": "rejected",
+          "reason": "Decision, no change: validated against the schema's protocol_version, and a frozen key (critic, \"Rejected with no change\").",
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-58",
+          "kind": "new",
+          "text": "pydeps reads import instructions from compiled bytecode, so it may report a type-only ring as a cycle (research gaps, D4, second half).",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round1-critic-d-s6-skill-r1-critic.md, \"Rejected with no change\" and \"Disposition of every research candidate\"",
+          "decision": "rejected",
+          "reason": "Decision, no change: unverified; it needs a run of pydeps on a two-file test before it can be stated (critic, disposition of D4).",
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-59",
+          "kind": "new",
+          "text": "The boilerplate this round removed from this skill, \"Converted from … as part of CTOC v7 B2 leaf-node sweep.\" and \"Auto-loaded when the user prompt matches a when_to_load trigger.\", stands at the top of most other skill bodies (exact-text search of agents/ and skills/, 2026-10-05).",
+          "evidence": "exact-text search (presence only) of agents/ and skills/, run by the executor on 2026-10-05",
+          "decision": "rejected",
+          "reason": "Cross-file: none of the finished files carries either line (the three ai-quality skills of slices s3 to s5 do not); every other hit is in a file not yet started, which its own slice meets (inventory.json, slice order).",
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r1-60",
+          "kind": "new",
+          "text": "The heading \"Refinement Loop — critic mode (v6.9.8)\", whose version label has no hit in the changelog or docs, stands in most other skill bodies, including the finished skills of slices s3, s4 and s5 (skills/ai-quality/ai-code-quality-reviewer/SKILL.md line 565, skills/ai-quality/hallucination-detector/SKILL.md line 452, skills/ai-quality/llm-security-tester/SKILL.md line 907), and agents/ai-quality/hallucination-detector.md line 26 quotes it.",
+          "evidence": "exact-text search (presence only) of agents/ and skills/, run by the executor on 2026-10-05",
+          "decision": "rejected",
+          "reason": "Cross-file: the label is unsourced, not refuted, and each finished file already states under the heading that the loop is not running, so no late correction is owed; the unstarted files are met by their own slices.",
+          "for_the_human_id": null
+        }
+      ],
+      "nothing_found": false,
+      "validator": {
+        "examined": 78,
+        "VALIDATED": 75,
+        "FABRICATED": 0,
+        "UNSOURCEABLE": 3,
+        "MISATTRIBUTED": 0
+      },
+      "validator_final": {
+        "examined": 104,
+        "VALIDATED": 100,
+        "FABRICATED": 0,
+        "UNSOURCEABLE": 4,
+        "MISATTRIBUTED": 0
+      },
+      "not_reverified": [
+        {
+          "claim": "Leftover A1 (skills/architecture/dependency-analyzer/SKILL.md): ````markdown\n## Dependency Analysis Report",
+          "verified_on": "2026-10-05",
+          "reason": "Written by the re-validation (d-s6-skill-r1-revalidate) and applied byte for byte after it; no validator has read the edited text since."
+        },
+        {
+          "claim": "Leftover A2 (skills/architecture/dependency-analyzer/SKILL.md): 4. Add dependency-cruiser / import-linter / ArchUnit rules to CI\n````",
+          "verified_on": "2026-10-05",
+          "reason": "Written by the re-validation (d-s6-skill-r1-revalidate) and applied byte for byte after it; no validator has read the edited text since."
+        },
+        {
+          "claim": "Leftover B1 (skills/architecture/dependency-analyzer/SKILL.md): | Runtime cycle of any size, including a file that imports itself (size never changes the grade) |",
+          "verified_on": "2026-10-05",
+          "reason": "Written by the re-validation (d-s6-skill-r1-revalidate) and applied byte for byte after it; no validator has read the edited text since."
+        },
+        {
+          "claim": "Leftover B2 (skills/architecture/dependency-analyzer/SKILL.md): Go, Rust and PHP have no section: their imports are extracted but not resolved (Step 2), and no Go, Rust or PHP tool was checked for this skill.",
+          "verified_on": "2026-10-05",
+          "reason": "Written by the re-validation (d-s6-skill-r1-revalidate) and applied byte for byte after it; no validator has read the edited text since."
+        },
+        {
+          "claim": "Leftover B3 (skills/architecture/dependency-analyzer/SKILL.md): a file under none of these belongs to no layer: skip its edges, and report how many such files there are.",
+          "verified_on": "2026-10-05",
+          "reason": "Written by the re-validation (d-s6-skill-r1-revalidate) and applied byte for byte after it; no validator has read the edited text since."
+        },
+        {
+          "claim": "Leftover B4 (skills/architecture/dependency-analyzer/SKILL.md): `tsort` alone is not one: it finds a cycle only in input given as \"pairs of strings, separated by blanks\", and then \"writes the first cycle encountered to standard error\", and no step that turns a clang depfile into s...",
+          "verified_on": "2026-10-05",
+          "reason": "Written by the re-validation (d-s6-skill-r1-revalidate) and applied byte for byte after it; no validator has read the edited text since."
+        },
+        {
+          "claim": "Leftover B5 (skills/architecture/dependency-analyzer/SKILL.md): If the loop ran, the letter would carry these fields:",
+          "verified_on": "2026-10-05",
+          "reason": "Written by the re-validation (d-s6-skill-r1-revalidate) and applied byte for byte after it; no validator has read the edited text since."
+        },
+        {
+          "claim": "Leftover B6 (skills/architecture/dependency-analyzer/SKILL.md): in the module tree and there is no",
+          "verified_on": "2026-10-05",
+          "reason": "Written by the re-validation (d-s6-skill-r1-revalidate) and applied byte for byte after it; no validator has read the edited text since."
+        },
+        {
+          "claim": "Leftover C1 (skills/architecture/dependency-analyzer/SKILL.md): Computes Ca, Ce, I, A, D per package and reports package dependency cycles",
+          "verified_on": "2026-10-05",
+          "reason": "Written by the re-validation (d-s6-skill-r1-revalidate) and applied byte for byte after it; no validator has read the edited text since."
+        },
+        {
+          "claim": "Leftover C2 (skills/architecture/dependency-analyzer/SKILL.md): # NDepend (commercial) computes I, A, D and RelationalCohesion per assembly; its command-line runner is NDepend.Console",
+          "verified_on": "2026-10-05",
+          "reason": "Written by the re-validation (d-s6-skill-r1-revalidate) and applied byte for byte after it; no validator has read the edited text since."
+        },
+        {
+          "claim": "Leftover C3 (skills/architecture/dependency-analyzer/SKILL.md): | **ArchUnit** | Java | Tests that check rules against compiled bytecode; a broken rule fails the build | Java continuous integration |",
+          "verified_on": "2026-10-05",
+          "reason": "Written by the re-validation (d-s6-skill-r1-revalidate) and applied byte for byte after it; no validator has read the edited text since."
+        },
+        {
+          "claim": "Leftover D1 (skills/architecture/dependency-analyzer/SKILL.md): ### SQL (foreign-key graph via information_schema)",
+          "verified_on": "2026-10-05",
+          "reason": "Written by the re-validation (d-s6-skill-r1-revalidate) and applied byte for byte after it; no validator has read the edited text since."
+        },
+        {
+          "claim": "Leftover D2 (skills/architecture/dependency-analyzer/SKILL.md): | **dependency-cruiser** | TypeScript, JavaScript, CoffeeScript |",
+          "verified_on": "2026-10-05",
+          "reason": "Written by the re-validation (d-s6-skill-r1-revalidate) and applied byte for byte after it; no validator has read the edited text since."
+        },
+        {
+          "claim": "Leftover D3 (skills/architecture/dependency-analyzer/SKILL.md): | Every pull request, TypeScript and JavaScript projects |",
+          "verified_on": "2026-10-05",
+          "reason": "Written by the re-validation (d-s6-skill-r1-revalidate) and applied byte for byte after it; no validator has read the edited text since."
+        },
+        {
+          "claim": "Leftover D4 (skills/architecture/dependency-analyzer/SKILL.md): | **madge** | TypeScript, JavaScript |",
+          "verified_on": "2026-10-05",
+          "reason": "Written by the re-validation (d-s6-skill-r1-revalidate) and applied byte for byte after it; no validator has read the edited text since."
+        },
+        {
+          "claim": "Leftover D5 (skills/architecture/dependency-analyzer/SKILL.md): | **jdeps** | Java | Ships with the Java Development Kit; reads multi-release JAR files (`--multi-release`); no option that finds cycles | Java environments with only the Java Development Kit |",
+          "verified_on": "2026-10-05",
+          "reason": "Written by the re-validation (d-s6-skill-r1-revalidate) and applied byte for byte after it; no validator has read the edited text since."
+        },
+        {
+          "claim": "Leftover D6 (skills/architecture/dependency-analyzer/SKILL.md): | .NET continuous integration without NDepend |",
+          "verified_on": "2026-10-05",
+          "reason": "Written by the re-validation (d-s6-skill-r1-revalidate) and applied byte for byte after it; no validator has read the edited text since."
+        },
+        {
+          "claim": "Leftover D7 (skills/architecture/dependency-analyzer/SKILL.md): | Python continuous integration gate |",
+          "verified_on": "2026-10-05",
+          "reason": "Written by the re-validation (d-s6-skill-r1-revalidate) and applied byte for byte after it; no validator has read the edited text since."
+        },
+        {
+          "claim": "Leftover E1 (.ctoc/audit/agent-and-skill-improvement/for-the-human.json): xhigh breaks no check: tests/skill-loading.test.js line 33 requires only that effort_level is present, and no other file under src/ or tests/ names the key (presence check, 2026-10-05), although no skill under skills/...",
+          "verified_on": "2026-10-05",
+          "reason": "Written by the re-validation (d-s6-skill-r1-revalidate) and applied byte for byte after it; no validator has read the edited text since."
+        },
+        {
+          "claim": "Leftover E2 (.ctoc/audit/agent-and-skill-improvement/for-the-human.json): Edits frozen keys; xhigh passes only because no code reads effort_level's value, and no other skill declares it.",
+          "verified_on": "2026-10-05",
+          "reason": "Written by the re-validation (d-s6-skill-r1-revalidate) and applied byte for byte after it; no validator has read the edited text since."
+        },
+        {
+          "claim": "Leftover E3 (.ctoc/audit/agent-and-skill-improvement/for-the-human.json): The wrapper agent computes no abstractness (agent line 264), so any D in the skill describes a measurement the agent never makes;",
+          "verified_on": "2026-10-05",
+          "reason": "Written by the re-validation (d-s6-skill-r1-revalidate) and applied byte for byte after it; no validator has read the edited text since."
+        },
+        {
+          "claim": "Leftover E4 (.ctoc/audit/agent-and-skill-improvement/for-the-human.json): It brings the skill's findings close to the agent's and removes the three cut-offs no source gives (the layer grades stay labelled as this skill's own weighting, and D > 0.5 is the separate question h-s6-skill-r1-dist...",
+          "verified_on": "2026-10-05",
+          "reason": "Written by the re-validation (d-s6-skill-r1-revalidate) and applied byte for byte after it; no validator has read the edited text since."
+        },
+        {
+          "claim": "Martin 1994, page 6, and 2000, pages 18 and 24 (Step 4 and Step 6)",
+          "verified_on": "2026-10-01",
+          "reason": "Settled in the agent's rounds (.ctoc/audit/agent-and-skill-improvement/agents/architecture/dependency-analyzer.md.json); the validator accepted it by citing that record and did not re-read the source this round."
+        },
+        {
+          "claim": "TypeScript verbatimModuleSyntax: \"Erased away entirely\" and the rewrite to import {} from \"xyz\"; (2026 Best Practices, Type-only imports)",
+          "verified_on": "2026-10-01",
+          "reason": "Settled in the agent's rounds (.ctoc/audit/agent-and-skill-improvement/agents/architecture/dependency-analyzer.md.json); the validator accepted it by citing that record and did not re-read the source this round."
+        },
+        {
+          "claim": "The Go specification: \"It is illegal for a package to import itself, directly or indirectly\" (Step 2)",
+          "verified_on": "2026-10-01",
+          "reason": "Settled in the agent's rounds (.ctoc/audit/agent-and-skill-improvement/agents/architecture/dependency-analyzer.md.json); the validator accepted it by citing that record and did not re-read the source this round."
+        },
+        {
+          "claim": "Falleri and others, TOOLS 2011, pages 5 and 9; Oyetoyan and others 2015 (Step 4)",
+          "verified_on": "2026-10-01",
+          "reason": "Settled in the agent's rounds (.ctoc/audit/agent-and-skill-improvement/agents/architecture/dependency-analyzer.md.json); the validator accepted it by citing that record and did not re-read the source this round."
+        },
+        {
+          "claim": "ISO/IEC 5055:2021 clauses 7.1.25 (CWE-1047) and 7.1.11 (CWE-1054) (Steps 4 and 5)",
+          "verified_on": "2026-10-01",
+          "reason": "Settled in the agent's rounds (.ctoc/audit/agent-and-skill-improvement/agents/architecture/dependency-analyzer.md.json); the validator accepted it by citing that record and did not re-read the source this round."
+        },
+        {
+          "claim": "MITRE: CWE-1047 and CWE-1054 are \"primarily a quality issue with no direct security implications\" (Step 4)",
+          "verified_on": "2026-10-02",
+          "reason": "Settled in the agent's rounds (.ctoc/audit/agent-and-skill-improvement/agents/architecture/dependency-analyzer.md.json); the validator accepted it by citing that record and did not re-read the source this round."
+        },
+        {
+          "claim": "madge 8.0.0 runs: exit 1 on a cycle, \"Found 4 circular dependencies!\" for two components, the stack trace without tsconfig.json, skipTypeImports (the madge recipes and line 295)",
+          "verified_on": "2026-10-02",
+          "reason": "Settled in the agent's rounds (.ctoc/audit/agent-and-skill-improvement/agents/architecture/dependency-analyzer.md.json); the validator accepted it by citing that record and did not re-read the source this round."
+        }
+      ],
+      "fences": [
+        {
+          "test": "tests/agent-and-skill-improvement-record.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-honest-status-fence.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/architecture-invariants.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/claim-census.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/claim-ledger-gate.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/compliance-claims-match-code.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/compliance-seam-is-executable.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/corpus-audit-ledger.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/cu5-wrapper-coverage-completeness.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/export-reachability.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/gate-numbers-fence.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/iron-loop-enforcer.test.js",
+          "result": "fail",
+          "note": "Three subtests fail on the block finding gate-destinations-approved, raised by plans/implementation/agent-tool-grants.md and plans/implementation/plan-writing-agents-can-edit-and-search.md, written on 2026-10-05 after this round's baseline and not approved into the implementation stage; this round's edits do not cause it. Every other subtest of the file passes."
+        },
+        {
+          "test": "tests/no-model-optimized-for.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/plugin-skill-discovery.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/reachability-surface-scan-is-linear.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/reachability.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/readme-numbers.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/session-start-question-dispatch.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/skill-loading.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/streaming-render.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/test-gate-ledger-wiring.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/unexecutable-instruction-fence.test.js",
+          "result": "pass"
+        }
+      ],
+      "paired_files_compared": [
+        "agents/architecture/dependency-analyzer.md",
+        "agents/quality/architecture-checker.md",
+        "skills/quality/architecture-checker/SKILL.md",
+        "agents/versioning/backwards-compatibility-checker.md"
+      ],
+      "seven_languages": {
+        "applies": true,
+        "reason": "It applies: every language here has an import or include mechanism (critic, \"Seven-language verdict\"). The skill's seven coverage sections are TypeScript and JavaScript, Python, Java, C#, C, C++ and SQL, and all stay. Go and Rust, and PHP to match the agent, are added to Steps 1 and 2 as extracted but not resolved; Go carries the specification's rule against import cycles. No Go or Rust tool recipe is added, because none was researched. C, C++ and SQL now say present but not analyzed, with recipes for a human, which agrees with the agent. No changed example was run or compiled.",
+        "examples_checked": [
+          {
+            "language": "TypeScript and JavaScript (madge 8.0.0 recipes)",
+            "how": "not run this round; the facts rest on the session's madge 8.0.0 runs of 2026-10-01 and 2026-10-02 in the agent's rounds and on the madge README, read by the validator 2026-10-05"
+          },
+          {
+            "language": "TypeScript and JavaScript (dependency-cruiser rules)",
+            "how": "not run; field names and the circular rule checked against the rules reference, read 2026-10-05"
+          },
+          {
+            "language": "Python (.importlinter)",
+            "how": "not run; [importlinter] and root_package checked against import-linter's configure page, read 2026-10-05"
+          },
+          {
+            "language": "Java (JDepend command, ArchUnit rules)",
+            "how": "not run or compiled (no Java toolchain on the build machine); the textui command and -file checked against JDepend.html, the ArchUnit rules against the user guide, read 2026-10-05"
+          },
+          {
+            "language": "C# (NDepend.Console, NsDepCop)",
+            "how": "not run (no .NET SDK on the build machine); the console argument checked against the NDepend console page, NsDepCop's elements against its help, read 2026-10-05"
+          },
+          {
+            "language": "C (clang -MMD -MF)",
+            "how": "not run; flags checked against the Clang command-line reference, read 2026-10-05"
+          },
+          {
+            "language": "C++ (include-what-you-use, cpp-dependencies)",
+            "how": "not run; options checked against iwyu_globals.cc and the cpp-dependencies README, read 2026-10-05"
+          },
+          {
+            "language": "SQL (PostgreSQL information-schema query)",
+            "how": "not run; column names and the visibility caveat checked against the PostgreSQL 18 manual pages, read 2026-10-05"
+          }
+        ]
+      }
+    },
+    {
+      "round": 2,
+      "date": "2026-10-05",
+      "resumed_after_unrecorded_edit": false,
+      "fingerprint_before": "sha256:dd792715ef47d2d493649e46a05f80fadf31efa720db9b896032511b0ef7ab79",
+      "fingerprint_after": "sha256:0abe7ee89ac3c3b02ce150730b59a709ffbf93adf53fe9dcf8e843066e7fe9c9",
+      "instruments": [
+        {
+          "path": "agents/pipeline/agent-critic.md",
+          "fingerprint": "sha256:8ef32ac31d91fd9fbc209fbe9a2f27668e4ed2fe8357859e26e98fb11a62682f"
+        },
+        {
+          "path": "agents/ai-quality/citation-validator.md",
+          "fingerprint": "sha256:0b99b97bb8530375a56e59203769d2a8c9a7d97d92f0c7c90cd5b358b0f7dc23"
+        }
+      ],
+      "dispatches": [
+        {
+          "id": "d-s6-skill-r2-research",
+          "agent": "ai-quality/citation-validator",
+          "purpose": "research-and-critique",
+          "declared_effort": "xhigh"
+        },
+        {
+          "id": "d-s6-skill-r2-critic",
+          "agent": "pipeline/agent-critic",
+          "purpose": "research-and-critique",
+          "declared_effort": "xhigh"
+        },
+        {
+          "id": "d-s6-skill-r2-validate",
+          "agent": "ai-quality/citation-validator",
+          "purpose": "validate",
+          "declared_effort": "xhigh"
+        },
+        {
+          "id": "d-s6-skill-r2-revalidate",
+          "agent": "ai-quality/citation-validator",
+          "purpose": "re-validate",
+          "declared_effort": "xhigh"
+        }
+      ],
+      "queries": [
+        {
+          "text": "Who did the research: the web research of this round was done by ai-quality/citation-validator (dispatch d-s6-skill-r2-research), because the installed agent-critic (CTOC 6.14.67) holds only Read and Grep and has no web tool; the critic (d-s6-skill-r2-critic) worked from that report and the files. This round's source class, different from round 1's tool documentation: standards, peer-reviewed studies and agencies. Question researched first: empirical work on architecture smells (cyclic, hub-like and unstable dependency) and change-proneness, by Arcelli Fontana, Sas, Avgeriou and others",
+          "source_class": "original paper",
+          "repeated_because": null
+        },
+        {
+          "text": "The bibliographic records of the candidate studies: Mo and others (IEEE Transactions on Software Engineering, 2021), Jolak and others (Journal of Systems and Software, 2025), Sas and others (Journal of Software: Evolution and Process)",
+          "source_class": "publisher",
+          "repeated_because": null
+        },
+        {
+          "text": "ISO/IEC 25010:2023 maintainability sub-characteristics, and ISO/IEC 5055 with the Object Management Group maintainability measure behind CWE-1047 and CWE-1054",
+          "source_class": "standards body",
+          "repeated_because": null
+        },
+        {
+          "text": "Agency guidance at the boundary with security/dependency-checker: NIST SP 800-218 practice PS.3.2 and the CISA minimum elements for a software bill of materials (searches only)",
+          "source_class": "regulator",
+          "repeated_because": null
+        },
+        {
+          "text": "Re-verifying round 1's not-re-verified facts: madge's README and parsers, Martin 1994 and 2000, the Go specification, the TypeScript verbatimModuleSyntax page, Falleri 2011, the Oyetoyan 2015 abstract, and the 23 leftovers against their sources",
+          "source_class": "original paper",
+          "repeated_because": "round 1 recorded these as settled in the agent's rounds or applied after its re-validation, with no later read"
+        },
+        {
+          "text": "Tool facts round 1 left open: whether depcruise reads a configuration file without --config, and how pydeps orders --max-bacon, --only and the cycle search (cli.py, depgraph.py, dummymodule.py)",
+          "source_class": "vendor documentation",
+          "repeated_because": null
+        },
+        {
+          "text": "The validator's checks of the critic's new texts: TypeScript 5.0 export type *, the Go Modules Reference on package paths, the Rust rule on use paths from the current scope, the import-linter layers and forbidden contracts, and the expansions of Asynchronous Module Definition, Scalable Vector Graphics, translation unit and Java Development Kit",
+          "source_class": "vendor documentation",
+          "repeated_because": null
+        },
+        {
+          "text": "Repository facts by presence check: the skill-loading test header, the reachability baseline, the integrator's tools line, the refinement-loop schema's required fields, .ctoc/baselines/, the architecture-checker description, and the agent lines the critic cites",
+          "source_class": "publisher",
+          "repeated_because": null
+        }
+      ],
+      "sources": [
+        {
+          "url": "https://raw.githubusercontent.com/thebjorn/pydeps/master/pydeps/depgraph.py",
+          "read_on": "2026-10-05",
+          "bore_on": "f9: the hop filter and the --only filter run before the cycle search, and --only matches a plain name prefix",
+          "outcome": "refuted",
+          "quote": "self.find_import_cycles()",
+          "error": null
+        },
+        {
+          "url": "https://raw.githubusercontent.com/thebjorn/pydeps/master/pydeps/cli.py",
+          "read_on": "2026-10-05",
+          "bore_on": "f9: --max-bacon 0 means no limit, and --only exists",
+          "outcome": "supported",
+          "quote": "if _args.max_bacon == 0: _args.max_bacon = sys.maxsize",
+          "error": null
+        },
+        {
+          "url": "https://raw.githubusercontent.com/thebjorn/pydeps/master/README.rst",
+          "read_on": "2026-10-05",
+          "bore_on": "f9: the default of 2 hops, --only, and cycles shown as blue boxes",
+          "outcome": "supported",
+          "quote": "any cycles in the dependency graph are highlighted as blue boxes by default",
+          "error": null
+        },
+        {
+          "url": "https://raw.githubusercontent.com/thebjorn/pydeps/master/pydeps/dummymodule.py",
+          "read_on": "2026-10-05",
+          "bore_on": "f9 severity: a package target imports every module below it, so most modules sit one hop away; severity recorded low",
+          "outcome": "supported",
+          "quote": "if package and '__init__.py' not in files: continue",
+          "error": null
+        },
+        {
+          "url": "https://raw.githubusercontent.com/pahen/madge/master/README.md",
+          "read_on": "2026-10-05",
+          "bore_on": "re-verification of round 1's madge facts (fileExtensions, tsConfig, Graphviz)",
+          "outcome": "supported",
+          "quote": "Save graph as a SVG image (requires Graphviz)",
+          "error": null
+        },
+        {
+          "url": "https://unpkg.com/detective-typescript@14/index.js",
+          "read_on": "2026-10-05",
+          "bore_on": "re-verification: the TypeScript parser madge 8.0.0 installs skips an import whose every name is type-only",
+          "outcome": "supported",
+          "quote": "node.specifiers.every(n => n.importKind === 'type')",
+          "error": null
+        },
+        {
+          "url": "https://raw.githubusercontent.com/dependents/node-detective-es6/main/index.js",
+          "read_on": "2026-10-05",
+          "bore_on": "the ES6 parser checks type imports only at declaration level",
+          "outcome": "did-not-bear",
+          "quote": "if (options.skipTypeImports && node.importKind === 'type')",
+          "error": null
+        },
+        {
+          "url": "https://raw.githubusercontent.com/dependents/node-detective-typescript/main/index.js",
+          "read_on": "2026-10-05",
+          "bore_on": "the TypeScript parser's main branch",
+          "outcome": "unreachable",
+          "quote": null,
+          "error": "HTTP 404"
+        },
+        {
+          "url": "https://staff.cs.utu.fi/~jounsmed/doos_06/material/DesignPrinciplesAndPatterns.pdf",
+          "read_on": "2026-10-05",
+          "bore_on": "re-verification of Martin 2000; not readable as text",
+          "outcome": "unreachable",
+          "quote": null,
+          "error": "The returned PDF is compressed and could not be read as text."
+        },
+        {
+          "url": "https://go.dev/ref/spec",
+          "read_on": "2026-10-05",
+          "bore_on": "re-verification of the Go specification sentence; the page was cut off before Import declarations",
+          "outcome": "unreachable",
+          "quote": null,
+          "error": "The page was cut off before Import declarations."
+        },
+        {
+          "url": "https://www.typescriptlang.org/tsconfig/verbatimModuleSyntax.html",
+          "read_on": "2026-10-05",
+          "bore_on": "re-verification of the two verbatimModuleSyntax quotes",
+          "outcome": "supported",
+          "quote": "// Erased away entirely.",
+          "error": null
+        },
+        {
+          "url": "https://typing.python.org/en/latest/spec/directives.html",
+          "read_on": "2026-10-05",
+          "bore_on": "re-verification of the TYPE_CHECKING quote",
+          "outcome": "supported",
+          "quote": "considered `True` during type checking (or other static analysis) but `False` at runtime",
+          "error": null
+        },
+        {
+          "url": "https://cwe-api.mitre.org/api/v1/cwe/weakness/1047,1054",
+          "read_on": "2026-10-05",
+          "bore_on": "re-verification of MITRE's quality-issue sentence for CWE-1047 and CWE-1054",
+          "outcome": "supported",
+          "quote": "This entry is primarily a quality issue with no direct security implications.",
+          "error": null
+        },
+        {
+          "url": "https://cwe.mitre.org/data/definitions/1047.html",
+          "read_on": "2026-10-05",
+          "bore_on": "CWE-1047 sits in the CISQ maintainability measures, partly backing the ISO/IEC 5055 clause",
+          "outcome": "supported",
+          "quote": "CISQ Quality Measures - Maintainability",
+          "error": null
+        },
+        {
+          "url": "https://api.archives-ouvertes.fr/search/?q=halId_s:hal-01203525&fl=abstract_s",
+          "read_on": "2026-10-05",
+          "bore_on": "candidate 5 (rejected): the Oyetoyan 2015 change-proneness quote",
+          "outcome": "supported",
+          "quote": "the presence of cycles can have a significant impact on the change proneness of the classes near these cycles",
+          "error": null
+        },
+        {
+          "url": "https://api.crossref.org/works/10.1137/0201010",
+          "read_on": "2026-10-05",
+          "bore_on": "re-verification of the Tarjan 1972 record",
+          "outcome": "supported",
+          "quote": "Depth-First Search and Linear Graph Algorithms",
+          "error": null
+        },
+        {
+          "url": "https://raw.githubusercontent.com/clarkware/jdepend/master/docs/JDepend.html",
+          "read_on": "2026-10-05",
+          "bore_on": "re-verification of JDepend's I, D, cycle reporting and the textui command",
+          "outcome": "supported",
+          "quote": "The perpendicular distance of a package from the idealized line A + I = 1.",
+          "error": null
+        },
+        {
+          "url": "https://www.ndepend.com/docs/code-metrics",
+          "read_on": "2026-10-05",
+          "bore_on": "re-verification of NDepend's per-assembly metrics",
+          "outcome": "supported",
+          "quote": "Assemblies where NormDistFromMainSeq is higher than 0.7 might be problematic.",
+          "error": null
+        },
+        {
+          "url": "https://www.ndepend.com/docs/ndepend-console",
+          "read_on": "2026-10-05",
+          "bore_on": "re-verification of the NDepend.Console first argument",
+          "outcome": "supported",
+          "quote": "It must be specified as the first argument.",
+          "error": null
+        },
+        {
+          "url": "https://www.archunit.org/userguide/html/000_Index.html",
+          "read_on": "2026-10-05",
+          "bore_on": "re-verification of ArchUnit reading bytecode",
+          "outcome": "supported",
+          "quote": "It does so by analyzing given Java bytecode",
+          "error": null
+        },
+        {
+          "url": "https://docs.oracle.com/en/java/javase/25/docs/specs/man/jdeps.html",
+          "read_on": "2026-10-05",
+          "bore_on": "re-verification of jdeps --check and --multi-release",
+          "outcome": "supported",
+          "quote": "Specifies the version when processing multi-release JAR files.",
+          "error": null
+        },
+        {
+          "url": "https://www.gnu.org/software/coreutils/manual/html_node/tsort-invocation.html",
+          "read_on": "2026-10-05",
+          "bore_on": "re-verification of both tsort quotes (third try, two HTTP 429)",
+          "outcome": "supported",
+          "quote": "writes the first cycle encountered to standard error",
+          "error": null
+        },
+        {
+          "url": "https://raw.githubusercontent.com/sverweij/dependency-cruiser/main/doc/cli.md",
+          "read_on": "2026-10-05",
+          "bore_on": "f12: since version 13 a configuration file is picked up without --config, and the err reporter's exit code; settles round 1's f-s6-skill-r1-54 for projects with a configuration file",
+          "outcome": "supported",
+          "quote": "As of version 13 picking up a config file is the default",
+          "error": null
+        },
+        {
+          "url": "https://raw.githubusercontent.com/sverweij/dependency-cruiser/main/README.md",
+          "read_on": "2026-10-05",
+          "bore_on": "f12: the module systems dependency-cruiser reads",
+          "outcome": "supported",
+          "quote": "JavaScript. TypeScript. CoffeeScript. ES6, CommonJS, AMD.",
+          "error": null
+        },
+        {
+          "url": "https://raw.githubusercontent.com/amdjs/amdjs-api/master/AMD.md",
+          "read_on": "2026-10-05",
+          "bore_on": "f12: the expansion Asynchronous Module Definition",
+          "outcome": "supported",
+          "quote": "The Asynchronous Module Definition (AMD) API specifies a mechanism for defining modules",
+          "error": null
+        },
+        {
+          "url": "https://www.w3.org/TR/SVG2/",
+          "read_on": "2026-10-05",
+          "bore_on": "f13: the expansion Scalable Vector Graphics",
+          "outcome": "supported",
+          "quote": "Scalable Vector Graphics (SVG) 2",
+          "error": null
+        },
+        {
+          "url": "https://cmake.org/cmake/help/latest/manual/cmake-cxxmodules.7.html",
+          "read_on": "2026-10-05",
+          "bore_on": "f13: the expansion translation unit",
+          "outcome": "supported",
+          "quote": "Generally, there is one translation unit per source file.",
+          "error": null
+        },
+        {
+          "url": "https://pypi.org/pypi/import-linter/json",
+          "read_on": "2026-10-05",
+          "bore_on": "re-verification: import-linter 2.15 requires grimp>=3.17",
+          "outcome": "supported",
+          "quote": null,
+          "error": null
+        },
+        {
+          "url": "https://www.postgresql.org/docs/current/information-schema.html",
+          "read_on": "2026-10-05",
+          "bore_on": "re-verification of the PostgreSQL duplicate-name warning",
+          "outcome": "supported",
+          "quote": "…but PostgreSQL does not enforce this restriction.",
+          "error": null
+        },
+        {
+          "url": "https://api.semanticscholar.org/graph/v1/paper/DOI:10.1109/TSE.2019.2910856",
+          "read_on": "2026-10-05",
+          "bore_on": "Mo and others 2021: architecture anti-patterns and error-proneness; maps onto no category here, no change",
+          "outcome": "did-not-bear",
+          "quote": "files involved in these architecture anti-patterns are more error-prone and change-prone",
+          "error": null
+        },
+        {
+          "url": "https://api.semanticscholar.org/graph/v1/paper/DOI:10.1002/smr.2398",
+          "read_on": "2026-10-05",
+          "bore_on": "Sas and others: metadata only; the abstract came back paraphrased",
+          "outcome": "did-not-bear",
+          "quote": null,
+          "error": null
+        },
+        {
+          "url": "https://api.semanticscholar.org/graph/v1/paper/DOI:10.1016/j.jss.2025.112382",
+          "read_on": "2026-10-05",
+          "bore_on": "Jolak and others 2025: metadata only, no abstract",
+          "outcome": "did-not-bear",
+          "quote": null,
+          "error": null
+        },
+        {
+          "url": "http://export.arxiv.org/api/query?id_list=2203.08702,2303.17862,2010.15978",
+          "read_on": "2026-10-05",
+          "bore_on": "architecture-smell studies; no change (peer-review status not established)",
+          "outcome": "did-not-bear",
+          "quote": "We found no significant relationship between architectural smells and software vulnerabilities.",
+          "error": null
+        },
+        {
+          "url": "https://www.typescriptlang.org/docs/handbook/release-notes/typescript-5-0.html",
+          "read_on": "2026-10-05",
+          "bore_on": "f8 and the agent correction (b): export type * from and export type * as ns from are type-only",
+          "outcome": "supported",
+          "quote": "TypeScript 5.0 adds support for both of these forms",
+          "error": null
+        },
+        {
+          "url": "https://go.dev/ref/mod",
+          "read_on": "2026-10-05",
+          "bore_on": "f1 and the agent correction (c): a module path match must stop at a /",
+          "outcome": "supported",
+          "quote": "A package path is the module path joined with the subdirectory containing the package (relative to the module root).",
+          "error": null
+        },
+        {
+          "url": "https://doc.rust-lang.org/edition-guide/rust-2018/path-changes.html",
+          "read_on": "2026-10-05",
+          "bore_on": "f1 and the agent correction (d): a Rust use path can start from the current scope",
+          "outcome": "supported",
+          "quote": "You can use a relative path from the current scope",
+          "error": null
+        },
+        {
+          "url": "https://doc.rust-lang.org/reference/items/use-declarations.html",
+          "read_on": "2026-10-05",
+          "bore_on": "the critic's pointer for the Rust rule; the page has no such sentence (the Edition Guide is the source)",
+          "outcome": "did-not-bear",
+          "quote": null,
+          "error": null
+        },
+        {
+          "url": "https://import-linter.readthedocs.io/en/stable/contract_types/layers/",
+          "read_on": "2026-10-05",
+          "bore_on": "f19: a layers contract lets a higher layer import any lower one",
+          "outcome": "supported",
+          "quote": "higher layers may depend on lower layers, but not the other way around.",
+          "error": null
+        },
+        {
+          "url": "https://import-linter.readthedocs.io/en/stable/contract_types/forbidden/",
+          "read_on": "2026-10-05",
+          "bore_on": "f19: a forbidden contract is the separate type needed for controller to repository",
+          "outcome": "supported",
+          "quote": "Forbidden contracts check that one set of modules is not imported by another set of modules.",
+          "error": null
+        },
+        {
+          "url": "https://docs.python.org/3/reference/lexical_analysis.html",
+          "read_on": "2026-10-05",
+          "bore_on": "leftover 3, the agent correction (a): Python comments are ignored by the syntax",
+          "outcome": "supported",
+          "quote": "Comments are ignored by the syntax.",
+          "error": null
+        },
+        {
+          "url": "https://openjdk.org/",
+          "read_on": "2026-10-05",
+          "bore_on": "the spelling-out of JDK as Java Development Kit; the page does not spell it out (kept, unsourceable)",
+          "outcome": "did-not-bear",
+          "quote": null,
+          "error": null
+        },
+        {
+          "url": "https://iso.org/standard/78176.html",
+          "read_on": "2026-10-05",
+          "bore_on": "ISO/IEC 25010:2023; not reached",
+          "outcome": "unreachable",
+          "quote": null,
+          "error": "HTTP 403"
+        }
+      ],
+      "findings": [
+        {
+          "id": "f-s6-skill-r2-1",
+          "kind": "correction-of-earlier-round",
+          "text": "Step 3 sends standard-library imports to the could-not-resolve list. contradiction with the paired agent, and the could-not-resolve rule does not fit the analyzed languages. Corrects f-s6-skill-r1-17 and -18; merges candidate 2. Severity high. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round2-critic-d-s6-skill-r2-critic.md, s6-skill-r2-f1; .ctoc/audit/improvement-run-notes/s6-skill-round2-validate-d-s6-skill-r2-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r2-2",
+          "kind": "correction-of-earlier-round",
+          "text": "a repository with only C, C++ or SQL files can get a clean report. false clean result on a literal reading; missing file extensions. Corrects f-s6-skill-r1-16. Severity medium. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round2-critic-d-s6-skill-r2-critic.md, s6-skill-r2-f2; .ctoc/audit/improvement-run-notes/s6-skill-round2-validate-d-s6-skill-r2-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r2-3",
+          "kind": "correction-of-earlier-round",
+          "text": "layer names, letter case, and what \"upward\" means with custom rules. literal-reading gap against the paired agent. Corrects f-s6-skill-r1-20 and leftover B3. Severity medium. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round2-critic-d-s6-skill-r2-critic.md, s6-skill-r2-f3; .ctoc/audit/improvement-run-notes/s6-skill-round2-validate-d-s6-skill-r2-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r2-4",
+          "kind": "correction-of-earlier-round",
+          "text": "Step 4's classification rules overlap and give no order. internal contradiction. Corrects f-s6-skill-r1-19. Severity medium. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round2-critic-d-s6-skill-r2-critic.md, s6-skill-r2-f4; .ctoc/audit/improvement-run-notes/s6-skill-round2-validate-d-s6-skill-r2-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r2-5",
+          "kind": "correction-of-earlier-round",
+          "text": "Step 6 never says what a module is, and handles unresolved imports differently from the agent. missing definition, plus a contradiction with the paired agent. Corrects f-s6-skill-r1-21. Severity medium. Applied with pair 1 with the validator's corrected text.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round2-critic-d-s6-skill-r2-critic.md, s6-skill-r2-f5; .ctoc/audit/improvement-run-notes/s6-skill-round2-validate-d-s6-skill-r2-validate.md, verdict PASS-WITH-CORRECTION",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r2-6",
+          "kind": "new",
+          "text": "commented-out imports, and files that fail to parse. missing rule. New. Severity medium. Applied with the validator's corrected text.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round2-critic-d-s6-skill-r2-critic.md, s6-skill-r2-f6; .ctoc/audit/improvement-run-notes/s6-skill-round2-validate-d-s6-skill-r2-validate.md, verdict PASS-WITH-CORRECTION",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r2-7",
+          "kind": "new",
+          "text": "output that was cut short is not detected. report built on input the agent never fully received. New. Severity medium. Applied with the validator's corrected text.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round2-critic-d-s6-skill-r2-critic.md, s6-skill-r2-f7; .ctoc/audit/improvement-run-notes/s6-skill-round2-validate-d-s6-skill-r2-validate.md, verdict PASS-WITH-CORRECTION",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r2-8",
+          "kind": "correction-of-earlier-round",
+          "text": "`export type * from` is handled two different ways. the same fact stated two different ways. Corrects f-s6-skill-r1-9. Severity medium. Applied with pair 1 with the validator's corrected text, citing the TypeScript 5.0 release notes.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round2-critic-d-s6-skill-r2-critic.md, s6-skill-r2-f8; .ctoc/audit/improvement-run-notes/s6-skill-round2-validate-d-s6-skill-r2-validate.md, verdict PASS-WITH-CORRECTION",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r2-9",
+          "kind": "correction-of-earlier-round",
+          "text": "the pydeps recipe (candidate 1, corrected). recipe claim not checked. Corrects f-s6-skill-r1-5 at line 45; new at line 199; merges candidate 4 at line 312. Severity low. The critic graded it medium; recorded as low on the validator's evidence (pydeps dummymodule.py puts every module of a package with __init__.py files one hop from the start) and the session's instruction. Applied with pair 2 in the validator's corrected main version with --only, not the fallback.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round2-critic-d-s6-skill-r2-critic.md, s6-skill-r2-f9; .ctoc/audit/improvement-run-notes/s6-skill-round2-validate-d-s6-skill-r2-validate.md, verdict PASS-WITH-CORRECTION",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r2-10",
+          "kind": "new",
+          "text": "the madge recipe misses `.mts`, `.cts`, `.mjs` and `.cjs` files. code example that can pass without checking anything. New. Severity medium. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round2-critic-d-s6-skill-r2-critic.md, s6-skill-r2-f10; .ctoc/audit/improvement-run-notes/s6-skill-round2-validate-d-s6-skill-r2-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r2-11",
+          "kind": "correction-of-earlier-round",
+          "text": "the report template has no place for what the procedure requires. missing output sections. Corrects f-s6-skill-r1-39 and leftover A2; merges candidate 4 at line 371. Severity medium. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round2-critic-d-s6-skill-r2-critic.md, s6-skill-r2-f11; .ctoc/audit/improvement-run-notes/s6-skill-round2-validate-d-s6-skill-r2-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r2-12",
+          "kind": "correction-of-earlier-round",
+          "text": "the dependency-cruiser comment (candidate 3, corrected). plain words, plus a recipe claim not checked. Settles f-s6-skill-r1-54 for projects that have a configuration file. Severity low. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round2-critic-d-s6-skill-r2-critic.md, s6-skill-r2-f12; .ctoc/audit/improvement-run-notes/s6-skill-round2-validate-d-s6-skill-r2-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r2-13",
+          "kind": "correction-of-earlier-round",
+          "text": "plain words (candidate 4, plus one the research missed). plain words. Corrects f-s6-skill-r1-46, group D. Severity low. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round2-critic-d-s6-skill-r2-critic.md, s6-skill-r2-f13; .ctoc/audit/improvement-run-notes/s6-skill-round2-validate-d-s6-skill-r2-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r2-14",
+          "kind": "correction-of-earlier-round",
+          "text": "the corroboration rule is stated twice and uses the wrong unit. the same fact stated twice, and the wrong unit. Corrects f-s6-skill-r1-5 and -38. Severity low. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round2-critic-d-s6-skill-r2-critic.md, s6-skill-r2-f14; .ctoc/audit/improvement-run-notes/s6-skill-round2-validate-d-s6-skill-r2-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r2-15",
+          "kind": "new",
+          "text": "the hexagonal-architecture check names a layer that does not exist by default. order using an undefined term. New. Severity low. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round2-critic-d-s6-skill-r2-critic.md, s6-skill-r2-f15; .ctoc/audit/improvement-run-notes/s6-skill-round2-validate-d-s6-skill-r2-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r2-16",
+          "kind": "new",
+          "text": "Step 8 is empty. empty step. New. Severity low. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round2-critic-d-s6-skill-r2-critic.md, s6-skill-r2-f16; .ctoc/audit/improvement-run-notes/s6-skill-round2-validate-d-s6-skill-r2-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r2-17",
+          "kind": "correction-of-earlier-round",
+          "text": "an order the agent cannot carry out for SQL. order the agent cannot carry out. Corrects f-s6-skill-r1-36. Severity low. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round2-critic-d-s6-skill-r2-critic.md, s6-skill-r2-f17; .ctoc/audit/improvement-run-notes/s6-skill-round2-validate-d-s6-skill-r2-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r2-18",
+          "kind": "correction-of-earlier-round",
+          "text": "the C and C++ line reads as an order to extract. literal-reading ambiguity. Corrects f-s6-skill-r1-17. Severity low. Applied as the critic wrote it.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round2-critic-d-s6-skill-r2-critic.md, s6-skill-r2-f18; .ctoc/audit/improvement-run-notes/s6-skill-round2-validate-d-s6-skill-r2-validate.md, verdict PASS",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r2-19",
+          "kind": "new",
+          "text": "the import-linter contract does not enforce the skill's own default rule. code example not labelled for what it misses. New. Severity low. Applied with the validator's corrected text, citing the import-linter layers page.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round2-critic-d-s6-skill-r2-critic.md, s6-skill-r2-f19; .ctoc/audit/improvement-run-notes/s6-skill-round2-validate-d-s6-skill-r2-validate.md, verdict PASS-WITH-CORRECTION",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r2-20",
+          "kind": "new",
+          "text": "The re-validation's leftovers 1 and 2 in the skill, applied byte for byte: if no file parsed, the report gives no count and no score and writes \"no file could be parsed\" (medium); a Rust use beginning self:: or super:: is not treated as external (low).",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round2-revalidate-d-s6-skill-r2-revalidate.md, \"Leftovers\", items 1 and 2",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r2-21",
+          "kind": "new",
+          "text": "In-slice correction of the paired agent, agents/architecture/dependency-analyzer.md, decided by the CTO Chief session on 2026-10-05 (h-s6-skill-r2-agent-gaps-closed-in-the-skill): (a) outside Python the script skips comments and the inside of string and template literals; (b) export type * from and export type * as ns from are type-only, citing the TypeScript 5.0 release notes; (c) a Go import belongs to the module only when it equals the module path or begins with it followed by /, citing the Go Modules Reference; (d) a Rust use can start from the current scope, citing the Rust Edition Guide, with the limit stated; (e) a repository with only C, C++ or SQL files stops with \"no source files found\", names those files and gives no count and no score. The re-validation's leftovers 3 to 5 followed (the Python comment citation, the Rust page title, \"Both verbatimModuleSyntax quotes\"). Agent fingerprint sha256:4a101c93f2e34e5cfcffe8beb6baf0a39587e3ab28019b12cc6f9984ba86c286 before, sha256:be621e789a58f4f64f5a6b8c66d24b53620dc551455ddf9ca2a7db6ccc330a33 after; recorded in the agent's record as late corrections lc-s6-agent-1 to lc-s6-agent-7.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round2-critic-d-s6-skill-r2-critic.md, \"Owner item\"; .ctoc/audit/improvement-run-notes/s6-skill-round2-validate-d-s6-skill-r2-validate.md, \"Final lists\"; .ctoc/audit/improvement-run-notes/s6-skill-round2-revalidate-d-s6-skill-r2-revalidate.md, checks (a) to (e) and leftovers 3 to 5",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r2-22",
+          "kind": "new",
+          "text": "The re-validation's leftover 6 in .ctoc/audit/agent-and-skill-improvement/for-the-human.json: the owner item's evidence now says its agent line numbers are those of sha256:4a101c93f2e34e5cfcffe8beb6baf0a39587e3ab28019b12cc6f9984ba86c286 and gives the corrected file's lines.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round2-revalidate-d-s6-skill-r2-revalidate.md, \"Leftovers\", item 6",
+          "decision": "applied",
+          "reason": null,
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r2-23",
+          "kind": "new",
+          "text": "Five rules the skill now has that the agent, whose rounds were closed, lacked (comments and string literals, export type *, the Go module path, Rust current-scope paths, a repository with only C, C++ or SQL files). Put to the owner with three options; decided by the CTO Chief session on 2026-10-05: late-correction-to-agent, applied in-slice (f-s6-skill-r2-21).",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round2-critic-d-s6-skill-r2-critic.md, \"Owner item\"; .ctoc/audit/improvement-run-notes/s6-skill-round2-validate-d-s6-skill-r2-validate.md, \"Final lists\", owner item corrections 1 to 6",
+          "decision": "reported-to-human",
+          "reason": null,
+          "for_the_human_id": "h-s6-skill-r2-agent-gaps-closed-in-the-skill"
+        },
+        {
+          "id": "f-s6-skill-r2-24",
+          "kind": "new",
+          "text": "Research candidate 5: add the Oyetoyan 2015 change-proneness quote after \"This skill follows the 2015 result\".",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round2-research-d-s6-skill-r2-research.md, (d) candidate 5; .ctoc/audit/improvement-run-notes/s6-skill-round2-critic-d-s6-skill-r2-critic.md, \"Verdict on each research candidate\"",
+          "decision": "rejected",
+          "reason": "Decision, no change: it adds a citation and changes no instruction, and placed after \"This skill follows the 2015 result\" it would read as a source for the \"high\" grade, which the skill states is its own weighting (critic).",
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r2-25",
+          "kind": "new",
+          "text": "Research item H1: keep the when_to_load phrase \"dependency graph\", put to the owner.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round2-research-d-s6-skill-r2-research.md, (d) H1; .ctoc/audit/improvement-run-notes/s6-skill-round2-critic-d-s6-skill-r2-critic.md, \"Verdict on each research candidate\"",
+          "decision": "rejected",
+          "reason": "Decision, no change, and not an owner item: when_to_load is not frozen (plan line 51), nothing loads the skill on a phrase match (tests/skill-loading.test.js lines 9 to 14), and removing the phrase needs proof that the test prompts still match, for no gain; an obvious answer is not a question for the owner (Operating Lesson 17; critic).",
+          "for_the_human_id": null
+        },
+        {
+          "id": "f-s6-skill-r2-26",
+          "kind": "new",
+          "text": "Research item H2: the Arcan Hub-Like Dependency smell as a published alternative to \"Ca ≥ 8\", put to the owner.",
+          "evidence": ".ctoc/audit/improvement-run-notes/s6-skill-round2-research-d-s6-skill-r2-research.md, (d) H2; .ctoc/audit/improvement-run-notes/s6-skill-round2-critic-d-s6-skill-r2-critic.md, \"Verdict on each research candidate\"",
+          "decision": "rejected",
+          "reason": "Not an owner item: the research has only a search summary, which is not a source, so it is a research step with no decision to make; recorded as a lead for round 3's research (critic).",
+          "for_the_human_id": null
+        }
+      ],
+      "nothing_found": false,
+      "validator": {
+        "examined": 44,
+        "VALIDATED": 41,
+        "FABRICATED": 0,
+        "UNSOURCEABLE": 1,
+        "MISATTRIBUTED": 1
+      },
+      "validator_final": {
+        "examined": 78,
+        "VALIDATED": 77,
+        "FABRICATED": 0,
+        "UNSOURCEABLE": 1,
+        "MISATTRIBUTED": 0
+      },
+      "not_reverified": [
+        {
+          "claim": "Re-validation leftover 1 (skills/architecture/dependency-analyzer/SKILL.md): Never treat such a file as one with no imports. If no file parsed, list every file, give no count and no score, and write \"no file could be parsed\", never \"no source files found\" or \"no cycles\".",
+          "verified_on": "2026-10-05",
+          "reason": "Written by the re-validation (d-s6-skill-r2-revalidate) and applied byte for byte after it; no validator has read the edited text since."
+        },
+        {
+          "claim": "Re-validation leftover 2 (skills/architecture/dependency-analyzer/SKILL.md): names one of the crate's own modules without `crate::`, `self::` or `super::`: this skill",
+          "verified_on": "2026-10-05",
+          "reason": "Written by the re-validation (d-s6-skill-r2-revalidate) and applied byte for byte after it; no validator has read the edited text since."
+        },
+        {
+          "claim": "Re-validation leftover 3 (agents/architecture/dependency-analyzer.md): Outside Python, whose files `ast` parses and whose comments \"are ignored by the syntax\" (Python language reference, section 2.1.3 Comments, https://docs.python.org/3/reference/lexical_analysis.html, read 2026-10-05), ...",
+          "verified_on": "2026-10-05",
+          "reason": "Written by the re-validation (d-s6-skill-r2-revalidate) and applied byte for byte after it; no validator has read the edited text since."
+        },
+        {
+          "claim": "Re-validation leftover 4 (agents/architecture/dependency-analyzer.md): Rust Edition Guide, page Path and module system changes, section `use` paths, https://doc.rust-lang.org",
+          "verified_on": "2026-10-05",
+          "reason": "Written by the re-validation (d-s6-skill-r2-revalidate) and applied byte for byte after it; no validator has read the edited text since."
+        },
+        {
+          "claim": "Re-validation leftover 5 (agents/architecture/dependency-analyzer.md): (Both `verbatimModuleSyntax` quotes: https://www.typescriptlang.org/tsconfig/verbatimModuleSyntax.html, read 2026-10-01.)",
+          "verified_on": "2026-10-05",
+          "reason": "Written by the re-validation (d-s6-skill-r2-revalidate) and applied byte for byte after it; no validator has read the edited text since."
+        },
+        {
+          "claim": "Re-validation leftover 6 (.ctoc/audit/agent-and-skill-improvement/for-the-human.json): Skill round 2 puts five rules in the skill that the agent, whose three rounds were closed, did not have (agent line numbers below are those of sha256:4a101c93f2e34e5cfcffe8beb6baf0a39587e3ab28019b12cc6f9984ba86c286, b...",
+          "verified_on": "2026-10-05",
+          "reason": "Written by the re-validation (d-s6-skill-r2-revalidate) and applied byte for byte after it; no validator has read the edited text since."
+        },
+        {
+          "claim": "Martin 1994 page 6 and Martin 2000 pages 18 and 24; Falleri 2011 pages 5 and 9; the ISO/IEC 5055 clause numbers 7.1.25 and 7.1.11",
+          "verified_on": "2026-10-01",
+          "reason": "The research could not read the PDFs as text this round; carried from the agent's rounds (research report, \"Not re-verified this round\")."
+        },
+        {
+          "claim": "The Go specification sentence \"It is illegal for a package to import itself, directly or indirectly\"",
+          "verified_on": "2026-10-01",
+          "reason": "This round's fetch was cut off before Import declarations; only a search summary corroborated it."
+        },
+        {
+          "claim": "The madge 8.0.0 run facts (exit 1, \"Found 4 circular dependencies!\", the stack trace without tsconfig.json, the .mts runs)",
+          "verified_on": "2026-10-02",
+          "reason": "Runs in the agent's rounds; nothing was re-run this round."
+        }
+      ],
+      "fences": [
+        {
+          "test": "tests/agent-and-skill-improvement-record.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/agent-honest-status-fence.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/architecture-invariants.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/claim-census.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/claim-ledger-gate.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/compliance-claims-match-code.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/compliance-seam-is-executable.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/corpus-audit-ledger.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/cu5-wrapper-coverage-completeness.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/export-reachability.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/gate-numbers-fence.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/iron-loop-enforcer.test.js",
+          "result": "fail",
+          "note": "Three subtests fail on the block finding gate-destinations-approved, raised by plans/implementation/agent-tool-grants.md, which another build wrote on 2026-10-05 and which is not approved into the implementation stage; this slice's edits do not cause it. Every other subtest of the file passes."
+        },
+        {
+          "test": "tests/no-model-optimized-for.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/plugin-skill-discovery.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/reachability-surface-scan-is-linear.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/reachability.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/readme-numbers.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/session-start-question-dispatch.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/skill-loading.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/streaming-render.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/test-gate-ledger-wiring.test.js",
+          "result": "pass"
+        },
+        {
+          "test": "tests/unexecutable-instruction-fence.test.js",
+          "result": "pass"
+        }
+      ],
+      "paired_files_compared": [
+        "agents/architecture/dependency-analyzer.md"
+      ],
+      "seven_languages": {
+        "applies": true,
+        "reason": "It applies: each of the seven languages under 7-language coverage has an import or include mechanism (critic, \"Seven-language verdict\"). TypeScript and JavaScript: export type * now has a rule (f8), and the madge recipe states that it misses .mts, .cts, .mjs and .cjs (f10). Python, Java and C#: the could-not-resolve rule did not fit before this round, because every standard-library import went to the list; it fits after f1, and C# folders in PascalCase now get a layer (f3). C and C++: not analyzed; a repository with only these files no longer gets a clean report (f2). SQL: not analyzed; the query recipe no longer orders a run the agent cannot do (f17). Go, Rust and PHP follow the agent (f1). The only command that changed is pydeps.",
+        "examples_checked": [
+          {
+            "language": "Python (pydeps command)",
+            "how": "not run; --max-bacon 0, --only and their order before the cycle search checked against pydeps cli.py, depgraph.py and README on master, read 2026-10-05; the installed pydeps version was not checked"
+          },
+          {
+            "language": "Python (.importlinter layered contract)",
+            "how": "not run; the label checked against the import-linter layers and forbidden contract pages, read 2026-10-05"
+          },
+          {
+            "language": "TypeScript and JavaScript (madge and dependency-cruiser comments)",
+            "how": "not run; the .mts facts are the runs of 2026-10-02 in the agent's rounds, and the dependency-cruiser comment is checked against cli.md, read 2026-10-05"
+          }
+        ]
+      }
+    }
+  ],
+  "late_corrections": [],
+  "held": null
+}

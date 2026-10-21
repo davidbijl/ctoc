@@ -1,0 +1,10 @@
+{
+  "content_sha256": "51c5ddd610cd8a48beaa79215d80c246a5f74be8bd93a725ec27b56fc620d4aa",
+  "hash_scope": "specification",
+  "stage_from": "review",
+  "stage_to": "done",
+  "approved_at": "2026-10-18T12:20:18.886Z",
+  "advanced_by": "pipeline",
+  "evidence": "evidence: review→done — checks passed, recorded 2026-10-18T09:02:56.893Z in .ctoc/state/verify/four-defects-in-the-menu-and-the-release-found-on-2026-10-11-s23-no-command-can-start-the-menu-for-a-background-agent.json (VERIFY passed — ran: lint, typecheck, tests); coverage 99.61% against a floor of 99%, 0 skipped; every required step 8–16 is checked in the plan, including REVIEW, SECURE and FINAL-REVIEW (checked by the build itself); questions: none were stored; crossed on evidence, not approved by the human",
+  "plan_basename": "four-defects-in-the-menu-and-the-release-found-on-2026-10-11-s23-no-command-can-start-the-menu-for-a-background-agent"
+}

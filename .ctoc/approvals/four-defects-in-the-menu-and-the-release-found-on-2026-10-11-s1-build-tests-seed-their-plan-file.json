@@ -1,0 +1,10 @@
+{
+  "content_sha256": "aaebcd117b997480ab9e6937fdc21533144c7774168f3c7ec472343f3649ee14",
+  "hash_scope": "specification",
+  "stage_from": "implementation",
+  "stage_to": "todo",
+  "approved_at": "2026-10-11T16:03:20.407Z",
+  "advanced_by": "sufficiency",
+  "evidence": "sufficiency: implementation/four-defects-in-the-menu-and-the-release-found-on-2026-10-11-s1-build-tests-seed-their-plan-file.md — no questions were computed (0 question(s) computed), 0 answered; 0 unanswered, 0 blocking; attested by: not recorded; enough (no unanswered fork)",
+  "plan_basename": "four-defects-in-the-menu-and-the-release-found-on-2026-10-11-s1-build-tests-seed-their-plan-file"
+}

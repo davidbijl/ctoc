@@ -1,0 +1,10 @@
+{
+  "content_sha256": "aa3c621a6666357e33630cd497ed7384c4777f17c6de35e38f8add38640cb2ad",
+  "hash_scope": "specification",
+  "stage_from": "implementation",
+  "stage_to": "todo",
+  "approved_at": "2026-10-11T18:32:28.021Z",
+  "advanced_by": "sufficiency",
+  "evidence": "sufficiency: implementation/four-defects-in-the-menu-and-the-release-found-on-2026-10-11-s9-only-the-owner-answers-an-inbox-question.md — 1 question(s) computed, 1 answered (q10-owner-answer-provenance-r1791733047880); 0 unanswered, 0 blocking; attested by: not recorded; enough (no unanswered fork)",
+  "plan_basename": "four-defects-in-the-menu-and-the-release-found-on-2026-10-11-s9-only-the-owner-answers-an-inbox-question"
+}

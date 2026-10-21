@@ -1,0 +1,10 @@
+{
+  "content_sha256": "52e960fe021fb362cefe779baf9e94e07abc72a1dbb588439bc330bd56f764d3",
+  "hash_scope": "specification",
+  "stage_from": "functional",
+  "stage_to": "implementation",
+  "approved_at": "2026-10-11T16:03:20.724Z",
+  "advanced_by": "sufficiency",
+  "evidence": "sufficiency: functional/four-defects-in-the-menu-and-the-release-found-on-2026-10-11.md — 2 question(s) computed, 0 answered; 2 unanswered, 0 blocking; attested by: not recorded; enough (no unanswered fork)",
+  "plan_basename": "four-defects-in-the-menu-and-the-release-found-on-2026-10-11"
+}

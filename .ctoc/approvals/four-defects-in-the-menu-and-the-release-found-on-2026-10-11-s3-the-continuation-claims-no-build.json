@@ -1,0 +1,10 @@
+{
+  "content_sha256": "77c538f4b5e50523baa6fd00d8815cfbf9eb23b551d4b64a89afc7fefe847359",
+  "hash_scope": "specification",
+  "stage_from": "review",
+  "stage_to": "done",
+  "approved_at": "2026-10-12T09:00:41.190Z",
+  "advanced_by": "pipeline",
+  "evidence": "evidence: review→done — checks passed, recorded 2026-10-12T00:59:37.154Z in .ctoc/state/verify/four-defects-in-the-menu-and-the-release-found-on-2026-10-11-s3-the-continuation-claims-no-build.json (VERIFY passed — ran: lint, typecheck, tests); coverage 99.88% against a floor of 99%, 0 skipped; every required step 8–16 is checked in the plan, including REVIEW, SECURE and FINAL-REVIEW (checked by the build itself); questions: none were stored; crossed on evidence, not approved by the human",
+  "plan_basename": "four-defects-in-the-menu-and-the-release-found-on-2026-10-11-s3-the-continuation-claims-no-build"
+}

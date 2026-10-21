@@ -1,0 +1,10 @@
+{
+  "content_sha256": "66fdd66c00422cf1c1248a2ff2892bc8898253d2aac65ff2a0ab896d2701f9fb",
+  "hash_scope": "specification",
+  "stage_from": "implementation",
+  "stage_to": "todo",
+  "approved_at": "2026-10-11T16:03:20.380Z",
+  "advanced_by": "sufficiency",
+  "evidence": "sufficiency: implementation/four-defects-in-the-menu-and-the-release-found-on-2026-10-11-s8-inbox-questions-are-shown-as-quoted-data.md — no questions were computed (0 question(s) computed), 0 answered; 0 unanswered, 0 blocking; attested by: not recorded; enough (no unanswered fork)",
+  "plan_basename": "four-defects-in-the-menu-and-the-release-found-on-2026-10-11-s8-inbox-questions-are-shown-as-quoted-data"
+}

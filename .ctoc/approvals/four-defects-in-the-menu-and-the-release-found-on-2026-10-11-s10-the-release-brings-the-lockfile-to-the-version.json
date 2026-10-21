@@ -1,0 +1,9 @@
+{
+  "content_sha256": "8be942c46037601a50697fccee119c8c7d2e374a45389f88e608384df201193d",
+  "hash_scope": "specification",
+  "stage_from": "review",
+  "stage_to": "done",
+  "approved_at": "2026-10-18T12:21:59.445Z",
+  "approved_by": "human",
+  "plan_basename": "four-defects-in-the-menu-and-the-release-found-on-2026-10-11-s10-the-release-brings-the-lockfile-to-the-version"
+}
