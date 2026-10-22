@@ -2031,11 +2031,85 @@ function stageBrowse(stage, projectPath) {
 }
 
 /**
+ * Text of a stub as the stubs screen shows it: control characters, then the characters that
+ * hide or reorder text (default-ignorable code points, format characters such as zero-width
+ * and bidirectional controls, line and paragraph separators, the braille blank) are removed,
+ * and the rest is put in one Unicode form (NFC) so one accent written two ways reads the same.
+ * The same class as `stripInvisible` in streaming-gate.js; kept local so `stripCtl`, which
+ * every other screen uses, is unchanged.
+ * @param {string} s
+ * @returns {string}
+ */
+const stubText = (s) => stripCtl(s).replace(/[\p{Default_Ignorable_Code_Point}\p{Cf}\p{Zl}\p{Zp}\u2800]/gu, '').normalize('NFC');
+
+/**
+ * The name each row of the vision stubs screen shows. Pure: reads no file.
+ *
+ * A stub is named by its frontmatter title. A stub whose title is empty once control and
+ * invisible characters are removed is named by its file name without the leading
+ * `<vision slug>-` the decomposer gives every stub, or by its whole file name when
+ * that prefix is absent (a merged stub) or is all the name holds.
+ *
+ * Names are decided on the strings the screen will show, by a ladder of three rungs per row:
+ * the name; the name and the prefix-free file name; the name and the file name as it is on
+ * disk, with every character that is hidden, or would read as part of the label, written as
+ * `<U+XXXX>`. A row whose name another row shows climbs one rung, and the pass repeats until
+ * no row shares a name or every sharing row is on the last rung. File names are unique inside
+ * plans/functional/ and the last rung's escaping is one-to-one (`<`, `(` and `)` are escaped), so
+ * the last rung is never shared: no two rows show the same name, in at most 2n+1 passes.
+ *
+ * @param {Array<{ name: string, path: string, title: string }>} stubs - getVisionStubs' rows, in screen order
+ * @param {string} visionSlug - the slug the `stubs` route was opened with
+ * @returns {string[]} one name per stub, same order, free of control and invisible characters
+ */
+function stubRowNames(stubs, visionSlug) {
+  const prefix = `${visionSlug}-`;
+  const files = stubs.map((s) => stubText(s.name));
+  const shorts = files.map((f) => (f.startsWith(prefix) && f.length > prefix.length ? f.slice(prefix.length) : f));
+  const bases = stubs.map((s, i) => stubText(s.title).trim() || shorts[i]);
+  // A Map, never a plain object: a title such as `constructor` is only text.
+  const tally = (xs) => xs.reduce((m, x) => m.set(x, (m.get(x) || 0) + 1), new Map());
+  const visibleName = (s) => [...s].map((c) => (/[<()]/.test(c) || stubText(c) !== c
+    ? `<U+${Number(c.codePointAt(0)).toString(16).toUpperCase().padStart(4, '0')}>` : c)).join('');
+  const ladder = stubs.map((s, i) => [
+    bases[i],
+    `${bases[i]} (file: ${shorts[i]})`,
+    `${bases[i]} (file: ${visibleName(path.basename(s.path, '.md'))})`,
+  ]);
+  let level = stubs.map(() => 0);
+  for (;;) {
+    const names = ladder.map((rungs, i) => rungs[level[i]]);
+    const count = tally(names);
+    const next = level.map((l, i) => (count.get(names[i]) > 1 ? Math.min(l + 1, 2) : l));
+    if (next.every((l, i) => l === level[i])) return names;
+    level = next;
+  }
+}
+
+/**
  * Vision Stubs Browse Screen
  * Human checkpoint table for vision decomposition.
  * Shows stubs created by the Vision Decomposer and options to approve/edit.
+ * Each row names the stub by its own title (`stubRowNames`) and shows its scope line whole.
+ * Every cell passes `stubText` and is escaped, so no value splits its row. A vision name that is
+ * not a plain file name is refused before a file is read.
  */
 function visionStubsBrowse(slug, projectPath) {
+  // The vision name is a file name: anything else (a newline, a lookalike character, nothing at
+  // all) is refused before a file is read, and the owner is offered Back only.
+  if (typeof slug !== 'string' || !SEND_BACK_PLAN_RE.test(slug)) {
+    return {
+      text: `"${shown(slug ?? '', 80)}" is not a vision name: a vision name is the vision's file name without .md, made of letters, digits, dots, underscores and hyphens.\n\n\n`,
+      ask: {
+        questions: [{
+          question: 'Return to dashboard?',
+          header: 'Error',
+          options: [{ label: 'Back', description: 'Return to dashboard' }],
+        }],
+      },
+      actions: { Back: '' },
+    };
+  }
   const root = getProjectPath(projectPath);
   const stubs = getVisionStubs(slug, root);
 
@@ -2048,10 +2122,14 @@ function visionStubsBrowse(slug, projectPath) {
     text += `  Vision "${slug}" decomposed into ${stubs.length} functional plans:\n\n`;
     text += `  | # | Stub                    | Scope                          | Depends on |\n`;
     text += `  |---|-------------------------|--------------------------------|------------|\n`;
+    const names = stubRowNames(stubs, slug);
+    // Every cell is cleaned by `stubText` and escaped here: a `\` and a `|` are each written with a
+    // `\` before them, so no value can split its row or undo another character's escape.
+    const cell = (s) => s.replace(/[\\|]/g, '\\$&');
     stubs.forEach((stub, i) => {
-      const name = stub.name.padEnd(23).slice(0, 23);
-      const scope = (stub.scope || '').padEnd(30).slice(0, 30);
-      const deps = (stub.dependsOn || '-').padEnd(10).slice(0, 10);
+      const name = cell(names[i]);
+      const scope = cell(stubText(stub.scope || ''));
+      const deps = cell(stubText(stub.dependsOn || '-').padEnd(10).slice(0, 10));
       text += `  | ${i + 1} | ${name} | ${scope} | ${deps} |\n`;
     });
   }

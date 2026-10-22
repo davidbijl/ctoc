@@ -1120,4 +1120,112 @@ describe('getVisionStubs', () => {
 
     assert.deepStrictEqual(state.getVisionStubs('any-slug', root), []);
   });
+
+  test('returns the frontmatter title as trimmed text beside the scope', () => {
+    const root = mkProject();
+    writePlan(root, 'functional', 'stub-title', {
+      frontmatter: { parent_vision: 'title-vision', title: '"  Deliver login  "' },
+      body: '## Problem Statement\nDeliver the login flow',
+    });
+
+    const [stub] = state.getVisionStubs('title-vision', root);
+
+    assert.strictEqual(stub.title, 'Deliver login');
+    assert.strictEqual(stub.scope, 'Deliver the login flow');
+  });
+
+  test('returns a title the reader converts to a number or a boolean as text', () => {
+    const root = mkProject();
+    const body = '## Problem Statement\nS';
+    writePlan(root, 'functional', 'num-stub', { frontmatter: { parent_vision: 'digits-vision', title: '2026' }, body });
+    writePlan(root, 'functional', 'zero-stub', { frontmatter: { parent_vision: 'digits-vision', title: '0' }, body });
+    writePlan(root, 'functional', 'false-stub', { frontmatter: { parent_vision: 'digits-vision', title: '"false"' }, body });
+
+    const byName = Object.fromEntries(state.getVisionStubs('digits-vision', root).map((s) => [s.name, s.title]));
+
+    assert.deepStrictEqual(byName, { 'num-stub': '2026', 'zero-stub': '0', 'false-stub': 'false' });
+    for (const t of Object.values(byName)) assert.strictEqual(typeof t, 'string');
+  });
+
+  test('returns an empty title when there is none or it is a block list', () => {
+    const root = mkProject();
+    writePlan(root, 'functional', 'no-title', {
+      frontmatter: { parent_vision: 'list-vision' },
+      body: '## Problem Statement\nS',
+    });
+    writePlan(root, 'functional', 'list-title', {
+      raw: '---\nparent_vision: list-vision\ntitle:\n  - a\n  - b\n---\n\n## Problem Statement\nS\n',
+    });
+
+    const stubs = state.getVisionStubs('list-vision', root);
+
+    assert.strictEqual(stubs.length, 2);
+    for (const s of stubs) assert.strictEqual(s.title, '', s.name);
+  });
+
+  test('reads the title and the scope line of a plan with Windows line endings', () => {
+    const root = mkProject();
+    writePlan(root, 'functional', 'crlf-stub', {
+      raw: '---\r\ntitle: "Win"\r\nparent_vision: crlf-vision\r\n---\r\n\r\n## Problem Statement\r\nDeliver the login flow\r\n',
+    });
+
+    const [stub] = state.getVisionStubs('crlf-vision', root);
+
+    assert.strictEqual(stub.title, 'Win');
+    assert.strictEqual(stub.scope, 'Deliver the login flow');
+    assert.ok(!stub.title.includes('\r') && !stub.scope.includes('\r'));
+  });
+
+  test('returns depends_on as text whatever the reader made of it', () => {
+    const root = mkProject();
+    const body = '## Problem Statement\nS';
+    writePlan(root, 'functional', 'dep-num', { frontmatter: { parent_vision: 'deps-vision', depends_on: '12' }, body });
+    writePlan(root, 'functional', 'dep-yes', { frontmatter: { parent_vision: 'deps-vision', depends_on: 'true' }, body });
+    writePlan(root, 'functional', 'dep-list', {
+      raw: '---\nparent_vision: deps-vision\ndepends_on:\n  - a\n  - b\n---\n\n## Problem Statement\nS\n',
+    });
+    writePlan(root, 'functional', 'dep-text', { frontmatter: { parent_vision: 'deps-vision', depends_on: '"x"' }, body });
+
+    const byName = Object.fromEntries(state.getVisionStubs('deps-vision', root).map((s) => [s.name, s.dependsOn]));
+
+    assert.deepStrictEqual(byName, { 'dep-num': '12', 'dep-yes': 'true', 'dep-list': 'a, b', 'dep-text': 'x' });
+    for (const d of Object.values(byName)) assert.strictEqual(typeof d, 'string');
+  });
+
+  test('a plan whose parent_vision is not text does not stop the stub list', () => {
+    const root = mkProject();
+    const body = '## Problem Statement\nS';
+    writePlan(root, 'functional', 'pv-true', { frontmatter: { parent_vision: 'true' }, body });
+    writePlan(root, 'functional', 'pv-year', { frontmatter: { parent_vision: '2026' }, body });
+    writePlan(root, 'functional', 'pv-real', { frontmatter: { parent_vision: 'pv-vision' }, body });
+
+    const stubs = state.getVisionStubs('pv-vision', root);
+
+    assert.deepStrictEqual(stubs.map((s) => s.name), ['pv-real']);
+  });
+
+  test('reads the scope line past blank lines after the heading', () => {
+    const root = mkProject();
+    writePlan(root, 'functional', 'blank-unix', {
+      raw: '---\nparent_vision: blank-vision\n---\n\n## Problem Statement\n\n   \nDeliver the login flow\n',
+    });
+    writePlan(root, 'functional', 'blank-win', {
+      raw: '---\r\nparent_vision: blank-vision\r\n---\r\n\r\n## Problem Statement\r\n\r\nWin scope\r\n',
+    });
+
+    const byName = Object.fromEntries(state.getVisionStubs('blank-vision', root).map((s) => [s.name, s.scope]));
+
+    assert.deepStrictEqual(byName, { 'blank-unix': 'Deliver the login flow', 'blank-win': 'Win scope' });
+  });
+
+  test('an empty Problem Statement does not borrow the next heading', () => {
+    const root = mkProject();
+    writePlan(root, 'functional', 'empty-ps', {
+      raw: '---\nparent_vision: empty-vision\n---\n\n## Problem Statement\n\n## Business Alignment\nText\n',
+    });
+
+    const [stub] = state.getVisionStubs('empty-vision', root);
+
+    assert.strictEqual(stub.scope, '');
+  });
 });
