@@ -56,14 +56,34 @@
  * tests/verify-parses-full-output.test.js:
  *   1. evalCategory returns the COMPLETE output,
  *   2. applyTestQualityContracts parses it,
- *   3. runFallbackChecks calls boundCheckOutputs LAST, keeping head + tail so the
+ *   3. runFallbackChecksWith (inside runFallbackChecks) calls boundCheckOutputs LAST, keeping head + tail so the
  *      persisted evidence still shows the verdict a human needs to read.
  * Never truncate before step 2.
+ *
+ * VENV — A PYTHON PROJECT'S OWN TOOLS. A project with a pyproject.toml usually keeps
+ * ruff, mypy and pytest in its own `.venv` (or `venv`) and not on the PATH of whoever
+ * started the session. When that tool folder (`bin`, or `Scripts` on Windows) exists,
+ * it is put FIRST on the PATH of the fallback checks' child processes ONLY, and the
+ * same environment is used for the `--version` probe and for the run, so the tool
+ * found is the tool run. The CTOC process's own environment is never changed. The
+ * `ctoc quality` probe and the app launch do not get it. The folder put first is
+ * recorded on each check that ran as `firstOnPath`.
+ *
+ * TEMP — A TEMP FOLDER OF ITS OWN. Each run of the fallback checks makes a fresh folder
+ * `~/.cache/ctoc-check-temp/run-XXXXXX` and gives it to the checks' child processes ONLY,
+ * through `TMPDIR`, `TMP` and `TEMP`, in the same environment copy as the venv `PATH`. It is
+ * used for the `--version` probe and the run alike. It is removed after the last check and
+ * before the app launch, whatever the outcome. Its stored form is recorded as `tempFolder` on
+ * each check that ran. If the folder cannot be made, has an unsafe word in its path, or cannot
+ * be removed, the checks run as before and `tempFolderNote` says why. The verdict and the
+ * summary never change for it. The CTOC process's own environment is never written. The
+ * `ctoc quality` probe and the app launch do not get the folder.
  */
 
 const { execSync, spawnSync } = require('child_process');
 const safeFs = require('./safe-fs');
 const path = require('path');
+const os = require('os');
 const { driveAppSync } = require('./app-runner');
 
 // ---------------------------------------------------------------------------
@@ -159,7 +179,8 @@ function runVerify(projectPath) {
   if (substantive === 0) {
     result.errors.push(
       'no-verifiable-toolchain: looked for npm scripts (lint/typecheck/test), ' +
-      'pyproject/ruff/mypy/pytest, go.mod/go test, Cargo/cargo test, and a ' +
+      'pyproject/ruff/mypy/pytest (on PATH and in the project\'s .venv or venv), ' +
+      'go.mod/go test, Cargo/cargo test, and a ' +
       'launchable app — none could run. A verification that verified nothing ' +
       'is NOT a pass.'
     );
@@ -298,22 +319,326 @@ function npmScriptExists(pkg, name) {
 }
 
 /**
+ * The tool-folder names tried, in order, inside a Python project.
+ */
+const VENV_DIR_NAMES = Object.freeze(['.venv', 'venv']);
+
+/**
+ * Find a Python project's own tool folder: `<project>/.venv/bin` first, then
+ * `<project>/venv/bin` (`Scripts` instead of `bin` on Windows). The first candidate
+ * that is a directory wins. Never throws for a missing or unreadable folder.
+ * @param {string} projectPath - Project root.
+ * @returns {{dir: string, shown: string}|null} `dir` is absolute (the checks run with
+ *   `cwd: projectPath`, so a relative PATH entry would be resolved a second time);
+ *   `shown` is the project-relative label with `/` separators, safe to store.
+ */
+function projectVenvBin(projectPath) {
+  const binName = process.platform === 'win32' ? 'Scripts' : 'bin';
+  for (const venvName of VENV_DIR_NAMES) {
+    const dir = path.resolve(projectPath, venvName, binName);
+    let stat;
+    try {
+      stat = safeFs.statSync(dir);
+    } catch (e) {
+      // ENOENT (absent), ENOTDIR (a file on the way) and EACCES (unreadable) all
+      // mean "no tool folder here". None is a verdict: with no folder found, the
+      // lookup is exactly the PATH-only lookup of a project without a venv.
+      stat = null;
+    }
+    if (stat && stat.isDirectory()) return { dir, shown: `${venvName}/${binName}` };
+  }
+  return null;
+}
+
+/**
+ * A COPY of the process environment for the fallback checks' children. `process.env`
+ * itself is never written.
+ *
+ * - With a tool folder (`binDir`), it goes first on PATH. An empty or missing PATH becomes
+ *   exactly `binDir`: a trailing empty entry would mean "the current folder" on Linux and macOS.
+ * - With a run folder (`tempDir`), TMPDIR, TMP and TEMP all name it.
+ * - With neither, the result is `undefined`: no `env` key reaches `spawnSync` or `execSync`.
+ *
+ * The same copy goes to every `--version` probe and to every check of a run, so the probe
+ * and the run see the same PATH and the same temp folder.
+ * @param {string|null} [binDir] - Absolute tool folder to put first on PATH.
+ * @param {string|null} [tempDir] - Absolute run folder for TMPDIR, TMP and TEMP.
+ * @returns {NodeJS.ProcessEnv|undefined}
+ */
+function checkEnvWith(binDir, tempDir) {
+  if (!binDir && !tempDir) return undefined;
+  const env = { ...process.env };
+  // On Windows a variable may be spelled in any letter case (`Path`, `Temp`), and Node passes
+  // only one of several keys that differ in letter case, so the existing key is reused.
+  const keyFor = (name) => (process.platform === 'win32'
+    ? (Object.keys(env).find((k) => k.toUpperCase() === name) || name)
+    : name);
+  if (binDir) {
+    const key = keyFor('PATH');
+    env[key] = env[key] ? `${binDir}${path.delimiter}${env[key]}` : binDir;
+  }
+  if (tempDir) {
+    for (const name of TEMP_VARIABLES) env[keyFor(name)] = tempDir;
+  }
+  return env;
+}
+
+/** The names a child reads its temp folder from: TMPDIR (Linux, macOS), TMP and TEMP (Windows). */
+const TEMP_VARIABLES = Object.freeze(['TMPDIR', 'TMP', 'TEMP']);
+/** The folder, under the home folder, in which each VERIFY run makes its own temp folder. */
+const CHECK_TEMP_BASE_PARTS = Object.freeze(['.cache', 'ctoc-check-temp']);
+/** The fixed start of every run folder's name, so a killed run's leftover is easy to find and delete. */
+const CHECK_TEMP_PREFIX = 'run-';
+/** How many fresh names are tried before VERIFY falls back to the inherited temp folder. */
+const CHECK_TEMP_TRIES = 3;
+
+// The words a temp folder's path must not contain. They are taken from what
+// src/hooks/protect-records.js scans when its decision crashes: UNCHECKED_SUSPECT_RE,
+// MENU_MENTION_RE (a background agent's call), SETTINGS_MENTION_RE (a background agent's call,
+// NFKC-folded) and the sweep confirmation `confirmsSweep`. A run folder that holds one of them
+// makes the suite's crash tests refuse their own temp paths. The list is kept here because lib
+// does not read hooks, and tests/step-13-verify.test.js reads the hook's source and fails when
+// the hook gains a word that is missing here.
+const UNSAFE_TEMP_WORDS = Object.freeze([
+  // UNCHECKED_SUSPECT_RE. stampAndLedger and persistVerifyResult are covered by ledger and verify.
+  '.ctoc', 'approval', 'verify', 'ledger', 'backfill', 'approveplan', 'crossbysufficiency',
+  'streamapprove', 'streamanswer',
+  // MENU_MENTION_RE. The four words it shares with the line above are not repeated.
+  'start.js', 'menu-screens', 'streaming-gate', 'streaming-precompute', 'continueaftercrossing',
+  'approvesubplans', 'crossonevidence', 'pendinggatedecisions',
+  // SETTINGS_MENTION_RE.
+  'settings.json', 'settings.local.json',
+  // confirmsSweep (its other form, two words together, is checked in unsafeTempWord).
+  'applysweep'
+]);
+
+/**
+ * The error CODE of a failure, never its message: messages carry absolute paths, and with
+ * them the user's name.
+ * @param {any} e - The thrown value.
+ * @returns {string} `e.code` when that is a non-empty string, else `'an unknown error'`.
+ */
+function errorCode(e) {
+  return e && typeof e.code === 'string' && e.code ? e.code : 'an unknown error';
+}
+
+/**
+ * The refused word a path holds, or null. The path is read twice, as written and after NFKC,
+ * because the protection hook reads it both ways:
+ * - it tests UNCHECKED_SUSPECT_RE (flag `i`) and MENU_MENTION_RE (case-sensitive) on the RAW
+ *   text, where a combining mark after `verify` still matches and NFKC would join it into
+ *   the letter;
+ * - it tests SETTINGS_MENTION_RE (`iu`) on the NFKC text, where a long-s `ſettings.json`
+ *   folds to `settings.json`;
+ * - confirmsSweep removes quotes and backslashes first;
+ * - lower-casing every word is stricter than MENU_MENTION_RE and is never weaker.
+ * @param {string} p - A path.
+ * @returns {string|null} The matched word in double quotes (for example `"verify"`), or
+ *   the two-word form of the sweep confirmation, or null.
+ */
+function unsafeTempWord(p) {
+  const raw = String(p);
+  for (const text of [raw, raw.normalize('NFKC')]) {
+    const flat = text.toLowerCase().replace(/["'\\]/g, '');
+    const word = UNSAFE_TEMP_WORDS.find((w) => flat.includes(w));
+    if (word) return `"${word}"`;
+    if (flat.includes('sweep') && flat.includes('--confirm')) return '"sweep" and "--confirm"';
+  }
+  return null;
+}
+
+/**
+ * The stored form of a folder: the home folder becomes `~`, and the separators become `/`.
+ * Example: home `/home/ctoc`, folder `/home/ctoc/.cache/ctoc-check-temp/run-Ab12Cd` gives
+ * `~/.cache/ctoc-check-temp/run-Ab12Cd`; the folder `/tmp` gives `/tmp`.
+ * @param {string} p - Absolute folder.
+ * @param {string} home - The home folder, or an empty string when there is none.
+ * @returns {string}
+ */
+function shownTempFolder(p, home) {
+  const abs = String(p);
+  if (home) {
+    const rel = path.relative(home, abs);
+    if (rel === '') return '~';
+    if (rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel)) {
+      return `~/${rel.split(path.sep).join('/')}`;
+    }
+  }
+  return abs.split(path.sep).join('/');
+}
+
+/**
+ * Remove a run folder. A recursive delete only of a folder this run made: a direct child
+ * of the base whose name has the fixed start. Never the base, never the home folder, never
+ * anything else. `maxRetries: 2` retries an EBUSY/EPERM (Windows holding a file open) twice.
+ * @param {string} dir - The run folder.
+ * @param {string} base - The base folder it must be a direct child of.
+ * @returns {string|null} Null when the folder is gone; otherwise the reason.
+ */
+function removeRunFolder(dir, base) {
+  if (path.dirname(dir) !== base || !path.basename(dir).startsWith(CHECK_TEMP_PREFIX)) {
+    return 'not a run folder VERIFY made, so it was left in place';
+  }
+  try {
+    safeFs.rmSync(dir, { recursive: true, force: true, maxRetries: 2 });
+  } catch (e) {
+    return errorCode(e);
+  }
+  return safeFs.existsSync(dir) ? 'it was still there after removal' : null;
+}
+
+/**
+ * @typedef {Object} CheckTemp
+ * @property {string|null} dir - The run folder, or null when the checks run with the inherited one.
+ * @property {string|null} base - The folder the run folder was made in, or null.
+ * @property {string} home - The home folder, or an empty string.
+ * @property {string} shown - The stored form of the folder the checks use.
+ * @property {string|null} note - A plain sentence when something went wrong, else null.
+ */
+
+/**
+ * Find the base folder under the home folder and make it. Never throws.
+ * @param {string} home - An absolute home folder.
+ * @returns {{base: string, realBase: string, shownBase: string}|{reason: string}}
+ */
+function checkTempBaseFor(home) {
+  const base = path.join(home, ...CHECK_TEMP_BASE_PARTS);
+  const shownBase = shownTempFolder(base, home);
+  const refused = 'a word CTOC\'s record protection refuses when it cannot run';
+  const homeWord = unsafeTempWord(base);
+  if (homeWord) {
+    return { reason: `VERIFY did not make its own temp folder because the home folder's path contains ${homeWord}, ${refused}` };
+  }
+  try {
+    if (!safeFs.statSync(home).isDirectory()) {
+      return { reason: `VERIFY could not make its own temp folder ${shownBase} because the home folder is not a folder` };
+    }
+  } catch (e) {
+    return { reason: `VERIFY could not make its own temp folder ${shownBase} because the home folder does not exist or cannot be read (${errorCode(e)})` };
+  }
+  try {
+    safeFs.mkdirSync(base, { recursive: true });
+  } catch (e) {
+    return { reason: `VERIFY could not make its own temp folder ${shownBase} (${errorCode(e)})` };
+  }
+  let realBase;
+  try {
+    realBase = safeFs.realpathSync(base);
+  } catch (e) {
+    return { reason: `VERIFY could not read the real path of ${shownBase} (${errorCode(e)})` };
+  }
+  const realWord = unsafeTempWord(realBase);
+  if (realWord) {
+    return { reason: `VERIFY did not use ${shownBase} because its real path contains ${realWord}, ${refused}` };
+  }
+  return { base, realBase, shownBase };
+}
+
+/**
+ * Make this run's own temp folder: a fresh `run-XXXXXX` under `~/.cache/ctoc-check-temp`.
+ * Never throws. Every failure becomes the fallback, which is today's behaviour (the checks
+ * run with the inherited temp folder), with a note that gives the reason and an error code.
+ * @returns {CheckTemp}
+ */
+function openCheckTemp() {
+  let home = '';
+  let lookupCode = null;
+  try {
+    home = String(os.homedir() || '');
+  } catch (e) {
+    // The lookup throws for an account with no home entry (a container with an unlisted
+    // user id). That is not a verdict: the checks run with the inherited temp folder.
+    lookupCode = errorCode(e);
+  }
+  const fallback = (reason) => ({
+    dir: null,
+    base: null,
+    home,
+    shown: shownTempFolder(os.tmpdir(), home),
+    note: `${reason}, so the checks ran with the inherited temp folder.`
+  });
+  if (!home) {
+    return fallback('VERIFY could not make its own temp folder because this process has no home folder'
+      + (lookupCode ? ` (${lookupCode})` : ''));
+  }
+  if (!path.isAbsolute(home)) {
+    // A folder made relative to CTOC's working folder would often land inside the project.
+    return fallback('VERIFY could not make its own temp folder because the home folder this process reports is not an absolute path');
+  }
+  const found = checkTempBaseFor(home);
+  if ('reason' in found) return fallback(found.reason);
+  const { base, realBase, shownBase } = found;
+  let lastWord = null;
+  const leftBehind = [];
+  for (let attempt = 1; attempt <= CHECK_TEMP_TRIES; attempt += 1) {
+    let dir;
+    try {
+      // mkdtemp makes the folder with mode 0700 on Linux and macOS, directly in the base.
+      dir = safeFs.mkdtempSync(path.join(base, CHECK_TEMP_PREFIX));
+    } catch (e) {
+      return fallback(`VERIFY could not make a run folder in ${shownBase} (${errorCode(e)})`);
+    }
+    // The path as built, and its real path. The real path needs no second system call.
+    const word = unsafeTempWord(dir) || unsafeTempWord(path.join(realBase, path.basename(dir)));
+    if (!word) return { dir, base, home, shown: shownTempFolder(dir, home), note: null };
+    lastWord = word;
+    const trouble = removeRunFolder(dir, base);
+    if (trouble) leftBehind.push(`${shownTempFolder(dir, home)} (${trouble})`);
+  }
+  return fallback(`VERIFY tried ${CHECK_TEMP_TRIES} fresh names in ${shownBase} and each held a word CTOC's record protection refuses when it cannot run (the last: ${lastWord})`
+    + (leftBehind.length ? `; it could not remove ${leftBehind.join(', ')}` : ''));
+}
+
+/**
+ * Remove this run's temp folder. Never throws, and never changes a verdict: a failed
+ * removal is written into the note, which names the folder.
+ * @param {CheckTemp} temp - What `openCheckTemp` returned; its note may be replaced.
+ * @returns {void}
+ */
+function closeCheckTemp(temp) {
+  if (!temp.dir) return;
+  const trouble = removeRunFolder(temp.dir, temp.base);
+  if (trouble) {
+    temp.note = `VERIFY could not remove this run's temp folder ${temp.shown} (${trouble}); `
+      + 'remove it by hand when no VERIFY is running.';
+  }
+}
+
+/**
+ * Write `tempFolder` (and `tempFolderNote`) on each check that ran.
+ * @param {Object} checks - The `checks` object of a fallback run.
+ * @param {CheckTemp} temp - What `openCheckTemp` returned, after `closeCheckTemp`.
+ * @returns {void}
+ */
+function noteTempFolder(checks, temp) {
+  for (const key of ['lint', 'types', 'tests']) {
+    const c = checks[key];
+    if (!c || c.ran !== true) continue;
+    c.tempFolder = temp.shown;
+    if (temp.note) c.tempFolderNote = temp.note;
+  }
+}
+
+/**
  * Probe whether an executable is runnable, by asking it for its version. A
  * missing binary sets `error` (ENOENT); a present one exits (0 or not) with no
  * spawn error. Used to distinguish a NOT-RUN check (tool absent) from a real
  * failure, so an absent tool is never counted as a failing check.
  * @param {string} bin - Executable name.
  * @param {string} cwd - Working directory.
+ * @param {NodeJS.ProcessEnv} [env] - The environment the check will run with;
+ *   omitted means the CTOC process's own (today's behaviour).
  * @returns {boolean}
  */
-function toolExists(bin, cwd) {
+function toolExists(bin, cwd, env) {
   try {
     const r = spawnSync(bin, ['--version'], {
       cwd,
       encoding: 'utf8',
       timeout: 15000,
       stdio: ['ignore', 'pipe', 'pipe'],
-      shell: process.platform === 'win32'
+      shell: process.platform === 'win32',
+      ...(env ? { env } : {})
     });
     return !r.error;
   } catch (e) {
@@ -335,13 +660,15 @@ function toolExists(bin, cwd) {
  *   launch is a real failure, not a benign skip).
  * @param {string} projectPath - Project root.
  * @param {string[]} errors - Errors array to append a failure to.
+ * @param {NodeJS.ProcessEnv} [env] - Environment the candidates run with; omitted
+ *   means the CTOC process's own.
  * @returns {Object} The check record.
  */
-function evalCategory(label, candidates, projectPath, errors) {
+function evalCategory(label, candidates, projectPath, errors, env) {
   if (candidates.length === 0) {
     return { ran: false, applicable: false, passed: null, reason: `no ${label.toLowerCase()} tool or script found` };
   }
-  const r = tryCommands(candidates, projectPath);
+  const r = tryCommands(candidates, projectPath, { env });
   if (!r.ran) {
     if (r.requiredLaunchFailure) {
       // A PRESENCE-QUALIFIED candidate — the project's OWN declared npm script —
@@ -646,13 +973,38 @@ function applyTestQualityContracts(check, projectPath, errors) {
 }
 
 /**
- * Run fallback quality checks using direct tool commands.
- * Detects the project's language/toolchain and runs appropriate checks.
+ * Run fallback quality checks using direct tool commands, in a temp folder of their own.
+ * Makes a fresh folder under the home folder (`openCheckTemp`), runs the checks with it
+ * (`runFallbackChecksWith`), removes it whatever the outcome (`closeCheckTemp`, in `finally`,
+ * so a throw in this module still removes it and still propagates), and records it on each
+ * check that ran (`noteTempFolder`). Runs before the app launch, so the folder is gone by then.
  *
  * @param {string} projectPath - Project root path
  * @returns {Object} Result with checks and errors
  */
 function runFallbackChecks(projectPath) {
+  const temp = openCheckTemp();
+  let result;
+  try {
+    result = runFallbackChecksWith(projectPath, temp.dir);
+  } finally {
+    // After the last check and before the app launch, whatever the outcome: a pass, a
+    // failure, a timeout, an overflow, or a throw in this module (which still propagates).
+    closeCheckTemp(temp);
+  }
+  noteTempFolder(result.checks, temp);
+  return result;
+}
+
+/**
+ * Run fallback quality checks using direct tool commands.
+ * Detects the project's language/toolchain and runs appropriate checks.
+ *
+ * @param {string} projectPath - Project root path
+ * @param {string|null} tempDir - The run's own temp folder, or null to inherit CTOC's
+ * @returns {Object} Result with checks and errors
+ */
+function runFallbackChecksWith(projectPath, tempDir) {
   const checks = {};
   const errors = [];
 
@@ -662,6 +1014,14 @@ function runFallbackChecks(projectPath) {
   const hasPyproject = safeFs.existsSync(path.join(projectPath, 'pyproject.toml'));
   const hasGoMod = safeFs.existsSync(path.join(projectPath, 'go.mod'));
   const hasCargoToml = safeFs.existsSync(path.join(projectPath, 'Cargo.toml'));
+
+  // VENV — a Python project's own tools. Looked for only when pyproject.toml marks a
+  // Python project.
+  const venv = hasPyproject ? projectVenvBin(projectPath) : null;
+  // One environment for every probe and every check of this run: the venv tool folder
+  // first on PATH (a Python project) and the run's own temp folder in TMPDIR, TMP and TEMP.
+  // With neither, no env is passed, exactly as before.
+  const checkEnv = checkEnvWith(venv ? venv.dir : null, tempDir);
 
   // Each candidate is added ONLY when its precondition holds — a DEFINED npm
   // script (finding C2: an ABSENT script is applicable:false, never a failing
@@ -675,30 +1035,38 @@ function runFallbackChecks(projectPath) {
   // Lint checks
   const lintCommands = [];
   if (hasPackageJson && npmScriptExists(pkg, 'lint')) lintCommands.push({ cmd: 'npm run lint', required: true });
-  if (hasPyproject && toolExists('ruff', projectPath)) lintCommands.push('ruff check .');
-  if (hasGoMod && toolExists('golangci-lint', projectPath)) lintCommands.push('golangci-lint run');
-  if (hasCargoToml && toolExists('cargo', projectPath)) lintCommands.push('cargo clippy');
-  checks.lint = evalCategory('Lint', lintCommands, projectPath, errors);
+  if (hasPyproject && toolExists('ruff', projectPath, checkEnv)) lintCommands.push('ruff check .');
+  if (hasGoMod && toolExists('golangci-lint', projectPath, checkEnv)) lintCommands.push('golangci-lint run');
+  if (hasCargoToml && toolExists('cargo', projectPath, checkEnv)) lintCommands.push('cargo clippy');
+  checks.lint = evalCategory('Lint', lintCommands, projectPath, errors, checkEnv);
 
   // Type check
   const typeCommands = [];
   if (hasPackageJson && npmScriptExists(pkg, 'typecheck')) typeCommands.push({ cmd: 'npm run typecheck', required: true });
-  if (hasPyproject && toolExists('mypy', projectPath)) typeCommands.push('mypy .');
-  if (hasGoMod && toolExists('go', projectPath)) typeCommands.push('go vet ./...');
-  checks.types = evalCategory('Type check', typeCommands, projectPath, errors);
+  if (hasPyproject && toolExists('mypy', projectPath, checkEnv)) typeCommands.push('mypy .');
+  if (hasGoMod && toolExists('go', projectPath, checkEnv)) typeCommands.push('go vet ./...');
+  checks.types = evalCategory('Type check', typeCommands, projectPath, errors, checkEnv);
 
   // Test suite
   const testCommands = [];
   if (hasPackageJson && npmScriptExists(pkg, 'test')) testCommands.push({ cmd: 'npm test', required: true });
-  if (hasPyproject && toolExists('pytest', projectPath)) testCommands.push('pytest');
-  if (hasGoMod && toolExists('go', projectPath)) testCommands.push('go test ./...');
-  if (hasCargoToml && toolExists('cargo', projectPath)) testCommands.push('cargo test');
-  const testCheck = evalCategory('Tests', testCommands, projectPath, errors);
+  if (hasPyproject && toolExists('pytest', projectPath, checkEnv)) testCommands.push('pytest');
+  if (hasGoMod && toolExists('go', projectPath, checkEnv)) testCommands.push('go test ./...');
+  if (hasCargoToml && toolExists('cargo', projectPath, checkEnv)) testCommands.push('cargo test');
+  const testCheck = evalCategory('Tests', testCommands, projectPath, errors, checkEnv);
   // When tests actually RAN, fold in the "0 skipped" and coverage-floor contracts.
   if (testCheck.ran) {
     applyTestQualityContracts(testCheck, projectPath, errors);
   }
   checks.tests = testCheck;
+
+  // The record says which folder was put first on PATH, so a reader can see that the
+  // project's own tools, not the global ones, were the first candidates.
+  if (venv) {
+    for (const key of ['lint', 'types', 'tests']) {
+      if (checks[key] && checks[key].ran === true) checks[key].firstOnPath = venv.shown;
+    }
+  }
 
   // V1 — PARSE FIRST, BOUND SECOND. Every instrument above has now read the COMPLETE
   // output; only here is the stored copy cut down to the persistence budget. Moving
@@ -749,6 +1117,7 @@ function resolveVerifyTimeout(override) {
  *   failure, which it is not.
  * @param {number} [options.timeout] - Per-check wall-clock budget in ms; see
  *   `resolveVerifyTimeout`. A timeout is reported UNCERTIFIED, never a test failure.
+ * @param {NodeJS.ProcessEnv} [options.env] - Environment for the child; omitted means process.env.
  * @returns {Object} `{ success, output, error, spawnFailed }`.
  */
 function tryCommand(command, cwd, options = {}) {
@@ -775,7 +1144,8 @@ function tryCommand(command, cwd, options = {}) {
       encoding: 'utf8',
       timeout,
       maxBuffer,
-      stdio: ['pipe', 'pipe', 'pipe']
+      stdio: ['pipe', 'pipe', 'pipe'],
+      ...(options.env && typeof options.env === 'object' ? { env: options.env } : {})
     });
     return { success: true, output: output.trim(), error: null, spawnFailed: false };
   } catch (e) {
@@ -857,14 +1227,16 @@ function tryCommand(command, cwd, options = {}) {
  *
  * @param {(string|{cmd: string, required?: boolean})[]} commands - Candidates, in order.
  * @param {string} cwd - Working directory.
+ * @param {{env?: NodeJS.ProcessEnv}} [options] - `env` is the environment every
+ *   candidate runs with; omitted means the CTOC process's own.
  * @returns {Object} `{ ran, success, output, command, error, requiredLaunchFailure? }`.
  */
-function tryCommands(commands, cwd) {
+function tryCommands(commands, cwd, options = {}) {
   const normalized = commands.map((c) =>
     typeof c === 'string' ? { cmd: c, required: false } : c);
   let requiredLaunchFailure = null;
   for (const { cmd, required } of normalized) {
-    const result = tryCommand(cmd, cwd);
+    const result = tryCommand(cmd, cwd, { env: options.env });
     if (result.success) {
       return { ...result, command: cmd, ran: true };
     }

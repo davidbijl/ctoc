@@ -113,9 +113,19 @@ function makeSingleCommitRepo(prefix) {
 
 // A local "remote" cloned into a working copy whose HEAD == @{upstream}: git works and
 // the push delta @{upstream}..HEAD is GENUINELY empty (`[]`, not null).
+//
+// The bare remote starts on `main` by name (plan the-test-suite-passes-on-a-clean-machine).
+// The outside contract: `git init` names the branch `init.defaultBranch` sets, and git's
+// built-in `master` when nothing sets it. git() above hides the machine's configuration, so a
+// plain `git init --bare` always named `master`, while the seed pushes only `main`. The clone
+// then had an unborn HEAD, getPushDeltaBlobs returned null, and cases 6 and 8 ran the "could
+// not determine" branch instead of the empty delta this fixture promises. Why the fixture and
+// not the code: the code is right for an empty delta; the fixture never built one. What newly
+// fails: nothing here; case 6's assertions below fail if this fixture stops producing an
+// empty delta.
 function makeEmptyDeltaClone(prefix) {
   const remote = mkTmp(prefix + 'remote-');
-  git(['init', '--bare'], remote);
+  git(['init', '--bare', '--initial-branch=main'], remote);
   const seed = mkTmp(prefix + 'seed-');
   git(['init'], seed);
   fs.writeFileSync(path.join(seed, 'app.js'), 'module.exports = 1;\n');
@@ -302,13 +312,24 @@ describe('test selection uses the real push delta, never HEAD~1 (plan 00208)', (
     });
 
   // Case 6 — git works, delta genuinely empty (`[]`, HEAD == @{upstream}): full suite.
+  //
+  // Tightened by plan the-test-suite-passes-on-a-clean-machine. The outside contract: this
+  // file's header says `[]` and `null` BOTH run the full suite with DISTINCT messages, and this
+  // case's title names the `[]` branch. Why the test and not the code: the code already prints
+  // "Git reports no delta for this push" for `[]`; this case checked only the full-suite count,
+  // which the `null` branch gives too, so it passed while running the wrong branch. What newly
+  // fails: a fixture or a code change that sends this case down the "could not determine" branch.
   gitIt('6. a genuinely empty delta ([]) runs the full suite', async () => {
       const { workdir, cleanup } = makeEmptyDeltaClone('ctoc-sel-empty-');
       try {
-        const { res } = await withCwd(workdir, () =>
+        const { res, out } = await withCwd(workdir, () =>
           captureLog(() => qualityAgent.runSmartTests({ js: { test: GREEN } })));
         assertFullSuiteRan(res, 'empty-delta');
         assert.equal(res.passCount, 3);
+        assert.match(out, /Git reports no delta for this push/,
+          'the empty-delta case must take the [] branch and say git found no delta');
+        assert.doesNotMatch(out, /could not determine|unavailable|not a git/i,
+          'the empty-delta case must never print the "could not determine" (null) message');
       } finally {
         cleanup();
       }

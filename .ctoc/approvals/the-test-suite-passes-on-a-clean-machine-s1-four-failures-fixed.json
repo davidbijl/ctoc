@@ -1,0 +1,9 @@
+{
+  "content_sha256": "e9ea53fea0f0dbecc386a5baa434c7ae8074d9d777ae829aa457d4c9ed95a5d2",
+  "hash_scope": "specification",
+  "stage_from": "review",
+  "stage_to": "done",
+  "approved_at": "2026-10-22T18:39:34.845Z",
+  "approved_by": "human",
+  "plan_basename": "the-test-suite-passes-on-a-clean-machine-s1-four-failures-fixed"
+}

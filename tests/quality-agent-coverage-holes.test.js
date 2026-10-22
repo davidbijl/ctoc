@@ -266,7 +266,8 @@ function makeAutoPushFixture({ testScript }) {
 
 /**
  * Make an auto-push fixture a git repository on `main` with a local bare repository as its
- * origin, everything committed and pushed. Returns the bare repository's path.
+ * origin, everything committed and pushed. The bare repository's HEAD names `main` as well, so a
+ * clone of it checks out `main`. Returns the bare repository's path.
  */
 function makeRepoWithRemote(dir) {
   const hooks = mkTmp('ctoc-qa-nohooks-');
@@ -279,7 +280,16 @@ function makeRepoWithRemote(dir) {
   gitIn(dir, ['commit', '-q', '-m', 'fixture']);
   gitIn(dir, ['branch', '-M', 'main']);
   const bare = mkTmp('ctoc-qa-bare-');
-  gitIn(bare, ['init', '-q', '--bare']);
+  // The bare repository starts on `main` by name (plan the-test-suite-passes-on-a-clean-machine).
+  // The outside contract: `git init` names the branch `init.defaultBranch` sets, and `master`
+  // when nothing sets it, so a plain `git init --bare` followed the machine, not this fixture.
+  // Only `main` is pushed here, so on a machine without that setting the one case that clones
+  // this remote (the rejected push) landed on an unborn `master`, and its own
+  // `git push origin main` failed with "src refspec main does not match any" before the
+  // quality agent ran. Why the fixture and not the code: the agent was never reached. What
+  // newly fails: nothing; no assertion changes, and every case that uses this helper now
+  // reaches its assertions whatever the machine's default branch.
+  gitIn(bare, ['init', '-q', '--bare', '--initial-branch=main']);
   gitIn(dir, ['remote', 'add', 'origin', bare]);
   gitIn(dir, ['push', '-q', '-u', 'origin', 'main']);
   return bare;

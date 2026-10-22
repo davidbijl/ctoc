@@ -1,0 +1,9 @@
+{
+  "content_sha256": "a19e112c84eec621117cf654a6f20bb231a9b0175b635425baab532d4b419640",
+  "hash_scope": "specification",
+  "stage_from": "review",
+  "stage_to": "done",
+  "approved_at": "2026-10-22T18:24:02.389Z",
+  "approved_by": "human",
+  "plan_basename": "verify-runs-the-test-suite-with-its-own-temp-folder-s2-protection-tests-use-a-neutral-base"
+}

@@ -1,0 +1,9 @@
+{
+  "content_sha256": "e8c4e2b183a00bc184d7a0bd310fade766bf177bc7d612f8f5ec6d53095bb10d",
+  "hash_scope": "specification",
+  "stage_from": "functional",
+  "stage_to": "implementation",
+  "approved_at": "2026-10-22T13:30:28.444Z",
+  "approved_by": "human",
+  "plan_basename": "the-test-suite-passes-on-a-clean-machine"
+}
