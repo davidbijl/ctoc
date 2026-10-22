@@ -1,0 +1,10 @@
+{
+  "content_sha256": "e350b294b6abaabb3db28145fa4b5abc6808ee74b6d499e790f832f8823a8a11",
+  "hash_scope": "specification",
+  "stage_from": "implementation",
+  "stage_to": "todo",
+  "approved_at": "2026-10-22T11:11:54.948Z",
+  "advanced_by": "sufficiency",
+  "evidence": "sufficiency: implementation/the-gate-critic-sends-the-owner-only-stack-algorithm-cost-and-risk-questions-s4-the-operating-lesson.md — no questions were computed (0 question(s) computed), 0 answered; 0 unanswered, 0 blocking; attested by: not recorded; enough (no unanswered fork)",
+  "plan_basename": "the-gate-critic-sends-the-owner-only-stack-algorithm-cost-and-risk-questions-s4-the-operating-lesson"
+}

@@ -70,14 +70,14 @@ Everything else is settled on its evidence and written into the plan when it mov
   - Count: seven of the thirteen are critical. Six of those are in the first file and one in the second.
 - **The rule in code** (`src/lib/streaming-precompute.js`):
   - `HIGH_STAKES_TOPICS` and `QUESTION_TOPICS`, lines 215–216.
-  - The validator, `validatePlanQuestions`, lines 356–420. Line 408 refuses a topic outside `QUESTION_TOPICS`, and so refuses the whole file, on write and on read. Line 418 refuses a one-option question with no recommendation on a high-stakes topic.
+  - The validator, `validatePlanQuestions`, lines 356–462. Line 408 refuses a topic outside `QUESTION_TOPICS`, and so refuses the whole file, on write and on read. Line 418 refuses a one-option question with no recommendation on a high-stakes topic.
   - `isBlockingQuestion`, lines 921–932. Line 927 sends any `critical` question to the owner; line 928 sends any high-stakes topic; line 931 sends any question with two or more options and not exactly one recommended.
   - `goesToHuman`, lines 944–946.
   - `hasEnoughInformation`, line 1262.
 - **Every reader of the rule.** The search for `HIGH_STAKES_TOPICS|isBlockingQuestion|goesToHuman|QUESTION_TOPICS` over the repository, excluding `plans/`, `node_modules/` and `.claude/`, matched five files: `src/lib/streaming-precompute.js`, `src/lib/streaming-gate.js`, `src/lib/sufficiency-audit.js`, `docs/ENFORCEMENT.md` and `tests/question-blocking-default.test.js`.
   - `nextUnansweredQuestion` in `src/lib/streaming-gate.js` uses the rule to choose which question the screen asks first. It was at line 446 at the start of this refinement and at line 482 at its end, because another change was editing the file meanwhile. Cite it by name.
   - `src/lib/sufficiency-audit.js:44` and `:108` use it for the audit's count of questions that need the owner.
-  - `docs/ENFORCEMENT.md:211-219` describes it.
+  - `docs/ENFORCEMENT.md:213-221` describes it.
   - `tests/question-blocking-default.test.js` tests it.
 - **Every writer of `topic`.** The search for `topic` over `agents/` matched four agents that write question topics. The other matches use the word for other things: streaming topics in `vision-decomposer`, research topics in `deepthink-researcher`.
   - `agents/iron-loop/gate-critic.md`:
@@ -257,7 +257,7 @@ Story 1: scenarios 1 to 5. Story 2: scenarios 6 to 10. Story 3: scenarios 11 to 
    - it is `critical` and its file carries a valid attestation, which marks a critique the owner asked for (unchanged for such files). This covers that critique's Reject ruling; the questions it raises about itself or about a plan steering its reviewer (a critique lens that did not run, an injection attempt, a file declared outside the allowed read scope, missing ancestry, a redirected read, lenses that contradict each other, an unreadable plan, more than five criticals, no critique at all); and its critical findings, whose recommended option is usually to send the plan back;
    - it is `important` with no topic, which covers a Hold ruling (unchanged).
 
-   In a file without an attestation, which is a classification, `critical: true` no longer sends a question to the owner by itself. It stays the tier that orders the questions.
+   In a file without an attestation, which is a classification, `critical: true` no longer sends a question to the owner by itself. It stays the tier that orders the questions. The one exception is a critical question whose id topic is one only a critique's synthesis writes: it reaches the owner whatever the file's attestation (decision 3).
 
    `goesToHuman` therefore needs to know whether the file is attested. Its three callers pass that, so the gate, the screen and the audit keep one shared rule:
    - `hasEnoughInformation` in `src/lib/streaming-precompute.js`;
@@ -273,10 +273,10 @@ Story 1: scenarios 1 to 5. Story 2: scenarios 6 to 10. Story 3: scenarios 11 to 
    - `hook-or-gate` is one question per plan: whether CTOC's hook or gate behaviour changes as the plan describes. The design forks inside that change are details.
    - Rule 4a's sentence on which questions reach the human says what In Scope item 1 says, so rule 8's text ("no surviving question goes to the human under rule 4a") stays as it is.
 4. **The three authors' question sections** use the new vocabulary and never write the three earlier tags (scenarios 5 and 9). The authors are `agents/planning/product-owner.md`, `agents/planning/implementation-planner.md` and `agents/planning/vision-advisor.md`.
-5. **The rule inventories** record each replaced order as `fate: "replaced"` with a `replaced_by` record, and pin the new texts (scenario 2). These are the gate critic's orders N-001, N-003 and N-004, and the sentence pinned in both the product owner's and the implementation planner's inventories.
+5. **The rule inventories** re-record each changed order and pin the new texts (scenario 2). These are the gate critic's orders N-001, N-003 and N-004, and the sentence pinned in both the product owner's and the implementation planner's inventories. How each is recorded, and which orders join them, is technical decision 2 below: the gate critic's orders are re-recorded in place, not marked `fate: "replaced"`.
 6. **A settled decision carries its evidence** (scenario 3). The line written under `## Decisions Taken Under Ambiguity` when the plan moves on names the recommended option's evidence: its `description`, else its `pros`, on one line, control-stripped and capped. When neither exists, the line says that no evidence was stated.
 7. **The golden fixture** `tests/fixtures/questions-the-owner-called-details.json` (scenario 1). It holds the thirteen questions copied from the two real files, with ids, prompts, options, recommended flags, `critical` and `important` unchanged. Each carries the topic the new definitions assign, `detail`, and the definition clause that makes it one. No test reads the live `.ctoc/streaming/` files.
-8. **`docs/ENFORCEMENT.md`**: its paragraph "Which questions reach the human" (lines 211–219) states the new conditions (scenario 10).
+8. **`docs/ENFORCEMENT.md`**: its paragraph "Which questions reach the human" (lines 213–221) states the new conditions (scenario 10).
 9. **The operating lesson** (scenarios 11 to 14). Lesson 23 goes into `.ctoc/templates/operating-lessons.md` and the lessons block of this repository's `CLAUDE.md`. Its full text goes into `docs/OPERATING_LESSONS.md`, and `tests/fixtures/claude-md-rule-inventory.json` pins it. The lesson-number checks in `tests/claude-md-lessons.test.js` move from 1 to 22 to 1 to 23. All of this happens only if the lesson fits within 15,000 bytes; when it does not, the build stops as scenario 12 says.
 
 ### Out of Scope
@@ -287,8 +287,8 @@ Each item says where it lives. None is a scheduling choice; the owner alone sche
 - **Re-tagging question files already stored.** They keep their tags, and the three earlier tags keep reaching the owner (In Scope item 2). A plan's next revision is classified under the new definitions.
 - **The owner's own answers written into the plan.** No code writes them there today. `appendDefaultDecisions` is the only writer of `## Decisions Taken Under Ambiguity` in `src/lib/streaming-gate.js`, and an answer goes only to `.ctoc/streaming/answers.jsonl` (`appendAnswerEntry`, called by `streamAnswer`, in the same file). This plan does not change that, and no plan for it was found.
 - **Lesson 17's sentence** that an owner decision gets "no manufactured recommendation" stays unchanged. The new lesson says which questions reach the human, not how a question is phrased. The search for `manufactured recommendation|no recommendation on an owner decision` over the open plan folders matched four plans that name that phrase, among them `plans/todo/00268-every-agent-and-specialist-skill-improved-three-times-s8-ask-me-questions.md`.
-- **`CLAUDE.md`'s "Questions" section, and `src/commands/start.md:388`** ("every weighty choice the author left unasked"), stay unchanged. Both stay true under the new definitions.
-- **Making room in `CLAUDE.md`** for the lesson by moving or shortening other text is the owner's call (scenario 12). The plan this one depends on says the same.
+- **`CLAUDE.md`'s "Questions" section, and `src/commands/start.md:389`** ("every weighty choice the author left unasked"), stay unchanged. Both stay true under the new definitions.
+- **Making room in `CLAUDE.md`** for the lesson by moving or shortening other text is not done by this plan's build (scenario 12). The plan this one depends on says the same. Slice 4's stop files one question about it, which reaches the owner only if a rule would be removed (technical decision 6).
 - **"CTOC keeps working and asks only what matters"** (`plans/functional/ctoc-keeps-working-and-asks-only-what-matters.md`).
   - This plan replaces rows 2 and 3 of its slice 1 classification table: any critical question, and any of six topics, goes to the human.
   - Its code is already in place, at `src/lib/streaming-precompute.js:215` and `:921-932`, and the gate critic's rule inventory records the agent text as added by its slice 1.
@@ -312,11 +312,11 @@ Each item says where it lives. None is a scheduling choice; the owner alone sche
 - In other CTOC projects, an unanswered question already classified as `critical` and `detail` stops reaching the owner after the update and is settled by its recommendation.
   - Likelihood: LOW
   - Impact: LOW, because the old rule already judged it a detail with an evidence-backed recommendation, and that recommendation is written into the plan.
-  - Mitigation: Repeat decision 15's count in this repository at Step 9, and state the change in the release description.
+  - Mitigation: Repeat decision 15's count in this repository at Step 9. Slice 1's Step 15 writes the release description's sentence: in a classified question file a `critical` question no longer reaches the owner on its own account; only a technology-stack, algorithm, cost-or-risk or hook-or-gate question does, besides a question no evidence settles and every verdict of a critique he asked for.
 - Replacing orders in three rule inventories trips the compaction tests (the order floor and the kinds digest).
   - Likelihood: MEDIUM
   - Impact: LOW
-  - Mitigation: Record each replaced order with `fate: "replaced"` and a `replaced_by` record, the mechanism in `tests/compaction-eval/inventory-checks.js:16-23`, and run the three compaction tests first to see them fail.
+  - Mitigation: Re-record the gate critic's added orders in place (technical decision 2); give R-420 and R-316 new `replaced_by` records; raise `ORDER_FLOOR` to 596; run the three compaction tests first to see them fail.
 
 ### Business Risks
 - This plan is classified under today's rule, because the new rule is not built yet. The gate critic may therefore still send this plan's own details to the owner.
@@ -330,7 +330,7 @@ Each item says where it lives. None is a scheduling choice; the owner alone sche
 - The lesson does not fit in `CLAUDE.md` (decision 18).
   - Likelihood: HIGH
   - Impact: LOW, because code and the agent texts enforce the rule, and the lesson restates it for prose and conversation.
-  - Mitigation: Stop at scenario 12 and report the measured size and the bytes still needed. The owner decides what, if anything, moves out of `CLAUDE.md`.
+  - Mitigation: Stop at scenario 12 and record the measured size and the bytes still needed, with one question about making room (slice 4). It reaches the owner only if making room would remove a rule (technical decision 6).
 
 ### Dependency Risks
 - The plan named in `depends_on`, "The operating lessons say CTOC is built with CTOC and friction is filed as a plan", sets the lesson numbers and uses nearly all the room in `CLAUDE.md`. The plan "Every session is told that a hotfix word is checked, and how to run the check and commit" (`plans/implementation/ctoc-checks-that-a-hotfix-is-really-small-and-safe-s4-every-session-is-told.md`) adds a paragraph that competes for the same bytes.
@@ -371,7 +371,7 @@ Each item says where it lives. None is a scheduling choice; the owner alone sche
 2. **`critical` stops sending a question to the owner by itself.** Seven of the thirteen questions are `critical: true`. The golden acceptance requires all thirteen settled, and the owner said "only" four kinds. `critical` stays required, and stays the tier that orders the questions.
 3. **A critique the owner asked for keeps today's routing, including `critical`.** In a file with a valid attestation, `critical: true` still sends a question to him.
    - Such a critique's critical questions are verdicts, not design forks. They include its Reject ruling, the questions it raises about itself or about a plan steering its reviewer, and its findings, whose recommended option is usually "send back".
-   - If those no longer reached him, he could answer the ruling with Approve. The plan would then cross, and the defaults writer would record "Send back — …" as a decision taken, a plan claiming it was sent back. Today that cannot happen, and scenario 10 proves it still cannot.
+   - If those no longer reached him, he could answer the ruling with Approve. The plan would then cross, and the defaults writer would record "Send back — …" as a decision taken, a plan claiming it was sent back. Today that cannot happen. After this change it still cannot for a critique file that carries a valid attestation, and scenario 10 proves that. It can for a critique output that drops both its ruling and its attestation: such a file reads as a plain classification, its critical findings settle by their recommendation, and nothing refuses it (`src/lib/streaming-questions-sweeper.js` lines 198–216 pass the file to the writer as it is, and `reservedIdErrors` refuses only a ruling or a coverage notice without an attestation). Its precondition is the gate critic breaking its own rule 10 and output shape. Slice 1 narrows that residual to a critique's finding-band critical questions: a critical question whose id topic is one only a synthesis writes (a prosecution lens that did not run, an injection attempt in a plan or a lens payload, a declared file outside the read scope, missing ancestry, a redirected read, contradicting lenses, no critique, an unreadable plan, a plan not ready for its gate; `agents/iron-loop/gate-critic.md` lines 171 and 179) reaches the owner whatever the file's attestation, so it is never settled by its recommendation, and such a file is never refused, because a classification writes the steering ones itself (its technical-planning decision 9). Slice 1 states the rest in its Security review and pins it with its case 63, and slice 3 makes the output shape say that only a synthesis writes the attestation.
    - The critique runs only when he asks for it (`src/commands/start.md:272-274`).
    - A file carries the ruling only with a valid attestation (`reservedIdErrors`, `src/lib/streaming-precompute.js:549-560`), so the attestation marks such a critique reliably. That also spares the code from recognising questions by their id numbers. The numbers could not be used anyway, because author questions also use `q01` to `q04`, as the first golden file shows.
    - The cost, stated as a fact: an author's critical question carried into a critique he asked for still reaches him there, even when it is a detail.
@@ -440,3 +440,57 @@ Each item says where it lives. None is a scheduling choice; the owner alone sche
     - The thirteen questions carry the tags `security-posture` (seven), `algorithm` (four), `data-model` (one) and `irreversible` (one).
 23. **The status file carries no times.** This agent has no clock, so `started`, `completed` and `updatedAt` are null.
 24. **No instruction found in the questions files, the plans or the vision asked for anything beyond this refinement**, and none was acted on.
+
+## Slices (dependency-ordered)
+
+Technical planning split this plan into four slices. Each is a complete implementation plan under `plans/implementation/`, built through Steps 8 to 16 on its own.
+
+| # | Slice file | Scope (one line) | depends_on |
+|---|---|---|---|
+| 1 | `the-gate-critic-sends-the-owner-only-stack-algorithm-cost-and-risk-questions-s1-what-reaches-the-owner.md` | In a classified question file only the five topics, an earlier tag or no single recommendation reach the owner; `critical` still does in a critique he asked for. Gate, screen and audit change together. | - |
+| 2 | `the-gate-critic-sends-the-owner-only-stack-algorithm-cost-and-risk-questions-s2-settled-questions-carry-their-evidence.md` | Each settled question's decision line names its evidence; the twenty questions the owner called details whose answered version is on disk move their plans on in a test. | s1 |
+| 3 | `the-gate-critic-sends-the-owner-only-stack-algorithm-cost-and-risk-questions-s3-the-four-agents-use-the-new-topics.md` | The gate critic's rule 4a, routing sentences, tie-break and evidence-first duty; the three authors write only the six topics; the three rule inventories re-recorded. | s1 |
+| 4 | `the-gate-critic-sends-the-owner-only-stack-algorithm-cost-and-risk-questions-s4-the-operating-lesson.md` | Lesson 23 in the lessons source, `CLAUDE.md`, the full texts and the rule inventory, or a measured stop when it does not fit. | `ctoc-is-built-with-ctoc-the-operating-lessons-say-ctoc-is-built-with-ctoc-and-fricti` |
+| 5 (conditional) | `the-gate-critic-sends-the-owner-only-stack-algorithm-cost-and-risk-questions-s5-the-rule-check-accepts-a-plans-own-crossing-records.md`, written by the planner only if the owner takes option 1 of technical decision 1 | Inventory check 3 also accepts the named plan's own `sufficiency` and `pipeline` records, keeping its hash and naming rules: `tests/compaction-eval/inventory-checks.js` and cases 32 and 50 of `tests/question-blocking-default.test.js`. `tests/compaction-eval/inventory-checks.js` is not in this plan's `files:` today; the planner adds it with the slice. | s1 |
+
+Dependency graph: slice 1 → slices 2 and 3 (disjoint files, so they can build side by side once slice 1 is built); slice 4 hangs only on the lesson plan. Under option 1 of technical decision 1, slice 1 → slice 5 → slice 3, because slice 5 edits `tests/question-blocking-default.test.js` after slice 1 and slice 3's check 3 needs it; that edge is held by slice 3's Step 8 precondition, not by its `depends_on` (technical decision 1). Longest chain: three under option 1, two otherwise. No cycle. The dependency graph is technical; which slice is built when is the owner's.
+
+### Scenarios, by slice
+
+| Scenario | Slice | Proof |
+|---|---|---|
+| 1 | 1 (routing), 2 (golden cases end to end) | slice 1 cases 51 and 54; slice 2 cases D1 and D2 |
+| 2 | 3 | the real gate-critic run at its final review |
+| 3 | 2 | D3, D4, D5 |
+| 4 | 1 | 55 |
+| 5 | 1 (code), 3 (agents) | 52, 53, 56; the four-agent topic case |
+| 6, 7, 8 | 1 | 57, 58, 59 |
+| 9 | 1 (routing), 2 (decision lines), 3 (agent text) | 60; D6; N-001's anchor |
+| 10 | 1 | 51, 54, 61, 62, 63, 4c |
+| 11 to 14 | 4 | its cases 1 to 4, the numbering checks, the stop rule |
+
+## Decisions Taken Under Ambiguity — technical planning
+
+1. **One open choice remains, a real owner question, and it blocks slice 3 only.** Inventory check 3 (`tests/compaction-eval/inventory-checks.js` lines 69–88, its refusal of a crossing's record pinned by the case at `tests/question-blocking-default.test.js` line 825) accepts a re-recorded agent order only under a human or backfilled approval of the plan its record names, and this plan's slices move on recorded evidence (a `sufficiency` record into the build queue, a `pipeline` record at the finish, which overwrites it).
+   - The question: does check 3 also accept a plan's own on-evidence crossing records, keeping its hash and naming rules (recommended, option 1), or does the menu hold such a plan for the owner's approve at both moves (option 2)? Slice 3 states the fact and both options in full.
+   - The planner writes the question in its next pass, under topic `security-posture` (slice 3 says why). It is asked once, and its answer covers the three other planned slices that re-record agent orders and hit the same clash: "Every session is told that a hotfix word is checked" (`plans/implementation/ctoc-checks-that-a-hotfix-is-really-small-and-safe-s4-every-session-is-told.md`), "The manual and the docs stop claiming what CTOC no longer does" (`plans/implementation/the-manual-and-the-docs-stop-claiming-what-ctoc-no-longer-does.md`) and "the planner writes it" (`plans/implementation/fewer-rework-rounds-a-check-is-attacked-before-it-is-built-s2-the-planner-writes-it.md`).
+   - Under option 1 the conditional slice 5 is written and built; under option 2 a slice changing `src/lib/streaming-gate.js` (the streaming-gate slice) is needed instead, which slice 3 describes. Slices 1, 2 and 4 edit no rule inventory and are not affected.
+   - The build order is held by slice 3's Step 8 precondition, never by a `depends_on` edit after the answer. The answer runs the continuation, which can move slice 3 into the build queue on its evidence, and a later edit of its frontmatter would break its approval fingerprint. So slice 3's first action reads the owner's recorded answer and confirms that slice 5 (option 1) or the streaming-gate slice (option 2) is finished, and otherwise changes no file and kicks back.
+   - Filing that question is an exit condition of this planning pass: the planner files it next.
+2. **Corrections to this plan, verified in technical planning.**
+   - In Scope item 5 said the gate critic's orders N-001, N-003 and N-004 end as `fate: "replaced"`. They are added orders, which no unit lists, and such an order marked replaced fails check 3; they are re-recorded in place instead, as N-007 and N-009 were. N-011 joins them: its anchor lists the old six topics.
+   - Scenario 1's thirteen questions cannot share one plan with their ids unchanged: the two stored files both use `q10`, `q11` and `q12`, and a questions file refuses a repeated id. Slice 2 puts them in two plans and counts thirteen lines over both.
+   - Decision 13's fixture also carries seven of the nine detail questions of 2026-10-22, as the coordinator's brief asked; the other two have no answered version on disk and are named in slice 2 instead (its decision 7); `q12-declared-pattern-expansion` of the send-back command slice is left out because the owner has not answered it.
+3. **No new test file in any slice**, so no documented count moves and `CLAUDE.md` is declared only by slice 4, for the lesson line. The fixture under `tests/fixtures/` is not a counted kind (`src/lib/documented-counts.js` lines 74–86).
+4. **Protected-list status, stated per slice**: `src/lib/streaming-gate.js` is on the list (slices 1 and 2), `src/lib/streaming-precompute.js` and `src/lib/sufficiency-audit.js` are not, and no slice edits the one loaded hook, `src/hooks/protect-records.js`. The list's human-kind check runs only from edit hooks Claude Code does not load, and the crossing on recorded evidence checks no protected list. The owner approved this gate-logic change by his answer to q10 (`.ctoc/streaming/answers.jsonl` line 294).
+5. **Overlaps with plans in the build queue, as technical-order facts:**
+   - "The gate-critique fleet … improved three times" (`plans/todo/00370-every-agent-and-specialist-skill-improved-three-times-s110-gate-critic-and-lenses.md`) edits the body of `agents/iron-loop/gate-critic.md`, not its inventory. Whichever of it and slice 3 builds second re-reads both files and keeps the other's text.
+   - "The classification brief for the gate critic carries the plan file modification time" (`plans/todo/ctoc-is-built-with-ctoc-the-classification-brief-for-the-gate-critic-carries-the-pla.md`) does not edit `agents/iron-loop/gate-critic.md` or the question rule (its decisions 6 and 8, read again in this pass). It shares only `CLAUDE.md` with slice 4.
+   - "The operating lessons say CTOC is built with CTOC and friction is filed as a plan" is slice 4's dependency; lesson 23 is numbered after its lessons 21 and 22.
+6. **`CLAUDE.md` measured 14,730 bytes on 2026-10-22** (ripgrep byte match). With the lesson plan's 256 bytes it leaves 14 bytes of room for a 188-byte line, so slice 4's expected path is its measured stop. Slice 4 defines that stop: a precondition checked before any edit, the executor's context-incomplete kickback, the measured size and bytes needed under its `## Execution Record`, and one question about making room. The executor reports an open question to the CTO Chief and does not file it (`agents/iron-loop/iron-loop-executor.md` line 183), so the kickback report carries the question, and the CTO Chief files it as slice 4's question, for the gate critic to classify through the normal classification. Scenario 12's "reports to the owner" is carried by that record and that question. The routing that follows:
+   - Before slice 1 is built: in a classified file the question reaches the owner when it is `critical` or carries a weighty topic; a non-critical `detail` with one recommended option is settled by it.
+   - After slice 1 is built: it reaches him only as one of the four kinds.
+   - Removing a rule from `CLAUDE.md` is his, a cost or risk he must accept; moving text without losing a rule is a detail.
+   - The build itself still shortens, moves or removes nothing. This is a reading of scenario 12's wording, named here; its text is unchanged.
+7. **Adding this index moved this plan's specification hash**, as adding a slice index to a parent always does; the parent's own record (`advanced_by: "sufficiency"`, functional to implementation) no longer matches its text. Expected: the parent is an index and is not built itself.
+8. **The refinement loop ran three critic rounds; round 3's three findings were applied in this final pass, and none needed the owner.** The one owner question, the inventory check of decision 1, is filed by the planner as the exit condition of this planning pass.
