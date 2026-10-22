@@ -1,0 +1,10 @@
+{
+  "content_sha256": "b17e16afcc3fcc9c9b364b61d78dec7f2dd3750bbc65f720626def69f6c7376d",
+  "hash_scope": "specification",
+  "stage_from": "functional",
+  "stage_to": "implementation",
+  "approved_at": "2026-10-22T12:23:04.278Z",
+  "advanced_by": "sufficiency",
+  "evidence": "sufficiency: functional/ctoc-learns-from-every-installation-through-requests-on-gith-a-blocking-scan-stops-any-request-carrying-private-data.md — 2 question(s) computed, 2 answered (q10-private-name-matching, q11-uncovered-private-names-r1792663386257); 0 unanswered, 0 blocking; attested by: not recorded; enough (no unanswered fork)",
+  "plan_basename": "ctoc-learns-from-every-installation-through-requests-on-gith-a-blocking-scan-stops-any-request-carrying-private-data"
+}
