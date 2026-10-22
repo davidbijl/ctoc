@@ -63,13 +63,11 @@
  *
  * Cross-platform: path.join, safe-fs, and a `\r?\n`-tolerant frontmatter regex.
  *
- * js-yaml note: `yaml.load` here uses js-yaml's DEFAULT_SCHEMA, which is safe —
- * js-yaml 4.x removed the unsafe `!!js/*` constructors from the default schema,
- * so `load` does not execute arbitrary code. Input is a CTOC-authored plan file.
+ * No packages: the legacy frontmatter block is read by a dependency-free extractor
+ * (legacyCountsFromBlock) because the plugin ships without node_modules.
  */
 
 const path = require('path');
-const yaml = require('js-yaml');
 const safeFs = require('./safe-fs');
 
 // Same-step escalates when the count EXCEEDS this (i.e. on the 4th).
@@ -158,12 +156,45 @@ function frontmatterBlocks(raw) {
 }
 
 /**
+ * Read ONLY the top-level `kickback_counts:` sub-block of one frontmatter block, in the
+ * shape the old writer (yaml.dump) produced: a `by_step:` map whose keys are bare,
+ * 'single' or "double" quoted and whose values are integers (or `by_step: {}` when
+ * empty), and `total: N`. Everything else is ignored; CRLF tolerant; never throws.
+ *
+ * @param {string} fmText - the YAML text of one frontmatter block
+ * @returns {{ by_step: Object<string,number>, total: number }} un-normalized
+ */
+function legacyCountsFromBlock(fmText) {
+  const raw = { by_step: Object.create(null), total: 0 };
+  let inBlock = false;
+  let stepsIndent = -1;
+  for (const line of fmText.split(/\r?\n/)) {
+    if (!inBlock) {
+      inBlock = /^kickback_counts:\s*$/.test(line);
+      continue;
+    }
+    if (/^\S/.test(line)) break; // the next top-level key ends the block
+    const indent = line.length - line.trimStart().length;
+    if (stepsIndent >= 0 && indent > stepsIndent) {
+      const e = /^\s+(?:'([^']+)'|"([^"]+)"|([^\s:'"]+)):\s*(\d+)\s*$/.exec(line);
+      if (e) raw.by_step[e[1] || e[2] || e[3]] = Number(e[4]);
+      continue;
+    }
+    stepsIndent = /^\s+by_step:/.test(line) ? indent : -1; // `by_step: {}` has no deeper lines
+    const t = /^\s+total:\s*(\d+)\s*$/.exec(line);
+    if (t) raw.total = Number(t[1]);
+  }
+  return raw;
+}
+
+/**
  * Read `kickback_counts` across ALL leading frontmatter blocks and fold them into
  * the MAX per-step count and MAX total found in any block. Max (not first, not
  * last, not sum) is the correct fold: a prepended counter-less block contributes
  * zeros and cannot lower the result, while the true prior count — wherever it now
- * lives — is always surfaced. Never throws; a block with malformed YAML or no
- * counter contributes zeros.
+ * lives — is always surfaced. Never throws; a block with no
+ * counter contributes zeros. A block a YAML parser would call malformed still has its
+ * counter read; the max-fold can only raise a count, the safe direction for a breaker.
  *
  * @param {string} raw - the full plan file text
  * @returns {{ by_step: Object<string,number>, total: number }} null-proto by_step
@@ -172,13 +203,7 @@ function maxCountsAcrossBlocks(raw) {
   const merged = Object.create(null);
   let total = 0;
   for (const fmText of frontmatterBlocks(raw)) {
-    let parsed;
-    try {
-      parsed = yaml.load(fmText);
-    } catch {
-      continue; // malformed block contributes nothing
-    }
-    const counts = normalizeCounts(parsed && parsed.kickback_counts);
+    const counts = normalizeCounts(legacyCountsFromBlock(fmText));
     if (counts.total > total) total = counts.total;
     for (const k of Object.keys(counts.by_step)) {
       const v = counts.by_step[k];
