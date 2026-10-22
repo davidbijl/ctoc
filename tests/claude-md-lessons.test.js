@@ -761,3 +761,140 @@ describe('exported constants', () => {
     assert.equal(MANAGED_NOTICE, '<!-- Content between these markers is CTOC-managed. Do not edit manually. -->');
   });
 });
+
+// ──────────────────────────────────────────────────────────────────────────
+// Operating lessons 14, 21 and 22, and the citations of the rule on changing a test
+// ──────────────────────────────────────────────────────────────────────────
+
+describe('operating lessons 14, 21 and 22, and the citations of the rule on changing a test', () => {
+  const NEW_14 = '14. **Always investigate failing tests.** Every failing test — including one that passes on rerun — is reproduced and root-caused in the product code before anything is reported or merged; "flaky" is a finding, never an explanation. Fix the code; change a test only when it is proven wrong, never to loosen it, with the reason written down.';
+  const NEW_21 = '21. **Start the next plan while the tests run**, in its own git worktree, on disjoint files.';
+  const NEW_22 = '22. **Friction is a plan.** When the pipeline blocks or misleads you, tell the human and file a plan; never work around it.';
+  const OLD_14 = '14. **Fix the failures, not the tests.** A failing test means the code is wrong until proven otherwise. Change a test only when it is plain wrong, and only to tighten it; never weaken an assertion, widen a range, or delete a case or whitelist without a written reason, to turn red green.';
+  const OLD_14_FULL = JSON.parse(
+    fs.readFileSync(path.join(REPO_ROOT, 'tests', 'fixtures', 'claude-md-rule-inventory.json'), 'utf8')
+  ).rules.find((r) => r.id === 'r0111').old;
+  const MANUAL_RULE = 'NEVER weaken a test, delete an assertion, mock away a failure, or special-case an input to make a check pass.';
+  const WRITER_CITATION = 'Source: the hard rule "NEVER weaken a test" in CTOC\'s operating manual.';
+  const REPLACED_TITLE = 'Fix the failures, not the tests';
+
+  const squash = (s) => s.replace(/\s+/g, ' ').trim();
+  const readRepo = (...rel) => fs.readFileSync(path.join(REPO_ROOT, ...rel), 'utf8').replace(/\r\n/g, '\n');
+  const blockOf = (text) => {
+    const lines = lessons.normalizeEol(text).normalized.split('\n');
+    const blk = lessons.findManagedBlock(lines);
+    assert.ok(blk && !blk.malformed, 'a well-formed lessons block');
+    return lines.slice(blk.startIdx, blk.endIdx + 1).join('\n');
+  };
+  const lessonLine = (block, n) => block.split('\n').find((l) => l.startsWith(`${n}. **`));
+  const numbers = (text) => [...text.matchAll(/^(\d+)\. \*\*/gm)].map((m) => Number(m[1]));
+  const oneTo = (n) => Array.from({ length: n }, (_, i) => i + 1);
+  const fullTexts = () => {
+    const doc = readRepo('docs', 'OPERATING_LESSONS.md');
+    const end = doc.indexOf('**Methodology reference:**');
+    assert.ok(end !== -1, 'docs/OPERATING_LESSONS.md keeps its methodology paragraph');
+    return doc.slice(0, end);
+  };
+  const entry = (list, n) => {
+    const start = list.indexOf(`\n${n}. **`);
+    assert.ok(start !== -1, `the full text of lesson ${n} is present`);
+    const next = list.indexOf(`\n${n + 1}. **`, start + 1);
+    return squash(list.slice(start, next === -1 ? list.length : next));
+  };
+
+  it('1: lesson 14 is the rule on failing tests, in the source and in CLAUDE.md', () => {
+    for (const text of [readRepo('.ctoc', 'templates', 'operating-lessons.md'), readRepo('CLAUDE.md')]) {
+      assert.equal(lessonLine(blockOf(text), 14), NEW_14);
+      assert.ok(!text.includes(REPLACED_TITLE), 'the replaced title is gone');
+    }
+  });
+
+  it('2a: a user project\'s refreshed block carries lessons 14, 21 and 22; outside bytes do not move', (t) => {
+    const dir = mkTmpProject(t);
+    const target = path.join(dir, 'CLAUDE.md');
+    const first = '# My app\n\nMy own notes.\n\n';
+    const last = '\n\nMore of my notes.\n';
+    fs.writeFileSync(
+      target,
+      first + [START_MARKER, MANAGED_NOTICE, '', '## CTOC Operating Lessons', '', OLD_14, END_MARKER].join('\n') + last,
+      'utf8'
+    );
+    assert.equal(lessons.ensureLessonsBlock(target, REPO_ROOT), true);
+    const out = fs.readFileSync(target, 'utf8');
+    for (const l of [NEW_14, NEW_21, NEW_22]) assert.ok(out.includes(l), `the project receives: ${l.slice(0, 30)}`);
+    assert.ok(!out.includes(REPLACED_TITLE));
+    assert.equal(out.slice(0, out.indexOf(START_MARKER)), first, 'bytes before the block unchanged');
+    assert.equal(out.slice(out.indexOf(END_MARKER) + END_MARKER.length), last, 'bytes after the block unchanged');
+  });
+
+  it('2b: the real initProject writes lessons 14, 21 and 22 into a new project', (t) => {
+    const { initProject } = require('../src/lib/init-project');
+    const dir = mkTmpProject(t);
+    initProject(dir);
+    const out = fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8');
+    for (const l of [NEW_14, NEW_21, NEW_22]) assert.ok(out.includes(l), `a new project receives: ${l.slice(0, 30)}`);
+  });
+
+  it('3: lessons 14, 21 and 22 carry no name, date, backticked path or "CTOC repository"', () => {
+    const block = canonicalBlock();
+    const expected = { 14: NEW_14, 21: NEW_21, 22: NEW_22 };
+    for (const n of [14, 21, 22]) {
+      const line = lessonLine(block, n);
+      assert.equal(line, expected[n]);
+      assert.ok(!/\d{4}-\d{2}-\d{2}/.test(line), `lesson ${n} holds no date`);
+      assert.ok(!line.includes('`'), `lesson ${n} holds no backticked path`);
+      assert.ok(!line.includes('CTOC repository'), `lesson ${n} does not rely on CTOC's repository`);
+    }
+  });
+
+  it('4: the lessons run 1 to 22 in order, in the source and in CLAUDE.md', () => {
+    for (const text of [readRepo('.ctoc', 'templates', 'operating-lessons.md'), readRepo('CLAUDE.md')]) {
+      assert.deepEqual(numbers(blockOf(text)), oneTo(22));
+    }
+  });
+
+  it('5: the full texts run 1 to 22, and their lesson 20 is the block\'s', () => {
+    assert.deepEqual(numbers(fullTexts()), oneTo(22));
+    assert.equal(entry(fullTexts(), 20), squash(lessonLine(canonicalBlock(), 20)));
+  });
+
+  it('6: the full texts of lessons 14 and 22 open with the lesson, and lesson 22 records the ruling', () => {
+    const list = fullTexts();
+    assert.ok(entry(list, 14).startsWith(squash(NEW_14)));
+    const e22 = entry(list, 22);
+    assert.ok(e22.startsWith(squash(NEW_22)));
+    for (const w of ['2026-10-20', 'CTOC is built with CTOC', 'every CTOC project receives']) {
+      assert.ok(e22.includes(w), `lesson 22's full text contains "${w}"`);
+    }
+  });
+
+  it('7: lesson 14\'s replaced words are kept under the heading for 2026-10-18', () => {
+    const doc = readRepo('docs', 'OPERATING_LESSONS.md');
+    const at = doc.indexOf("## Replaced on the owner's instruction of 2026-10-18");
+    assert.ok(at !== -1, 'the heading exists');
+    const next = doc.indexOf('\n## ', at + 1);
+    const section = squash(doc.slice(at, next === -1 ? doc.length : next));
+    assert.ok(section.includes(squash(OLD_14)), 'the replaced short text is kept');
+    assert.ok(section.includes(squash(OLD_14_FULL)), 'the replaced full text is kept');
+  });
+
+  it('8: every citation of the rule on changing a test names a rule the shipped files carry', () => {
+    assert.ok(readRepo('.ctoc', 'templates', 'operating-manual.md').includes(MANUAL_RULE));
+    for (const rel of [
+      ['agents', 'testing', 'writers', 'unit-test-writer.md'],
+      ['skills', 'testing', 'writers', 'unit-test-writer', 'SKILL.md'],
+    ]) {
+      const text = readRepo(...rel);
+      assert.ok(text.includes(WRITER_CITATION), `${rel.join('/')} cites the manual's rule`);
+      assert.ok(!text.includes(REPLACED_TITLE), `${rel.join('/')} no longer cites the replaced lesson`);
+    }
+    for (const rel of [
+      ['agents', 'ai-quality', 'ai-code-quality-reviewer.md'],
+      ['skills', 'ai-quality', 'ai-code-quality-reviewer', 'SKILL.md'],
+    ]) {
+      const text = readRepo(...rel);
+      assert.ok(text.includes(`"${MANUAL_RULE}"`), `${rel.join('/')} quotes the manual's rule`);
+      assert.ok(!text.includes('green-washing'), `${rel.join('/')} no longer quotes the replaced lesson`);
+    }
+  });
+});

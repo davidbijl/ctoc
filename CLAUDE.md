@@ -181,8 +181,6 @@ All code MUST run on Windows, macOS, and Linux. Use:
 - `os.homedir()` not hardcoded `~`
 - No bash scripts as entry points (Node.js only)
 
----
-
 ## Privacy
 
 - NEVER print, log, or commit secrets. Reference keys and tokens by name, never by value. The secrets manager is the source of truth; a hardcoded credential is a bug even in a scratch file.
@@ -220,13 +218,15 @@ New design histories go into these files, never into this one; a test holds this
 11. **Pre-todo is context; todo+ is execution.** If the implementer would have to guess, kick back upstream.
 12. **Cross-platform always.** `path.join`, `fs.promises`, `os.homedir`, `process.platform`; never a shell script as an entry point.
 13. **Talk to a human like a human.** Plain words; spell terms out ("test-driven development"); never invent an abbreviation or label; name each thing by its real subject, never by an internal code.
-14. **Fix the failures, not the tests.** A failing test means the code is wrong until proven otherwise. Change a test only when it is plain wrong, and only to tighten it; never weaken an assertion, widen a range, or delete a case or whitelist without a written reason, to turn red green.
+14. **Always investigate failing tests.** Every failing test — including one that passes on rerun — is reproduced and root-caused in the product code before anything is reported or merged; "flaky" is a finding, never an explanation. Fix the code; change a test only when it is proven wrong, never to loosen it, with the reason written down.
 15. **Ask before you build.** When context is missing, the output is a question, not a guess dressed up as a decision.
 16. **A module is done when a human can reach it.** A test is a caller; wire every new module to a live entry point in the same unit of work, never "in a follow-up".
 17. **A foregone answer is not a question.** If the answer is obvious, act and report. A quality decision gets an honest recommendation; an owner decision (schedule, scope, cost, risk) gets symmetric options, no loaded pros and cons, no manufactured recommendation. Format: `.ctoc/ask-me-questions.md`.
 18. **Say only what you verified; when you have no data, say you have none.** Nothing in CTOC is scheduled against a wall clock, so no status line contains a time; never name a subsystem as running without confirming it has a caller.
 19. **Never say a gate number to a human — say the moment** in plain words ("built and waiting for your OK to call it done"). Numbers stay legal where only a machine reads them.
 20. **Never wait in a sleep loop.** To wait for a long build or test, run it in the foreground with a timeout long enough for it, up to 10 minutes; if it can take longer and you were dispatched in the background, start it with run_in_background and end your turn — you are woken when it finishes; never wait in a loop that sleeps and checks a file, log or marker.
+21. **Start the next plan while the tests run**, in its own git worktree, on disjoint files.
+22. **Friction is a plan.** When the pipeline blocks or misleads you, tell the human and file a plan; never work around it.
 
 **Methodology:** a **16-step** Iron Loop across **4 gates**. **8:TEST** is test-driven development, **10:IMPLEMENT** is one step, **14:VERIFY** is the quality gate (lint, typecheck, all tests, coverage at or above `.ctoc/coverage-baseline.json` `minPct`, 0 skipped, 0 flaky). CTOC ships exactly **3 slash commands** — `/ctoc:start`, `/ctoc:push`, `/ctoc:update` — and is always installed from the marketplace, never from a local path. Full wording and reasons: `docs/OPERATING_LESSONS.md` in the CTOC repository.
 
