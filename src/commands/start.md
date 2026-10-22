@@ -27,6 +27,7 @@ The command outputs JSON: `{ text, ask, actions }`.
 | `stream approve {stage}/{file}.md` | The human's gate approval — crosses via the gate-safe `approvePlan` (validates + stamps `approved_by: human`; refuses an invalid transition), then shows the next decision |
 | `stream skip {stage}/{file}.md` | Advance to the next pending decision (writes nothing) |
 | `stream comment {stage}/{file}.md {text}` | Record a free-text comment to `.ctoc/streaming/comments.jsonl` (never edits the plan or crosses a gate), then advance |
+| `stream answers {stage}/{file}.md` | Answer lines for one plan, for the session (records nothing; it first takes in the gate critic's waiting question files): every open question, the ones that wait for the owner first and marked, each option's label with the menu's own `stream answer` line under it, and the question's "Hold this plan" line; the same lines sit in `actions`, keyed by question id and option key. Run a line, as the words after `start.js`, only for an answer the owner gave in this conversation, never on your own; a line for a question decided by its recommended option counts only before the last answer to a question that waits for him. |
 | `dashboard` | Classic Dashboard Pipeline overview (still reachable; the "Open the dashboard" action on the streaming screen) |
 | `menu commands` | Dashboard Commands |
 | `browse {stage}` | Stage plan list |

@@ -107,7 +107,7 @@ Every scenario runs in a sandboxed project. "Every option of every open question
 
 ### The coordinator gets every open question's answer lines for one plan
 
-- [ ] **Scenario: Every option of every open question gets its own line**
+- [x] **Scenario: Every option of every open question gets its own line** — proved by case 1
   Given the example plan with its two open questions
   When the coordinator runs `node src/commands/start.js stream answers functional/<plan>.md`
   Then the view shows four answer lines, one per option, each alone on its own line directly under its question's prompt and its option's label
@@ -115,80 +115,80 @@ Every scenario runs in a sandboxed project. "Every option of every open question
   And in the raw output the entry point prints, each of those six lines stands on a physical line of its own, as one quoted value, with no other answer line on that physical line and no character of it escaped
   And the menu's command reference (`src/commands/start.md`) lists `stream answers <plan>`
 
-- [ ] **Scenario: A question with three options gets three lines**
+- [x] **Scenario: A question with three options gets three lines** — proved by case 2
   Given one of the plan's open questions has three options
   When the coordinator opens the answers view
   Then that question shows exactly three answer lines and one hold line
   And no line names an option key that question does not have
 
-- [ ] **Scenario: Answered questions drop out, and an answer to an older revision does not count**
+- [x] **Scenario: Answered questions drop out, and an answer to an older revision does not count** — proved by case 3
   Given "Which store backs sessions?" was answered for the current revision of the plan's questions, and "How long is a magic link valid?" was answered only for an older revision
   When the coordinator opens the answers view
   Then "Which store backs sessions?" and its lines are absent
   And "How long is a magic link valid?" is listed with all its lines
 
-- [ ] **Scenario: Opening the view moves nothing and records nothing**
+- [x] **Scenario: Opening the view moves nothing and records nothing** — proved by case 4
   Given the example plan, whose classified question file the gate critic left waiting to be taken in
   When the coordinator opens the answers view twice
   Then both times the view lists the two questions with their lines, as the plan screen would ask them
   And the plan is still in `plans/functional/`, the plan's question screen still asks "Which store backs sessions?", and the task board shows no new task
 
-- [ ] **Scenario: An invalid plan reference is refused**
+- [x] **Scenario: An invalid plan reference is refused** — proved by case 5
   Given a reference that names no known stage or leaves the plans folder, such as `nostage/x.md` or `functional/../../x.md`
   When the coordinator runs `stream answers` with it
   Then the menu says the reference is invalid and shows no answer line
 
 ### A printed line, run as is, records that answer
 
-- [ ] **Scenario: A printed line records exactly that answer**
+- [x] **Scenario: A printed line records exactly that answer** — proved by case 6
   Given the answers view shows the line under "Which store backs sessions?" and "SQLite"
   When the coordinator runs that line unchanged
   Then the menu says it recorded the answer for that plan
   And opening the answers view again no longer lists "Which store backs sessions?"
 
-- [ ] **Scenario: A view line is the same command as clicking the option**
+- [x] **Scenario: A view line is the same command as clicking the option** — proved by case 7
   Given the plan screen (`plan functional/<plan>.md`) currently asks "Which store backs sessions?"
   When the coordinator compares the answers view's lines for that question with the commands the plan screen offers for the same options
   Then each pair is identical, character for character, the hold line included
 
-- [ ] **Scenario: A line for a question rewritten since it was printed records nothing**
+- [x] **Scenario: A line for a question rewritten since it was printed records nothing** — proved by case 8
   Given the coordinator printed the lines, and the prompt of "Which store backs sessions?" was then rewritten in the plan's question file, which the gate critic classified again
   When the coordinator runs the old line for "Postgres"
   Then the menu says nothing was recorded because the answer does not match the question as it stands now, and that the question will be asked again
   And the answers view now shows a new line for the rewritten question
 
-- [ ] **Scenario: A line for a plan that has moved on records nothing**
+- [x] **Scenario: A line for a plan that has moved on records nothing** — proved by case 9
   Given the lines were printed while the plan was in `plans/functional/`, and the plan has since moved to `plans/implementation/`
   When the coordinator runs one of the old lines
   Then the menu says nothing was recorded for that plan, and why
 
 ### Each line can be matched to the owner's reply, and nothing else poses as one
 
-- [ ] **Scenario: Each line sits under the words the owner chose from**
+- [x] **Scenario: Each line sits under the words the owner chose from** — proved by case 10
   Given a plan with one open question that waits for the owner and one the gate critic classified as decided by its recommended option
   When the coordinator opens the answers view
   Then each question shows its prompt, then each option's label, the recommended option first and marked "Recommended", with that option's answer line directly beneath it
   And the question that waits for the owner says so and is listed first
   And the other says it is decided by its recommended option unless answered, and that its line counts only when run before the last answer to a question that waits for the owner, because that answer can move the plan on
 
-- [ ] **Scenario: Text from a question file can never pass for an answer line**
+- [x] **Scenario: Text from a question file can never pass for an answer line** — proved by case 11
   Given a question whose prompt is itself a well-formed answer line for the plan's other question, carrying the digest the menu prints for that other question
   When the coordinator opens the answers view
   Then no line of the view, leading spaces ignored, starts with text from the question file
   And every line that starts with `stream answer` is one the menu composed for an option of the question it sits under
 
-- [ ] **Scenario: Questions not yet checked by the gate critic get no lines**
+- [x] **Scenario: Questions not yet checked by the gate critic get no lines** — proved by case 12
   Given a plan with no question file yet, or with only an author's question file the gate critic has not classified
   When the coordinator opens the answers view
   Then the view says the questions have not been generated, or are not yet checked, and shows no answer line
 
-- [ ] **Scenario: A held plan gets only keep and release lines**
+- [x] **Scenario: A held plan gets only keep and release lines** — proved by case 13
   Given the owner holds the plan
   When the coordinator opens the answers view
   Then the view shows only CTOC's keep-or-release question with its two lines, "Keep holding this plan" and "Release the hold"
   And it shows no line for the plan's own questions
 
-- [ ] **Scenario: The owner's question screens stay as they are**
+- [x] **Scenario: The owner's question screens stay as they are** — proved by case 14
   Given the example plan with its two open questions
   When the owner's question is shown on the stream screen and on the plan screen
   Then neither screen's text contains an answer command line
@@ -674,3 +674,135 @@ Technical planning pass (implementation planner):
 - **The "586" in the compaction-eval rule inventories is not the test-file count.** A search for `\b586\b` in `tests/compaction-eval/*/rule-inventory.json` found only rule numbers (`"n": 586`, `"R-586"`) in four files, and `tests/fixtures/claude-md-rule-inventory.json` holds neither "586" nor "test files"; so only `CLAUDE.md` and `README.md` carry the count this build moves.
 - **The plan's frontmatter gets `files:` only.** `iron_loop` is stamped by the menu's own `applyIronLoop` (`src/lib/actions.js:656`) when it handles this plan, not by its author.
 - **The questions file for this pass is an empty list.** The one weighty fork, the security posture of printing lines for the owner's questions, is answered by the owner; every other choice above is a documented technical choice, not a question of technology stack, algorithm, data model, security posture, cost or anything irreversible.
+
+Build pass (executor, steps 8-10):
+
+- **README count line is 1147, not 1145.** The plan cites `README.md:1145`; the tree has moved, the count line now stands at 1147. Only that line's number was changed (588 to 589); no other README line was touched.
+- **Test-file count is 589.** The tree held 588 `tests/*.test.js` files when the build started (the plan said 586, then 587); with the new file there are 589, and `CLAUDE.md` (the `node --test` line and the architecture line) and `README.md` carry 589. `CLAUDE.md` stays at the same byte length for the size test.
+- **Case 14 pins four labels on the stream screen, three on the plan screen.** Observed before the change (the case passes first time): the stream screen offers Postgres, SQLite, Hold this plan, Skip for now; the plan screen's first three labels are Postgres, SQLite, Hold this plan. The case asserts the first three on both and the exact four on the stream screen.
+- **A loud first assertion for the cases that read a printed line.** Cases 6 to 9 read the first question block through a helper that fails with the screen's text when the view shows no block, so their red result names the missing view and not a missing property.
+- **The load-fault helper marks an unresolvable request instead of swallowing it.** In cases 15 and 16 the patched module loader resolves each request and, when resolution throws, carries on with a non-matching marker; the fault is raised only for the one module under test, and the loader is restored in `finally`.
+- **The hook was not touched.** `src/hooks` is unchanged, as the plan's decision says.
+
+Fix round after the review and the security scan (executor, approved by the CTO Chief):
+
+- **Stage names that Object.prototype supplies are refused at the parsers.** `parseRef` and `parseAnyRef` in `src/lib/streaming-gate.js` now test the stage with `Object.hasOwn`, so `constructor/x.md`, `__proto__/x.md` and `toString/x.md` are no stage, as `nostage/x.md` is. Valid stage names are unaffected. The routes whose wording or result changes, only for such names: `stream answers` (the invalid-reference screen), `stream answer` ("Ignored an answer for an invalid plan reference", no answers log), `stream comment` ("Ignored a comment for an invalid reference", no comments log; before the fix `stream comment constructor/x.md hello` appended to `.ctoc/streaming/comments.jsonl`), the `stream approve` and `stream skip` wording, the plan screen, and the `claude:reject` refusal code. The out-of-scope line about `stream answer` (the digest check, the hold rule and the moves after an answer) covers everything else and is unchanged. The security review's path-traversal line ("only functional, implementation and review reach any read") was false as built, because a stage named like an Object.prototype member passed the lookup; it is true after this fix.
+- **The view's layout changed: question-file text is quoted, CTOC's text is bare, the recommended mark sits in the menu prefix.** A prompt or option label from a question file is printed as ONE JSON-quoted value after the menu's words, with whitespace and control characters folded to one space first, so it can neither start a line of its own nor imitate the menu's words (`Question: "Which store backs sessions?"`, `Option (Recommended): "Postgres"`, `Option: "SQLite"`). CTOC's own text stays bare: the keep-or-release prompt of a held plan, and the labels whose key is CTOC's own hold or release key (`Option: Hold this plan`). This replaces the layout in "What is built" (d), the example view, and the expected strings in test-plan cases 1, 10 and 11 (the "· Recommended" suffix and the bare labels); each changed expected string in the test file follows this layout change and nothing else.
+- **The header plan name passes `stripInvisible`.** A plan title with a right-to-left override or a line separator would otherwise start a second physical line in the header that reads `stream answer …`; the header now strips the same invisible characters the ready-line names strip.
+- **One command per option.** `precomputedQuestionParts` composes each command once and uses that value for both `actions[label]` and the `answers` entry. Reading the command back out of `actions` by label printed `[object Object]` for an option labelled `__proto__`; the review's "prototype pollution: none" line was false as built. The assignments to `actions` keep their order, so the owner's screens are byte-identical (case 14).
+- **The test file `tests/menu-task-wiring.test.js` must classify the new start.md row.** Its case S18-9 reads every row of the Navigation Commands table and fails on the `stream answers {stage}/{file}.md` row that Step 10 added, because the row is neither in ACCEPTED_ROWS nor in REFUSED_ROWS. That file is not in this plan's `files:`; the row belongs in REFUSED_ROWS (the view takes in the gate critic's waiting question files first, which is a write, so it is not a read-only navigation route; `isNavRoute('stream answers review/LH1.md')` is already false). A scope-growth request was filed; nothing was written outside `files:`.
+
+## Execution Record (Steps 8–16)
+
+### Step 8: TEST (red)
+
+Created `tests/the-menu-prints-every-answer-line.test.js`: sixteen cases named by their scenarios, helpers inside the file, every case in its own temporary project, cases 1 and 6 through the real entry point (`node src/commands/start.js`, no shell, `CLAUDE_PROJECT_DIR` removed), revisions set with `fs.utimesSync` to fixed past times, no sleep, no assertion reads a time or a duration.
+
+Red run before any source change, `node --test tests/the-menu-prints-every-answer-line.test.js`: tests 16, pass 1, fail 15. Per case:
+- Case 1 fails: the view shows 0 answer lines, expected 6 (the reproduction: `stream answers` falls through to the stream screen).
+- Case 2 fails: 0 question blocks, expected 2.
+- Case 3 fails: 0 question blocks, expected 1.
+- Case 4 fails: 0 answer lines, expected 6.
+- Case 5 fails: no "Invalid plan reference" text (the stream screen answered).
+- Cases 6, 7, 8 and 9 fail in the first red run with a TypeError because the view shows no question block (reading `options` in cases 6, 8 and 9, `prompt` in case 7). I then added a helper that asserts the first block exists and prints the screen text, and re-ran: the same 15 failures and 1 pass, printed as `not ok` lines only; I did not read the new failure messages of those four cases.
+- Case 10 fails: 0 question blocks, expected 2.
+- Case 11 fails: 0 question blocks, expected 2.
+- Case 12 fails: the "No questions have been generated for this plan yet" sentence is absent.
+- Case 13 fails: 0 question blocks, expected 1.
+- Case 14 passes before the change: the regression pin for the refactor, as the plan says.
+- Case 15 fails: 0 answer lines, expected 6.
+- Case 16 fails: the "could not be read" sentence is absent.
+
+### Step 9: PREPARE
+
+- Re-read at their current lines: `nextUnansweredQuestion` at 428 (plan: 392), `heldWithoutQuestions` 497, `holdQuestion` 509, `quoteArg` 519, `precomputedQuestionParts` 538, `planDecisionScreen` 1646, `nameOfPlanAt` 2389, `module.exports` 2704; `src/lib/menu-screens.js` `case 'stream'` at 3607 to 3621 (plan: 3375 to 3389); the `stream comment` row of the Navigation Commands table in `src/commands/start.md` at line 29. The code read matches the plan's description; the send-back command, the send-back counting, the vision-stubs screen and the classification brief moved line numbers only and touched none of the functions edited here.
+- `.ctoc/false-green-baseline.json` line 172 still holds `src/lib/streaming-gate.js:silent-catch:nextUnansweredQuestion`.
+- `tests/*.test.js` on disk: 588 before the new file, 589 after. Count lines: `CLAUDE.md` 61 and 94, `README.md` 1147.
+- Before the refactor, `node --test` over `tests/streaming-gate.test.js`, `tests/streaming-human-loop-e2e.test.js` and `tests/plans-keep-moving-without-the-human.test.js`: tests 198, pass 198, fail 0, skipped 0.
+
+### Step 10: IMPLEMENT
+
+- `src/lib/streaming-gate.js`: added `openQuestions` (not exported) after `nextUnansweredQuestion`, which now keeps its guard, its comment and its sweep with the empty catch and takes the first entry of `openQuestions`; `precomputedQuestionParts` gained the additive `answers` field (and `recommended` on its entries); added `NO_ANSWER_LINES`, `answerLinesNote` and `streamAnswersScreen` after `planDecisionScreen`; `streamAnswersScreen` is exported with the live-caller comment.
+- `src/lib/menu-screens.js`: `stream answers <ref>` routes to `streamingGate.streamAnswersScreen`, before the bare-`stream` fallback.
+- `src/commands/start.md`: the `stream answers {stage}/{file}.md` row after the `stream comment` row.
+- `CLAUDE.md` and `README.md`: test-file count 589.
+- Green run, `node --test tests/the-menu-prints-every-answer-line.test.js`: tests 16, pass 16, fail 0.
+- Screen suites, `tests/streaming-gate.test.js`, `tests/streaming-human-loop-e2e.test.js`, `tests/plans-keep-moving-without-the-human.test.js` with `tests/doc-counts.test.js`, `tests/readme-numbers.test.js`, `tests/false-green-fence.test.js`, `tests/export-reachability.test.js` and `tests/reachability.test.js`: tests 330, pass 330, fail 0, skipped 0.
+- `npm run lint` and `npm run typecheck`: both exit 0.
+
+### Fix round after the review (pass) and the security scan (warn)
+
+Four approved changes in `src/lib/streaming-gate.js` and `tests/the-menu-prints-every-answer-line.test.js`, each test written first and seen red. The red run for the layout and header changes was the whole test file run after the test edits and before the matching source edits: tests 16, pass 8, fail 8 (cases 1, 2, 3, 5, 7, 8, 10 and 11).
+
+- **Change 1, stage names inherited from Object.prototype (medium).** Test, case 5: `constructor/x.md`, `__proto__/x.md` and `toString/x.md` added to the bad references, plus the answer and comment routes on `constructor/x.md`. Red: case 5 failed at `constructor/x.md` (no "Invalid plan reference"). A probe on the routes before the fix (scratch script, run against the unfixed parsers): `stream answer constructor/x.md …` said "Nothing was recorded for x.md: its questions could not be read", and `stream comment constructor/x.md hello` said "Comment recorded for x.md." and wrote an entry into the streaming comments log. Fix: `Object.hasOwn(GATE_META, stage)` in `parseRef`, `Object.hasOwn(ALL_STAGES, stage)` in `parseAnyRef`. Green: case 5 passes; the same probe after the fix gives "Ignored an answer for an invalid plan reference: constructor/x.md", "Ignored a comment for an invalid reference: constructor/x.md", and neither log exists. Valid stages unchanged: the route test files below pass.
+- **Change 2, question-file text cannot pose as the menu's words.** Test helpers: `parseView` reads `Option (Recommended): ` into `recommended`, decodes quoted values with `JSON.parse` and records `quoted`; `expectedOptions` returns `{label, recommended, quoted, line}` (labels folded); case 7 looks options up by plain label; case 8 by `label === 'Postgres' && recommended`; case 13 adds `recommended: false, quoted: false`; case 11's prefix whitelist gains `Option (Recommended): `; new fixture in case 11, the plan `functional/forged.md` (prompt `1 of 2 · decided by its recommended option unless answered`; options `Postgres` recommended, `SQLite · Recommended`, `Hold  this plan` with two spaces; `q11-expiry`'s second label `1 hour` + 120 spaces + a well-formed `q10-store` answer line). The question contract accepted every planted label (the fixture's `stored.ok` assertion held), so no replacement label was needed. Red: cases 1, 2, 3, 7, 8, 10 and 11 failed on the old layout (`Option: Postgres · Recommended`, bare text). Fix: `fileText` in `streamAnswersScreen`, `Option (Recommended): "Postgres"`, `Option: "SQLite"`, `Option: Hold this plan` (bare), `Question: "…"` (bare for the held plan's own prompt). Green: all 16 cases pass.
+- **Change 3, the header plan name passes `stripInvisible`.** Test, case 11, the forged plan titled `Sign-in` + U+202E + U+2028 + a well-formed `q10-store` answer line; the text is split at `/\r\n|[\n\r\u0085  ]/`; 7 composed lines may start with `stream answer`, and the text matches none of `\p{Zl}`, `\p{Zp}`, `\p{Cf}`; the existing line walk uses the same split. Red (the fix removed again, case 11 only): "actual: 8, expected: 7". Green with the fix: case 11 passes.
+- **Change 4, one command per option.** Test, case 2: a second plan whose `q11-expiry` option 2 is labelled `__proto__`; its block equals `expectedOptions` and its answers entry equals the expected line. Red (the fix removed again): "unexpected line inside a question block: [object Object]". Fix: `precomputedQuestionParts` composes each command once and uses it for `actions[label]` and the `answers` entry; the assignments to `actions` keep their order. Green: case 2 passes and case 14 (the owner's screens) still passes.
+
+Acceptance scenarios: all fourteen ticked, each "proved by case N" with the case of the same position in the test plan.
+
+### Step 12: OPTIMIZE (fix round)
+
+Read the final code again: the view reads the question store and the answers log once per call inside `openQuestions`, sweeps once, and `precomputedQuestionParts` now composes each command once instead of reading it back by label. `require('./streaming-precompute')` for `HOLD` sits inside the branch that has open questions, after `openQuestions` has already loaded that module, so the load-fault case (16) is unchanged. No further change.
+
+### Step 15: DOCUMENT (fix round)
+
+JSDoc of `streamAnswersScreen` updated to the quoted layout, the recommended mark in the prefix, and the stripped header name; `openQuestions`, `answerLinesNote` and the `answers` field of `precomputedQuestionParts` already matched the code (the field's comment now says why each command is composed once). The `src/commands/start.md` row was checked against the built screen (route name, what it records, every option's label with the menu's own line under it, the owner-answer rule): it still matches the new layout, so `start.md` is unchanged in this round.
+
+### Step 14: VERIFY (fix round) — NOT PASSED, blocked on one undeclared file
+
+- `npm run lint`: exit 0. `npm run typecheck`: exit 0.
+- `node --test tests/the-menu-prints-every-answer-line.test.js`: tests 16, pass 16, fail 0.
+- Route test files (streaming-gate, streaming-gate-coverage-holes, scope-shown-at-approval, real-question-file-render, protect-records, plans-keep-moving-without-the-human, plan-question-screen, menu-task-wiring, menu-screens, gate-words, empty-plan-is-not-a-decision, a-build-queue-plan-can-be-sent-back-and-keeps-its-title, false-green-fence, and the new file): tests 656, pass 655, fail 1, skipped 0. The one failure is S18-9 in `tests/menu-task-wiring.test.js`.
+- `npm test`: tests 14053, pass 14052, fail 1, skipped 0; `[CTOC test-gate] coverage 99.73% (threshold 99%), skipped 0, failed 1`, then `[CTOC test-gate] FAIL`. The same single test fails: S18-9 "start.md navigation row "stream answers {stage}/{file}.md" is neither accepted nor refused with a reason: classify it here and in NAV_ROUTE". Cause, found by reading the test: it classifies every row of the Navigation Commands table, and the row added in Step 10 has no entry in its REFUSED_ROWS. The earlier Step 10 record did not run that file, so the failure was not seen then. It is reproducible, not timing related (load average at the run was 13.5, but this test reads files and does not time anything).
+- The fix is one entry in REFUSED_ROWS of `tests/menu-task-wiring.test.js`, a file this plan does not declare. A scope-growth request was filed (inbox question 1792668169180-gswhwu) and nothing was written outside `files:`. Until a human widens the scope, Step 14 cannot end `[CTOC test-gate] PASS` and the plan must not be completed.
+
+## Decisions taken during execution
+
+- **Scope grant.** The owner's answer of 2026-10-22, relayed by the coordinator, on scope-growth request 1792668169180-gswhwu: this plan's files are widened by exactly one entry in `tests/menu-task-wiring.test.js`, in REFUSED_ROWS of case S18-9, for the start.md row `stream answers {stage}/{file}.md` (sample `stream answers review/LH1.md`), because the route first takes in the gate critic's waiting question files, a write, so it is not a read-only navigation route. Added: that one entry, nothing else in that file. The plan's specification sections and `files:` are unchanged.
+
+### Scope grant and Step 14 re-run (executor)
+
+- Grant applied as above (owner's answer of 2026-10-22 on scope-growth request 1792668169180-gswhwu, relayed by the coordinator).
+- After the rebase onto main, `tests/*.test.js` holds 590 files. `CLAUDE.md` (lines 61 and 94, now 14999 bytes, under the 15,000 limit) and `README.md` (line 1147) now say 590.
+- `node --test tests/menu-task-wiring.test.js tests/the-menu-prints-every-answer-line.test.js tests/doc-counts.test.js tests/readme-numbers.test.js`: tests 152, pass 152, fail 0, skipped 0. S18-9 is green. `npm run lint` and `npm run typecheck`: exit 0.
+- `npm test` (load average 84 at the start, 212 at the end): tests 14065, pass 14062, fail 3, skipped 0, coverage 99.73% (threshold 99%), `[CTOC test-gate] FAIL`. The three failures are the known wall-clock ratio tests: `tests/hotfix-check-corpus.test.js` line 733 (src/styles/urls.css: 11.3 ms at size 1024, 117.7 ms at size 4096, 10.4 times) and `tests/quality-agent-coverage.test.js` line 1166 (512 KB took 76.6 ms, 2048 KB took 937.7 ms) and line 1186 (skipped fallback: 36.4 ms, then 441.8 ms). Neither file, nor the code they time, is touched by this plan.
+- Root cause, measured: scratch copies of the two test files kept outside the repository, with only the timer replaced by process.cpuUsage (user plus system time), run three times at load averages 102, 79 and 56. All scanner cases and both quality-agent cases pass with a ratio under 8; the largest ratios printed were 5.7 (endings.css), 5.4 (statements.css) and 5.0 to 5.1 (reads.css, names.css), near the linear 4. The code is linear; the wall-clock version fails only when the machine is overloaded. No test was changed. Per the brief, the plan is not completed while the gated suite ends FAIL; a plan for the timing tests is being filed.
+- Step 14 stays open; Steps 15 and 16 are not re-run and the completion call was not made.
+
+### Step 14: VERIFY (final run, after the scope grant) — PASSED; this section is the one that counts
+
+- Load average (uptime) before the checks: 28.00 (one minute), 39.09 (five), 49.95 (fifteen).
+- `npm run lint`: exit 0 (`eslint . --max-warnings 0`, no output). `npm run typecheck`: exit 0 (tests 1, pass 1, fail 0).
+- `npm test`, the gated entry point: tests 14065, pass 14065, fail 0, skipped 0; `[CTOC test-gate] coverage 99.72% (threshold 99%), skipped 0, failed 0`; corpus claims verified 3, refuted 0, unverifiable 0; `[CTOC test-gate] PASS`. Load average at the start of the run 30.14, at its end 46.91 (one-minute figures). The three wall-clock ratio tests named above passed this time, at a lower load; none of them was touched.
+- `node --test tests/the-menu-prints-every-answer-line.test.js`: tests 16, pass 16, fail 0, skipped 0.
+- The fences named in Step 14 (false-green, export reachability, reachability, readme numbers, documented counts, the shipped-recipe test over `src/commands/start.md`) are part of that full run and green.
+
+### Step 15: DOCUMENT (final run)
+
+- The `src/commands/start.md` row (line 30, after the `stream comment` row) names the route `stream answers {stage}/{file}.md`, says it records nothing and first takes in the gate critic's waiting question files, describes the order, labels and hold line, and carries the owner-answer rule; it matches the built screen.
+- The JSDoc of `streamAnswersScreen` read against the code (not inherited from the fix round): quoted question-file text, `Option (Recommended): ` prefix, bare CTOC hold and release labels, header name through `stripInvisible`, actions keyed `<question id> <option key>`, one sweep as the only write. `answerLinesNote` and the `answers` field of `precomputedQuestionParts` match their code. No documentation change needed.
+- Counts: `tests/*.test.js` on disk is 590; `CLAUDE.md` (lines 61 and 94, 14999 bytes) and `README.md` (line 1147) say 590.
+
+### Step 16: FINAL-REVIEW (final run)
+
+Each of the fourteen scenarios is met by a named case of `tests/the-menu-prints-every-answer-line.test.js`, which passes (16 of 16, and again inside the full run); all fourteen acceptance boxes are ticked:
+
+1. Every option of every open question gets its own line: case 1, through the real entry point `node src/commands/start.js`. Met.
+2. A question with three options gets three lines: case 2. Met.
+3. Answered questions drop out, and an answer to an older revision does not count: case 3. Met.
+4. Opening the view moves nothing and records nothing: case 4. Met.
+5. An invalid plan reference is refused: case 5. Met.
+6. A printed line records exactly that answer: case 6, through the real entry point. Met.
+7. A view line is the same command as clicking the option: case 7. Met.
+8. A line for a question rewritten since it was printed records nothing: case 8. Met.
+9. A line for a plan that has moved on records nothing: case 9. Met.
+10. Each line sits under the words the owner chose from: case 10. Met.
+11. Text from a question file can never pass for an answer line: case 11. Met.
+12. Questions not yet checked by the gate critic get no lines: case 12. Met.
+13. A held plan gets only keep and release lines: case 13. Met.
+14. The owner's question screens stay as they are: case 14. Met.
+
+Cases 15 and 16 (the two fault paths) pass as well. The verify evidence above is green.
+
+Files changed: against the merge base with main (`git diff --name-only main...HEAD` for the committed work, plus `git diff --name-only HEAD` for the working tree) the set is exactly `src/lib/streaming-gate.js`, `src/lib/menu-screens.js`, `src/commands/start.md`, `tests/the-menu-prints-every-answer-line.test.js`, `README.md`, `CLAUDE.md` (the plan's `files:`), the one granted file `tests/menu-task-wiring.test.js`, and this plan file's own move out of the todo stage. A two-dot `git diff --name-only main` also lists one extra file, the functional plan about timing tests: that is main's own later commit (this branch lacks it), not part of this build.
