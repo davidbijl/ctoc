@@ -45,14 +45,14 @@ const NAME_CAP = 5;
 /** Wire the three composed sources + the plan readers. Its require failure fails open. */
 function buildDeps() {
   const state = require('./state');
-  const { pendingGateDecisions, humanPlanName } = require('./streaming-gate');
+  const { pendingGateDecisions, humanPlanName, planOwnTitle } = require('./streaming-gate');
   const { plansNeedingQuestions } = require('./streaming-precompute');
   const { nextBuildable } = require('./continuation-queue');
   const gateWords = require('./gate-words');
   return {
     getPlansDir: state.getPlansDir,
-    parseMetadata: state.parseMetadata,
     humanPlanName,
+    planOwnTitle,
     moment: gateWords.moment,
     pendingGateDecisions,
     plansNeedingQuestions,
@@ -102,22 +102,6 @@ function isWaitingForOk(d) {
 }
 
 /**
- * The plan's raw one-line title: its `# Heading`, else its frontmatter `title`, else its
- * slug. Mirrors `streaming-gate.planTitle` (not exported), then handed to `humanPlanName`.
- * @param {string} content
- * @param {string} slug
- * @param {(c: string) => any} parseMetadata
- * @returns {string}
- */
-function titleOf(content, slug, parseMetadata) {
-  const m = typeof content === 'string' ? content.match(/^#[ \t]+(.+)$/m) : null;
-  if (m) return m[1].trim();
-  const md = parseMetadata(content) || {};
-  const t = md.title;
-  return typeof t === 'string' && t.trim() ? t.trim() : String(slug || '');
-}
-
-/**
  * Read a plan's content, or '' when it is missing/unreadable (e.g. a plan mid-move).
  * @returns {string}
  */
@@ -136,7 +120,7 @@ function nameForRef(root, ref, deps) {
   const file = ref.slice(slash + 1);
   const slug = file.replace(/\.md$/i, '');
   const content = readPlanContent(root, stage, file, deps);
-  return deps.humanPlanName(titleOf(content, slug, deps.parseMetadata), slug);
+  return deps.humanPlanName(deps.planOwnTitle(content, slug), slug);
 }
 
 const MOVED_FORWARD = 'Moved forward on their own — enough was known to proceed without your OK';

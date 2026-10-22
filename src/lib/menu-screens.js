@@ -2088,8 +2088,23 @@ function visionStubsBrowse(slug, projectPath) {
 }
 
 /**
+ * Was the plan at `planPath` sent back from the build queue and not changed since (actions.isSentBackUnrevised)?
+ * An unreadable plan is "not held": the validation screen then shows its ordinary options.
+ * @param {string} planPath
+ * @returns {boolean}
+ */
+function isHeldPlan(planPath) {
+  try {
+    return require('./actions').isSentBackUnrevised(safeFs.readFileSync(planPath, 'utf8'));
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Validation Screen
- * Shows pre-transition validation results and options.
+ * Shows pre-transition validation results and options. A clean screen for a plan the owner's hold keeps
+ * waiting (sent back from the build queue, not changed since) leads with Back, not with approve.
  */
 function validateScreen(stage, file, projectPath) {
   const root = getProjectPath(projectPath);
@@ -2169,9 +2184,20 @@ function validateScreen(stage, file, projectPath) {
     question = validationResult.warnings.length > 0
       ? `All checks passed (${validationResult.warnings.length} warning(s)) — approve ${stage} → ${nextStage}?`
       : `All checks passed — approve ${stage} → ${nextStage}?`;
-    options.push({ label: 'Confirm approve', description: `Approve now — move plan to ${nextStage}` });
+    // A plan sent back from the build queue and not changed since (the owner's hold) does not lead with
+    // approve: going back to change it comes first, and approving it stays offered, never recommended.
+    const held = stage === 'implementation' && isHeldPlan(planPath);
+    if (held) {
+      options.push({
+        label: 'Back',
+        description: 'Recommended — it was sent back to be re-planned and has not been changed since; go back and change it first.',
+      });
+      options.push({ label: 'Confirm approve', description: streamingGate.HELD_APPROVE_DESCRIPTION });
+    } else {
+      options.push({ label: 'Confirm approve', description: `Approve now — move plan to ${nextStage}` });
+      options.push({ label: 'Back', description: `Return to ${stage} list` });
+    }
     actions['Confirm approve'] = `claude:approve ${stage}/${file}`;
-    options.push({ label: 'Back', description: `Return to ${stage} list` });
     actions['Back'] = `browse ${stage}`;
   } else {
     // Failed: fix or (buried) override. "Approve anyway" is the LAST option.
@@ -3103,11 +3129,10 @@ function parseSweepArgs(words) {
   return { ok: true, confirm, by };
 }
 
-/** The human name of the plan at `planPath`, read from its `# Heading`, else its slug. */
+/** The human name of the plan at `planPath`, read from its own title (streaming-gate.planOwnTitle), else its slug. */
 function planNameAt(planPath, slug) {
   try {
-    const m = safeFs.readFileSync(planPath, 'utf8').match(/^#\s+(.+)$/m);
-    return streamingGate.humanPlanName(m ? m[1].trim() : '', slug);
+    return streamingGate.humanPlanName(streamingGate.planOwnTitle(safeFs.readFileSync(planPath, 'utf8'), slug), slug);
   } catch {
     return stripCtl(String(slug || ''));
   }
@@ -3435,6 +3460,12 @@ function route(args, projectPath, opts = {}) {
       }
       return streamingGate.planDecisionScreen(ref, projectPath);
     }
+
+    // The menu command behind "Send it back — wrong way" on a build-queue plan's screen:
+    // `claude:reject todo/<file>.md implementation --stdin`, its reason on standard input, which
+    // start.js reads into `opts.answerText` for exactly this shape.
+    case 'claude:reject':
+      return streamingGate.sendBackCommand(args.slice(1), getProjectPath(projectPath), opts.answerText);
 
     case 'stubs':
       return visionStubsBrowse(args[1], projectPath);

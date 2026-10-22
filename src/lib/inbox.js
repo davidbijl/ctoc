@@ -1112,6 +1112,7 @@ module.exports = {
   questionAnswer,
   readQuestion,
   readStandardInput,
+  decodeAnswer,
   QUESTION_ID_RE,
   listRelatedForInbox,
   parseFrontmatter,

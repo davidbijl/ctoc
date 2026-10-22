@@ -947,17 +947,19 @@ function main() {
     // NOT duplicated into this branch).
     const { route } = require('../lib/menu-screens');
     const splitArgs = splitCliArgs(rest);
-    // The owner's answer to an inbox question arrives on STANDARD INPUT (a quoted heredoc in the main
-    // session), never on the command line: standard input is read for exactly
-    // `inbox answer <id> --stdin`, once, and only when it is not a terminal. `tty.isatty(0)` asks without
+    // The owner's answer to an inbox question, and the reason of a build-queue send-back, arrive on
+    // STANDARD INPUT (a quoted heredoc in the main session), never on the command line: standard input
+    // is read for exactly `inbox answer <id> --stdin` and `claude:reject <ref> <dest> --stdin`, once, and
+    // only when it is not a terminal. `tty.isatty(0)` asks without
     // building process.stdin (which would put a pipe in non-blocking mode so the read below could fail
     // with EAGAIN). `readStandardInput` reads descriptor 0 into a buffer capped at the answer limit plus
     // two bytes (no input at all, or EAGAIN before any byte, is undefined; EAGAIN after some bytes and any
     // other read error is a marker the route refuses with its own sentence), so the cap lives in one
     // place, the inbox module.
     let answerText;
-    if (splitArgs.length === 4 && splitArgs[0] === 'inbox' && splitArgs[1] === 'answer'
-      && splitArgs[3] === '--stdin' && !require('tty').isatty(0)) {
+    const readsStdin = splitArgs.length === 4 && splitArgs[3] === '--stdin'
+      && ((splitArgs[0] === 'inbox' && splitArgs[1] === 'answer') || splitArgs[0] === 'claude:reject');
+    if (readsStdin && !require('tty').isatty(0)) {
       answerText = require('../lib/inbox').readStandardInput(0);
     }
     // A route may answer asynchronously (`hotfix check --run-tests` runs the tests), so the

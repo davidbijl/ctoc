@@ -31,6 +31,7 @@ const { invalidate } = require('./cache');
 const taskRegistry = require('./task-registry');
 const { upsertMarkerFields } = require('./frontmatter-merge');
 const { stripCtl } = require('./tui');
+const { hashString } = require('./hash-utils');
 
 /**
  * Commit `data` to `target` ATOMICALLY (temp sibling + rename), mirroring the
@@ -779,6 +780,35 @@ function recordRefinementGate(planPath) {
   }
 }
 
+/** The frontmatter key a build-queue send-back writes: the digest of the plan as the send-back left it. */
+const SENT_BACK_KEY = 'sent_back_digest';
+
+/**
+ * The digest a build-queue send-back records: sha256 of the plan text with line endings read as LF
+ * and every `sent_back_digest:` line removed, so the value never covers itself and a checkout that
+ * converts line endings is not a change.
+ * @param {string} content plan file text
+ * @returns {string} 64 lower-case hexadecimal characters
+ */
+function sentBackDigest(content) {
+  return hashString(String(content).replace(/\r\n/g, '\n').replace(/^sent_back_digest:[^\n]*\n?/gm, ''));
+}
+
+/**
+ * Was this plan sent back from the build queue and not changed since (the owner's hold of
+ * 2026-10-20)? True only when its text carries `sent_back_digest: "<64 hex>"` and that value equals
+ * sentBackDigest of the text now. Any edit, to the body, the `files:` list or any other frontmatter
+ * line, makes it false; so does a plan sent back before the mark existed, which carries none.
+ * Pure; never throws.
+ * @param {string} content plan file text
+ * @returns {boolean}
+ */
+function isSentBackUnrevised(content) {
+  if (typeof content !== 'string') return false;
+  const m = /^sent_back_digest:[ \t]*"([0-9a-f]{64})"[ \t]*\r?$/m.exec(content);
+  return m !== null && m[1] === sentBackDigest(content);
+}
+
 // Reject a plan with feedback
 // Reject a plan: send it back EXACTLY ONE STAGE along `gate-order.STAGE_ORDER`,
 // withdraw the approval-ledger entry it no longer has, and rewrite its content
@@ -831,8 +861,10 @@ function recordRefinementGate(planPath) {
 // @param {{ removeEntry?: (slug:string, root:string)=>void }} [deps] - injectable
 //   ledger-withdrawal seam (defaults to the real `approval-ledger.removeEntry`), so a
 //   crash-injection test can force the withdrawal to throw and assert the abort.
+// @param {{ holdUntilRevised?: boolean }} [opts] - holdUntilRevised: true (the build-queue
+//   send-back only) also writes the hold mark in the same write; see isSentBackUnrevised
 // @returns {string} the destination path one stage back
-function rejectPlan(planPath, feedback, projectPath, deps = {}) {
+function rejectPlan(planPath, feedback, projectPath, deps = {}, opts = /** @type {{ holdUntilRevised?: boolean }} */ ({})) {
   const root = projectPath || findProjectRoot();
   const ledger = require('./approval-ledger');
   const removeEntry = deps.removeEntry || ledger.removeEntry;
@@ -875,17 +907,26 @@ function rejectPlan(planPath, feedback, projectPath, deps = {}) {
 
   // `upsertMarkerFields` collapses stacked blocks, STRIPS the approval-marker keys (D3),
   // keeps the frontmatter at byte zero (D2), and appends our rejection fields.
-  const merged = upsertMarkerFields(content, [
+  const fields = [
     ['revision', String(revision)],
     ['rejection_reason', `"${yamlFeedback}"`],
     ['tag', 'rejected'],
-  ]);
+  ];
+  // The owner's hold (2026-10-20): the build-queue send-back marks the plan with the digest of the
+  // text it leaves; the crossing on evidence waits until that text changes.
+  const hold = opts !== null && typeof opts === 'object' && opts.holdUntilRevised === true;
+  if (hold) fields.push([SENT_BACK_KEY, '""']);
+  const merged = upsertMarkerFields(content, fields);
 
   // Insert the rejection header AFTER the (single) frontmatter block, never above it.
   const rejectionHeader =
     `# REVISION ${revision}\n\n## Rejection Feedback\n\n${bodyFeedback}\n\n---\n\n`;
   const fm = merged.match(/^(---\r?\n[\s\S]*?\r?\n---\r?\n)([\s\S]*)$/);
-  const rewritten = fm ? fm[1] + rejectionHeader + fm[2] : rejectionHeader + merged;
+  let rewritten = fm ? fm[1] + rejectionHeader + fm[2] : rejectionHeader + merged;
+  if (hold) {
+    const digest = sentBackDigest(rewritten);
+    rewritten = rewritten.replace(/^sent_back_digest: ""$/m, () => `${SENT_BACK_KEY}: "${digest}"`);
+  }
   safeFs.writeFileSync(planPath, rewritten);
 
   // 3. Withdraw the ledger entry. A failure ABORTS the rejection before the move —
@@ -1307,6 +1348,117 @@ function claimBuild(projectPath, taskId, opts = {}) {
     }
     return refuse(taskId, 'build-start-busy',
       `Task ${taskId} NOT started — another build start is being recorded at this moment; run the same command again.`);
+  }
+  return locked.value;
+}
+
+/**
+ * What sendBackFromBuildQueue returns. `cancelled` and `cancelFailed` hold task ids; `stranded` holds the
+ * bare plan names of the queued builds left waiting. A `send-back-failed` that left the plan's bytes as they
+ * were (`changed: false`) cancelled nothing; one that left them changed (`changed: true`) carries the same
+ * three lists as a success, because its queued builds were cancelled all the same.
+ * @typedef {{ ok: true, cancelled: string[], cancelFailed: string[], stranded: string[] }
+ *   | { ok: false, reason: ('busy'|'lock-unusable'|'being-built'|'not-found'|'name-taken'|'not-a-plain-file'),
+ *       lockPath?: string }
+ *   | { ok: false, reason: 'send-back-failed', changed: false }
+ *   | { ok: false, reason: 'send-back-failed', changed: true, cancelled: string[], cancelFailed: string[],
+ *       stranded: string[] }} SendBackResult
+ */
+
+/**
+ * Send a plan waiting in the build queue back to technical planning with a reason: the work of the
+ * menu command `claude:reject todo/<file>.md implementation --stdin` (streaming-gate.sendBackCommand
+ * words it). Runs inside the one build-start lock, so a build start never interleaves with it.
+ * Inside the lock, in order:
+ *   1. refuses unless `plans/todo/<file>` is there under that exact name, naming `being-built` when
+ *      the plan sits in `plans/in-progress/` or a running or cancelling build task covers it;
+ *   2. refuses when a plan of that name already sits in `plans/implementation/` (rejectPlan would
+ *      rewrite the plan and withdraw its approval before its move refused);
+ *   3. clears the plan's status file, as startExecution does;
+ *   4. runs rejectPlan with the hold mark (one stage back, the reason in the plan, the approval
+ *      record withdrawn);
+ *   5. cancels every queued build task of the plan, and names the queued builds of other plans that
+ *      waited on a cancelled one and can now never run.
+ * A failed cancel is reported, never thrown: the plan is already back in technical planning, and
+ * the build left queued cannot start (its claim refuses a plan that is not in the build queue). A cancel
+ * that throws because someone else cancelled the same build at that moment counts as cancelled (the task is
+ * read again; no error text is ever matched).
+ * A plan file in the build queue that is a link or not a plain file is refused (`not-a-plain-file`) before
+ * anything is read or written, so a link's target is never rewritten.
+ * A send-back that throws part-way is told apart by the plan's bytes: unchanged (`changed: false`) leaves
+ * its queued builds as they were; changed (`changed: true`) cancels them, because the plan is no longer
+ * what they were approved to build. Either way the cause goes to the warn log (`send_back_failed`, and
+ * `send_back_cancel_failed` for each cancel that did not happen), never to the result.
+ *
+ * @param {string} root project root
+ * @param {string} file the plan's bare file name `<slug>.md`, already checked by the caller
+ *   (streaming-gate.parseAnyRef: plain characters, no separator)
+ * @param {string} reason the non-blank reason, decoded by the caller
+ * @returns {SendBackResult}
+ */
+function sendBackFromBuildQueue(root, file, reason) {
+  const plansDir = getPlansDir(root);
+  const key = file.replace(/\.md$/i, '').toLowerCase();
+  const inTodo = () => {
+    // An unreadable build queue holds no plan to send back: not-found is the honest answer.
+    try { return safeFs.readdirSync(path.join(plansDir, 'todo')).includes(file); } catch { return false; }
+  };
+  const locked = withBuildStartLock(root, /** @returns {SendBackResult} */ () => {
+    if (!inTodo()) {
+      return { ok: false, reason: safeFs.existsSync(path.join(plansDir, 'in-progress', file)) ? 'being-built' : 'not-found' };
+    }
+    const builds = taskRegistry.load(root).tasks.filter((t) => t.kind === 'implement' && t.plan != null
+      && String(t.plan).replace(/\.md$/i, '').toLowerCase() === key);
+    if (builds.some((t) => t.status === 'running' || t.status === 'cancelling')) return { ok: false, reason: 'being-built' };
+    // The same existence test movePlan makes before it refuses to overwrite.
+    if (safeFs.existsSync(path.join(plansDir, 'implementation', file))) return { ok: false, reason: 'name-taken' };
+    const todoPath = path.join(plansDir, 'todo', file);
+    let kind;
+    try { kind = safeFs.lstatSync(todoPath); } catch { return { ok: false, reason: 'not-found' }; }
+    if (!kind.isFile()) return { ok: false, reason: 'not-a-plain-file' };
+    // Cancel the plan's queued builds and name the queued builds of other plans that waited on them. Run
+    // on success and when the plan was changed before the send-back stopped.
+    const cancelQueued = () => {
+      const cancelled = [];
+      const cancelFailed = [];
+      for (const t of builds.filter((b) => b.status === 'queued')) {
+        try {
+          cancelTask(root, t.id);
+          cancelled.push(t.id);
+        } catch (err) {
+          const now = taskRegistry.load(root).tasks.find((x) => x.id === t.id);
+          if (now && now.status === 'cancelled') {
+            cancelled.push(t.id); // someone else cancelled it at the same moment
+          } else {
+            taskRegistry.warnLog(root, 'send_back_cancel_failed', { task: t.id, message: cutCtl(err && err.message, 300) });
+            cancelFailed.push(t.id);
+          }
+        }
+      }
+      const gone = new Set(cancelled);
+      const stranded = taskRegistry.unsatisfiableTasks(taskRegistry.load(root))
+        .filter((u) => u.reason === 'dep-failed' && u.deps.some((d) => gone.has(d)) && typeof u.task.plan === 'string')
+        .map((u) => u.task.plan);
+      return { cancelled, cancelFailed, stranded };
+    };
+    let before = null;
+    try {
+      before = safeFs.readFileSync(todoPath);
+      clearStatus(todoPath);
+      rejectPlan(todoPath, reason, root, {}, { holdUntilRevised: true });
+    } catch (err) {
+      taskRegistry.warnLog(root, 'send_back_failed', { plan: key, message: cutCtl(err && err.message, 300) });
+      let changed = false;
+      if (before !== null) {
+        try { changed = !safeFs.readFileSync(todoPath).equals(before); } catch { changed = true; }
+      }
+      return changed ? { ok: false, reason: 'send-back-failed', changed: true, ...cancelQueued() }
+        : { ok: false, reason: 'send-back-failed', changed: false };
+    }
+    return { ok: true, ...cancelQueued() };
+  });
+  if (!('value' in locked)) {
+    return locked.unusable ? { ok: false, reason: 'lock-unusable', lockPath: locked.unusable } : { ok: false, reason: 'busy' };
   }
   return locked.value;
 }
@@ -2830,6 +2982,10 @@ module.exports = {
   applyIronLoop,
   applyBasicIronLoopTemplate,
   rejectPlan,
+  // Callers: streaming-gate.pendingGateDecisions / planDecisionScreen (the hold) and
+  // streaming-gate.sendBackCommand (the build-queue send-back).
+  isSentBackUnrevised,
+  sendBackFromBuildQueue,
   renamePlan,
   deletePlan,
   moveUpInQueue,
