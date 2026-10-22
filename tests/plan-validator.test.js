@@ -1250,5 +1250,496 @@ describe('extractStepBlocks — richest-evidence execution region wins', () => {
   });
 });
 
+describe('surviving mutants — one recorded place, checked when the build completes', () => {
+  const ms = require('../src/lib/menu-screens');
+  const taskRegistry = require('../src/lib/task-registry');
+  const ledger = require('../src/lib/approval-ledger');
+  const residency = require('../src/lib/approval-residency');
+  const { findCoveringPlan } = require('../src/lib/plan-coverage');
+  const { validateForReview } = require('../src/lib/plan-validator');
+  const HEADER = '| Mutant | File and line | Change | Disposition |';
+  const DELIM = '|---|---|---|---|';
+  const EMPTY_ROW = '| M1 | src/lib/a.js:10 | x |  |';
+  let root;
+
+  beforeEach(() => {
+    // Real path: on macOS the temporary folder is a symbolic link, and the coverage
+    // check compares real paths.
+    root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ctoc-mutants-')));
+    for (const s of ['implementation', 'todo', 'in-progress', 'review', 'done']) {
+      fs.mkdirSync(path.join(root, 'plans', s), { recursive: true });
+    }
+    for (const d of [['.ctoc', 'state'], ['.ctoc', 'logs'], ['.ctoc', 'approvals'], ['src'], ['tests']]) {
+      fs.mkdirSync(path.join(root, ...d), { recursive: true });
+    }
+    fs.writeFileSync(path.join(root, 'src', 'thing.js'), 'module.exports = 1;\n');
+    fs.writeFileSync(path.join(root, 'tests', 'example.test.js'), '// kills the mutant\n');
+  });
+  afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  // A built plan: every step ticked, the criteria given, then the record when given.
+  function planText({ criteria = ['- [x] the thing works'], record = null, extra = [] } = {}) {
+    const lines = ['---', 'title: "A slice with a mutation run"', 'type: implementation',
+      'files:', '  - "src/thing.js"', '---', '', '# A slice with a mutation run', '',
+      '## Acceptance Criteria', '', ...criteria, '', REVIEW_DONE_EXEC_PLAN];
+    if (record !== null) {
+      lines.push('## Execution Record (Steps 8–16)', '', '### Surviving Mutants', '', ...record, '');
+    }
+    return [...lines, ...extra, ''].join('\n');
+  }
+
+  // A plan in the build with a running build task, as the scheduler leaves it.
+  function building(slug, text) {
+    const planPath = path.join(root, 'plans', 'in-progress', `${slug}.md`);
+    fs.writeFileSync(planPath, text);
+    const reg = taskRegistry.load(root);
+    const task = taskRegistry.addTask(reg, { kind: 'implement', plan: slug, touches: ['src/thing.js'] });
+    taskRegistry.updateTask(reg, task.id, { status: 'running' });
+    taskRegistry.save(root, reg);
+    return { planPath, taskId: task.id };
+  }
+
+  // The executor's own completion call, through the real router.
+  const complete = (taskId) => ms.route(['menu', 'task', 'complete', taskId], root);
+
+  // The new check's refusals only, read through the real completion validation.
+  function mutantErrors(text) {
+    const planPath = path.join(root, 'plans', 'in-progress', 'check-only.md');
+    fs.writeFileSync(planPath, text);
+    return validateForReview(planPath, root).errors.filter((e) => e.startsWith('Surviving mutant'));
+  }
+
+  const kickbackCounter = (slug) => JSON.parse(
+    fs.readFileSync(path.join(root, '.ctoc', 'state', 'kickbacks', `${slug}.json`), 'utf8'));
+
+  // --- scenarios 2, 3 and 5 to 8: the real completion route ---------------------
+
+  test('a fully recorded table passes the completion and the plan moves to review', () => {
+    const slug = 'fully-recorded';
+    const { taskId } = building(slug, planText({ record: [HEADER, DELIM,
+      '| M1 | src/thing.js:1 | `>=` became `>` | killed by tests/example.test.js — refuses a value equal to the limit |',
+      '| M2 | src/thing.js:2 | the `trim` call removed | accepted: the only caller trims its input first |'] }));
+    const res = complete(taskId);
+    assert.strictEqual(res.ok, true, `completion must be accepted: ${res.text}`);
+    assert.ok(fs.existsSync(path.join(root, 'plans', 'review', `${slug}.md`)), 'the plan is in review');
+    assert.ok(!fs.existsSync(path.join(root, 'plans', 'in-progress', `${slug}.md`)), 'and no longer in in-progress');
+    assert.doesNotMatch(res.text, /mutant/i);
+  });
+
+  test('a plan with a survivors heading and no rows is refused for the same reasons as before', () => {
+    const { taskId } = building('no-rows', planText({
+      criteria: ['- [x] the thing works', '- [ ] the other thing works'], record: [HEADER, DELIM] }));
+    const res = complete(taskId);
+    assert.strictEqual(res.ok, false);
+    assert.match(res.text, /1 of 2 acceptance criteria not checked/);
+    assert.doesNotMatch(res.text, /mutant/i);
+  });
+
+  test('a survivor with an empty Disposition refuses the completion and counts one Step 14 kickback', () => {
+    const slug = 'empty-disposition';
+    const { planPath, taskId } = building(slug, planText({ record: [HEADER, DELIM,
+      '| M1 | src/lib/example.js:45 | `>=` became `>` |  |'] }));
+    const res = complete(taskId);
+    assert.strictEqual(res.ok, false);
+    assert.strictEqual(res.blocked, true);
+    for (const part of ['src/lib/example.js:45', 'the Disposition is empty', 'killed by <test file>', 'accepted: <reason>']) {
+      assert.ok(res.text.includes(part), `the refusal names "${part}": ${res.text}`);
+    }
+    assert.ok(fs.existsSync(planPath), 'the plan stays in in-progress');
+    assert.ok(!fs.existsSync(path.join(root, 'plans', 'review', `${slug}.md`)));
+    const counter = kickbackCounter(slug);
+    assert.strictEqual(counter.total, 1);
+    assert.strictEqual(counter.by_step['14'], 1);
+    const task = taskRegistry.load(root).tasks.find((t) => t.id === taskId);
+    assert.strictEqual(task.status, 'running');
+  });
+
+  test('a Disposition in neither form and an accepted without a reason are both named', () => {
+    const { taskId } = building('two-faults', planText({ record: [HEADER, DELIM,
+      '| M1 | src/lib/a.js:10 | x | fix later |',
+      '| M2 | src/lib/b.js:20 | y | accepted: |'] }));
+    const res = complete(taskId);
+    assert.strictEqual(res.ok, false);
+    for (const part of ['row 1 (src/lib/a.js:10)', '"fix later" is in neither accepted form',
+      'row 2 (src/lib/b.js:20)', 'gives no reason']) {
+      assert.ok(res.text.includes(part), `the refusal names "${part}": ${res.text}`);
+    }
+  });
+
+  test('a killed-by naming a missing test file is named with that file', () => {
+    const { taskId } = building('missing-file', planText({ record: [HEADER, DELIM,
+      '| M1 | src/lib/a.js:10 | x | killed by tests/no-such-file.test.js |'] }));
+    const res = complete(taskId);
+    assert.strictEqual(res.ok, false);
+    assert.ok(res.text.includes('row 1 (src/lib/a.js:10)'), res.text);
+    assert.ok(res.text.includes('"tests/no-such-file.test.js", and no such file exists in the project'), res.text);
+  });
+
+  test('every open row is named and only the open rows', () => {
+    const { taskId } = building('three-rows', planText({ record: [HEADER, DELIM,
+      '| M1 | src/lib/a.js:10 | x |  |',
+      '| M2 | src/lib/b.js:20 | y | accepted: both branches return the same value |',
+      '| M3 | src/lib/c.js:30 | z |  |'] }));
+    const res = complete(taskId);
+    assert.strictEqual(res.ok, false);
+    assert.ok(res.text.includes('row 1 (src/lib/a.js:10)'), res.text);
+    assert.ok(res.text.includes('row 3 (src/lib/c.js:30)'), res.text);
+    assert.ok(!res.text.includes('row 2'), 'the accepted row is not named');
+    assert.ok(!res.text.includes('src/lib/b.js:20'), 'the accepted row is not named');
+    assert.strictEqual(res.errors.filter((e) => e.startsWith('Surviving mutant')).length, 2);
+  });
+
+  // --- scenario 1: the approval and the write permission ------------------------
+
+  function approvedThenBuilt(slug, appended) {
+    const spec = planText();
+    ledger.writeEntry(slug, { content: spec, stage_from: 'implementation', stage_to: 'todo', approved_by: 'human' }, root);
+    const built = spec + appended;
+    const planPath = path.join(root, 'plans', 'in-progress', `${slug}.md`);
+    fs.writeFileSync(planPath, built);
+    return { built, planPath };
+  }
+  const TABLE = [HEADER, DELIM, '| M1 | src/thing.js:1 | x | killed by tests/example.test.js — t |'].join('\n') + '\n';
+
+  test('a survivors table inside the Execution Record keeps the approval and the next edit', () => {
+    const slug = 'record-keeps-approval';
+    const { built, planPath } = approvedThenBuilt(slug,
+      '\n' + ['## Execution Record (Steps 8–16)', '', '### Surviving Mutants', ''].join('\n') + '\n' + TABLE);
+    assert.strictEqual(ledger.verify(slug, built, 'todo', root), true);
+    assert.strictEqual(residency.isApprovedForCoverage(planPath, 'in-progress', root).approved, true);
+    assert.strictEqual(findCoveringPlan('src/thing.js', root).plan, `in-progress/${slug}`);
+  });
+
+  test('the same table under a top-level Surviving Mutants heading cancels the write permission', () => {
+    const slug = 'top-level-cancels';
+    const { built, planPath } = approvedThenBuilt(slug, '\n## Surviving Mutants\n\n' + TABLE);
+    assert.strictEqual(ledger.verify(slug, built, 'todo', root), false);
+    const verdict = residency.isApprovedForCoverage(planPath, 'in-progress', root);
+    assert.strictEqual(verdict.approved, false);
+    assert.strictEqual(verdict.reason, 'hash-mismatch');
+    assert.strictEqual(findCoveringPlan('src/thing.js', root), null);
+  });
+
+  // --- scenario 4: the two agent files ------------------------------------------
+
+  const sliceOf = (relPath, from, to) => {
+    const text = fs.readFileSync(path.join(__dirname, '..', relPath), 'utf8');
+    const a = text.indexOf(from);
+    const b = text.indexOf(to);
+    assert.ok(a >= 0, `${relPath} holds ${JSON.stringify(from)}`);
+    assert.ok(b > a, `${relPath} holds ${JSON.stringify(to)} after it`);
+    return text.slice(a, b);
+  };
+
+  test("the executor's instructions name the place, its columns, both dispositions and the every-survivor rule", () => {
+    const slice = sliceOf('agents/iron-loop/iron-loop-executor.md',
+      '\n## Surviving mutants — the one place to record them\n', '\n## Step Execution\n');
+    for (const part of ['`### Surviving Mutants`', '`## Execution Record`',
+      '| Mutant | File and line | Change | Disposition |',
+      '`killed by <test file> — <test name>`', '`accepted: <reason>`',
+      'record every mutant that survived the run, not only the ones a report lists',
+      'Write the table as plain lines, never inside a code fence.',
+      'Never start a line in the Execution Record with `# `',
+      'checks only that the path exists']) {
+      assert.ok(slice.includes(part), `the executor's section holds ${part}`);
+    }
+  });
+
+  test('the integrator names the place in a step that runs mutation testing', () => {
+    const slice = sliceOf('agents/iron-loop/iron-loop-integrator.md',
+      '\n### Steps that run mutation testing\n', '\n### Single Responsibility\n');
+    for (const part of ['`### Surviving Mutants`', '`## Execution Record`', 'runs mutation testing']) {
+      assert.ok(slice.includes(part), `the integrator's subsection holds ${part}`);
+    }
+  });
+
+  // --- scenario 3 and the parser, through the same validateForReview ------------
+
+  test('no heading, a heading with prose only, and a heading with a header-only table give the verdict of a plan without the change', () => {
+    const planPath = path.join(root, 'plans', 'in-progress', 'verdict.md');
+    const run = (text) => { fs.writeFileSync(planPath, text); return validateForReview(planPath, root); };
+    for (const criteria of [['- [x] the thing works'], ['- [x] the thing works', '- [ ] the other thing works']]) {
+      const baseline = run(planText({ criteria })).errors;
+      for (const record of [null, ['None survived.'], [HEADER, DELIM]]) {
+        const result = run(planText({ criteria, record }));
+        assert.deepStrictEqual(result.errors, baseline);
+        if (criteria.length === 1) {
+          assert.strictEqual(result.valid, true);
+          assert.deepStrictEqual(result.errors, []);
+        }
+      }
+    }
+  });
+
+  // pin: the row scan is linear (column positions found once, backtick runs indexed once); the verdict is unchanged
+  test('a pipe inside a code span or written as an escaped pipe does not split a cell', () => {
+    const rows = [
+      '| M1 | src/thing.js:1 | `a|b` became `a&b` | accepted: the value is never read |',
+      '| M2 | src/thing.js:2 | `a \\| b` | killed by tests/example.test.js — t |',
+      '| M3 | src/thing.js:3 | a \\| b outside code | accepted: the value is never read |',
+      '| M4 | src/thing.js:4 | ``x`|`y`` | accepted: the value is never read |',
+    ];
+    assert.deepStrictEqual(mutantErrors(planText({ record: [HEADER, DELIM, ...rows] })), []);
+  });
+
+  test('a row missing a middle cell takes its last cell as the Disposition', () => {
+    assert.deepStrictEqual(mutantErrors(planText({ record: [HEADER, DELIM,
+      '| M1 | src/thing.js:1 | killed by tests/example.test.js — t |'] })), []);
+  });
+
+  test('a row wrapped over two lines is named with its cell count, and the rows after it are still read', () => {
+    const errors = mutantErrors(planText({ record: [HEADER, DELIM,
+      '| M1 | src/lib/a.js:10 | changed the',
+      'comparison | accepted: equivalent |',
+      '| M2 | src/lib/b.js:20 | y |  |'] }));
+    assert.strictEqual(errors.length, 2, JSON.stringify(errors));
+    assert.ok(errors[0].includes('row 1 (src/lib/a.js:10)'), errors[0]);
+    assert.ok(errors[0].includes('"changed the" is in neither accepted form'), errors[0]);
+    assert.ok(errors[0].includes('(the row has 3 cells where the table has 4 columns)'), errors[0]);
+    assert.ok(errors[1].includes('row 2 (src/lib/b.js:20)'), errors[1]);
+    assert.ok(errors[1].includes('the Disposition is empty'), errors[1]);
+  });
+
+  test('a survivors table inside a fenced example is never read', () => {
+    const example = ['## Execution Record', '', '### Surviving Mutants', '', HEADER, DELIM, EMPTY_ROW];
+    const fences = [
+      ['```markdown', ...example, '```'],
+      ['````markdown', '```', ...example, '```', '````'],
+      ['~~~markdown', '```', ...example, '```', '~~~'],
+      ['~~~text `x`', ...example, '~~~'],                    // a tilde fence may carry any text after its run
+    ];
+    for (const extra of fences) {
+      assert.deepStrictEqual(mutantErrors(planText({ extra })), [], `fence ${extra[0]}`);
+    }
+  });
+
+  test('a fence that never closes does not hide the record after it', () => {
+    const errors = mutantErrors(planText({ record: ['```text',
+      'ok 1 - refuses a value equal to the limit', HEADER, DELIM, EMPTY_ROW] }));
+    assert.strictEqual(errors.length, 1, JSON.stringify(errors));
+    assert.ok(errors[0].includes('row 1 (src/lib/a.js:10)'), errors[0]);
+    assert.ok(errors[0].includes('the Disposition is empty'), errors[0]);
+  });
+
+  test('pasted test-runner summary lines in the record do not close the place', () => {
+    const summary = ['# tests 26', '# pass 26', '# fail 0'];
+    const second = '| M2 | src/lib/b.js:20 | y |  |';
+    // plain lines after the table, then another open row
+    const plain = mutantErrors(planText({ record: [HEADER, DELIM, EMPTY_ROW, '', ...summary, second] }));
+    assert.strictEqual(plain.length, 2, JSON.stringify(plain));
+    assert.ok(plain[0].includes('row 1 (src/lib/a.js:10)') && plain[1].includes('row 2 (src/lib/b.js:20)'), JSON.stringify(plain));
+    // the same lines inside a fence that is never closed
+    const open = mutantErrors(planText({ record: [HEADER, DELIM, EMPTY_ROW, '```text', ...summary, second] }));
+    assert.strictEqual(open.length, 2, JSON.stringify(open));
+    // summary lines before the table
+    const before = mutantErrors(planText({ record: [...summary, HEADER, DELIM, EMPTY_ROW] }));
+    assert.strictEqual(before.length, 1, JSON.stringify(before));
+  });
+
+  test('a table without a delimiter row is refused, naming the place and the missing row', () => {
+    for (const record of [[HEADER, EMPTY_ROW], [EMPTY_ROW], [HEADER]]) {
+      const errors = mutantErrors(planText({ record }));
+      assert.strictEqual(errors.length, 1, `${JSON.stringify(record)}: ${JSON.stringify(errors)}`);
+      assert.ok(errors[0].includes('no delimiter row'), errors[0]);
+      assert.ok(errors[0].includes('### Surviving Mutants') && errors[0].includes('## Execution Record'), errors[0]);
+    }
+  });
+
+  test('a fence closes only on a line of the same fence character, at least as long, with nothing else', () => {
+    const example = ['## Execution Record', '', '### Surviving Mutants', '', HEADER, DELIM, EMPTY_ROW];
+    const fences = [
+      ['```markdown', '```js', ...example, '```'],          // an info string never closes
+      ['```markdown', '``` still open', ...example, '```'], // text after the run never closes
+      ['````markdown', '```', ...example, '````'],          // a shorter run never closes
+      ['```markdown', '~~~', ...example, '```'],            // the other fence character never closes
+      ['~~~markdown', '```', ...example, '~~~'],
+      ['```markdown', ...example, '```   '],                // trailing spaces are allowed on the closer
+    ];
+    for (const extra of fences) {
+      assert.deepStrictEqual(mutantErrors(planText({ extra })), [], `fence ${extra.slice(0, 2).join(' / ')}`);
+    }
+  });
+
+  // pin: the row scan is linear (column positions found once, backtick runs indexed once); the verdict is unchanged
+  test('a backtick with no closing run on the line does not swallow the pipes after it', () => {
+    const errors = mutantErrors(planText({ record: [HEADER, DELIM,
+      '| M1 | src/thing.js:1 | a ` b | accepted: the value is never read |',
+      '| M2 | src/thing.js:2 | ``x` | accepted: the value is never read |'] }));
+    assert.deepStrictEqual(errors, []);
+  });
+
+  test('a row with more cells than the table has columns is named with its cell count', () => {
+    const errors = mutantErrors(planText({ record: [HEADER, DELIM,
+      '| M1 | src/lib/a.js:10 | a|b | accepted: the value is never read |'] }));
+    assert.strictEqual(errors.length, 1, JSON.stringify(errors));
+    assert.ok(errors[0].includes('row 1 (src/lib/a.js:10)'), errors[0]);
+    assert.ok(errors[0].includes('(the row has 5 cells where the table has 4 columns)'), errors[0]);
+  });
+
+  test('a killed-by with a line number after the file is read as that file', () => {
+    assert.deepStrictEqual(mutantErrors(planText({ record: [HEADER, DELIM,
+      '| M1 | src/thing.js:1 | x | killed by tests/example.test.js:12 — t |'] })), []);
+  });
+
+  test("a survivors heading outside the Execution Record is not read, this plan's own title included", () => {
+    const extra = [
+      '# Surviving mutants from mutation testing have a recorded place in the plan', '',
+      '## Surviving Mutants', '', HEADER, DELIM, EMPTY_ROW, '',
+      '## Notes', '', '### Surviving Mutants', '', HEADER, DELIM, EMPTY_ROW,
+    ];
+    assert.deepStrictEqual(mutantErrors(planText({ extra })), []);
+  });
+
+  test('the place ends at a sibling heading and the record ends at the next top-level heading', () => {
+    // The no-space lines sit before an open row inside the place: if one were read as a
+    // heading of level 3 or less it would close the place and the open row would go unread.
+    const record = [HEADER, DELIM, '| M1 | src/thing.js:1 | x | accepted: nothing observes it |', '',
+      '#not-a-heading', '###not-a-heading', EMPTY_ROW, '### Step 14 numbers', '', HEADER, DELIM,
+      '| M3 | src/lib/c.js:30 | z |  |'];
+    const extra = ['## Notes', '', '#### Surviving Mutants', '', HEADER, DELIM, '| M4 | src/lib/d.js:40 | w |  |'];
+    const errors = mutantErrors(planText({ record, extra }));
+    assert.strictEqual(errors.length, 1, JSON.stringify(errors));
+    assert.ok(errors[0].includes('row 2 (src/lib/a.js:10)'), errors[0]);
+  });
+
+  // pin: the row scan is linear (column positions found once, backtick runs indexed once); the verdict is unchanged
+  test('a table without a Disposition column names each of its rows', () => {
+    const errors = mutantErrors(planText({ record: ['| Mutant | File and line | Change |', '|---|---|---|',
+      '| M1 | src/lib/a.js:10 | x |'] }));
+    assert.strictEqual(errors.length, 1, JSON.stringify(errors));
+    assert.ok(errors[0].includes('row 1 (src/lib/a.js:10)'), errors[0]);
+    assert.ok(errors[0].includes('has no Disposition column'), errors[0]);
+  });
+
+  // pin: the row scan is linear (column positions found once, backtick runs indexed once); the verdict is unchanged
+  test('a row with neither a file nor a mutant name is named by its number alone', () => {
+    const errors = mutantErrors(planText({ record: ['| Change | Disposition |', '|---|---|', '| x |  |'] }));
+    assert.strictEqual(errors.length, 1, JSON.stringify(errors));
+    assert.ok(errors[0].startsWith('Surviving mutant row 1: the Disposition is empty'), errors[0]);
+  });
+
+  // pin: the row scan is linear (column positions found once, backtick runs indexed once); the verdict is unchanged
+  test('the forms are read without regard to letter case, bold headers or backticks', () => {
+    assert.deepStrictEqual(mutantErrors(planText({ record: [
+      '| **Mutant** | **File and line** | **Change** | **Disposition** |', DELIM,
+      '| M1 | src/thing.js:1 | x | Killed by `tests/example.test.js` — t |',
+      '| M2 | src/thing.js:2 | y | Accepted: equivalent, shown by a test with both values |'] })), []);
+  });
+
+  test('a second Execution Record with its own survivors table is read too', () => {
+    const record = [HEADER, DELIM, '| M1 | src/thing.js:1 | x | accepted: nothing observes it |'];
+    const extra = ['## Execution Record — second run', '', '### Surviving Mutants — Step 14 run', '',
+      HEADER, DELIM, '| M9 | src/lib/z.js:99 | q |  |'];
+    const errors = mutantErrors(planText({ record, extra }));
+    assert.strictEqual(errors.length, 1, JSON.stringify(errors));
+    assert.ok(errors[0].includes('row 2 (src/lib/z.js:99)'), errors[0]);
+  });
+
+  test('quoted plan text loses control characters and is cut to 120 characters', () => {
+    const long = mutantErrors(planText({ record: [HEADER, DELIM, `| M1 | src/lib/a.js:10 | x | ${'x'.repeat(300)} |`] }));
+    assert.strictEqual(long.length, 1);
+    assert.ok(long[0].includes('x'.repeat(120) + '…'), long[0]);
+    assert.ok(!long[0].includes('x'.repeat(121)), 'the quote is cut at 120 characters');
+    const ctl = mutantErrors(planText({ record: [HEADER, DELIM, '| M1 | src/lib/a.js:10 | x | fix\u0007 later |'] }));
+    assert.strictEqual(ctl.length, 1);
+    assert.ok(ctl[0].includes('"fix later"'), JSON.stringify(ctl[0]));
+  });
+
+  test('a plan with Windows line endings gets the same verdict', () => {
+    const text = planText({ record: [HEADER, DELIM, '| M1 | src/lib/example.js:45 | x |  |'] });
+    const lf = mutantErrors(text);
+    const crlf = mutantErrors(text.replace(/\n/g, '\r\n'));
+    assert.strictEqual(lf.length, 1);
+    assert.deepStrictEqual(crlf, lf);
+  });
+
+  test('a killed-by path cannot climb out of the project', () => {
+    const errors = mutantErrors(planText({ record: [HEADER, DELIM,
+      '| M1 | src/lib/a.js:10 | x | killed by ../../../../etc/hosts |',
+      '| M2 | src/lib/b.js:20 | y | killed by /etc/hosts |'] }));
+    assert.strictEqual(errors.length, 2, JSON.stringify(errors));
+    for (const e of errors) assert.ok(e.includes('no such file exists in the project'), e);
+  });
+
+  // --- second fix round: re-review and security scan -----------------------------
+
+  test('a backtick line whose info string holds a backtick is inline code, not a fence', () => {
+    const errors = mutantErrors(planText({
+      record: ['```npm test``` gave pass 26', HEADER, DELIM, EMPTY_ROW], extra: ['```', 'x', '```'] }));
+    assert.strictEqual(errors.length, 1, JSON.stringify(errors));
+    assert.ok(errors[0].includes('row 1 (src/lib/a.js:10)'), errors[0]);
+  });
+
+  test('thousands of fence openers that never close do not hide the record, and the fence scan reads each line a bounded number of times', () => {
+    const record = [...Array(1500).fill('```x'), ...Array(1500).fill('~~~x'), HEADER, DELIM, EMPTY_ROW];
+    const text = planText({ record });
+    const planPath = path.join(root, 'plans', 'in-progress', 'many-openers.md');
+    fs.writeFileSync(planPath, text);
+    const result = validateForReview(planPath, root);
+    const errors = result.errors.filter((e) => e.startsWith('Surviving mutant'));
+    assert.strictEqual(errors.length, 1, JSON.stringify(errors));
+    assert.ok(errors[0].includes('row 1 (src/lib/a.js:10)'), errors[0]);
+    const read = result.checklist.survivingMutants.fenceLinesRead;
+    const lineCount = text.split(/\r?\n/).length;
+    assert.ok(read <= 4 * lineCount, `the fence scan read ${read} lines of ${lineCount}`);
+  });
+
+  test('a killed-by path holding a NUL is named, and the completion is refused, not crashed', () => {
+    const slug = 'nul-path';
+    const { taskId } = building(slug, planText({ record: [HEADER, DELIM,
+      '| M1 | src/lib/a.js:10 | x | killed by tests/no-such\u0000file.test.js |'] }));
+    const res = complete(taskId);
+    assert.strictEqual(res.ok, false);
+    assert.ok(res.text.includes('row 1 (src/lib/a.js:10)'), res.text);
+    assert.ok(res.text.includes('"tests/no-suchfile.test.js", and no such file exists in the project'), res.text);
+    assert.ok(!res.text.includes(root), 'the refusal does not carry the project root');
+    assert.ok(!res.text.includes('safe-fs'), 'the refusal does not carry an internal error');
+    const counter = kickbackCounter(slug);
+    assert.strictEqual(counter.total, 1);
+    assert.strictEqual(counter.by_step['14'], 1);
+  });
+
+  test('quoted plan text loses direction overrides, zero-width and separator characters', () => {
+    const cells = ['fix\u202Elater', 'fix\u2028later', 'fix\u2066\u200F\uFEFF\u200B\u2800later'];
+    const errors = mutantErrors(planText({ record: [HEADER, DELIM,
+      ...cells.map((c, i) => `| M${i + 1} | src/lib/a${i}.js:10 | x | ${c} |`)] }));
+    assert.strictEqual(errors.length, 3, JSON.stringify(errors));
+    for (const e of errors) {
+      assert.ok(e.includes('"fixlater" is in neither accepted form'), JSON.stringify(e));
+      assert.doesNotMatch(e, /[\u200B\u200F\u2028\u2029\u202E\u2066\u2800\uFEFF]/);
+    }
+  });
+
+  // --- final-review fix round ---------------------------------------------------
+
+  test('an accepted reason or a whole Disposition made only of invisible characters gives no reason', () => {
+    const errors = mutantErrors(planText({ record: [HEADER, DELIM,
+      '| M1 | src/lib/a.js:10 | x | accepted: ​ |',
+      '| M2 | src/lib/b.js:20 | y | accepted: ⠀ |',
+      '| M3 | src/lib/c.js:30 | z | ​ |'] }));
+    assert.strictEqual(errors.length, 3, JSON.stringify(errors));
+    assert.ok(errors[0].includes('row 1 (src/lib/a.js:10)') && errors[0].includes('gives no reason'), errors[0]);
+    assert.ok(errors[1].includes('row 2 (src/lib/b.js:20)') && errors[1].includes('gives no reason'), errors[1]);
+    assert.ok(errors[2].includes('row 3 (src/lib/c.js:30)') && errors[2].includes('the Disposition is empty'), errors[2]);
+  });
+
+  test('the fence scan resumes after a closer: a line inside a closed fence is not read as an opener', () => {
+    const errors = mutantErrors(planText({
+      record: ['~~~text', '```js', '~~~', HEADER, DELIM, EMPTY_ROW], extra: ['```'] }));
+    assert.strictEqual(errors.length, 1, JSON.stringify(errors));
+    assert.ok(errors[0].includes('row 1 (src/lib/a.js:10)'), errors[0]);
+  });
+
+  test('a record of 150,000 open rows is refused, not crashed', () => {
+    const rows = Array(150000).fill('| M | a.js:1 | x |  |').join('\n');
+    const planPath = path.join(root, 'plans', 'in-progress', 'huge-record.md');
+    fs.writeFileSync(planPath, planText({ record: [HEADER, DELIM, '@@ROWS@@'] }).replace('@@ROWS@@', () => rows));
+    let result;
+    assert.doesNotThrow(() => { result = validateForReview(planPath, root); });
+    assert.strictEqual(result.valid, false);
+    assert.strictEqual(result.errors.filter((e) => e.startsWith('Surviving mutant')).length, 150000);
+  });
+});
+
 console.log('\nPlan Validator Tests');
 console.log('====================\n');

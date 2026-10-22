@@ -289,6 +289,8 @@ function maskQuotedSpans(text) {
 /**
  * Validate a plan before it can move to review stage
  *
+ * Refuses a surviving mutant recorded without a valid disposition (`validateSurvivingMutants`).
+ *
  * @param {string} planPath - Path to the plan file
  * @param {string} projectPath - Project root path
  * @returns {ValidationResult}
@@ -351,7 +353,15 @@ function validateForReview(planPath, projectPath) {
   result.warnings.push(...instructionValidation.warnings);
   result.checklist.instructions = instructionValidation.checklist;
 
-  // 6. SIP1: a dangling parent_plan is a WARNING at the review gate (never blocks).
+  // 6. Every surviving mutant recorded in the plan's one place carries a valid disposition
+  const mutantValidation = validateSurvivingMutants(content, projectPath);
+  if (mutantValidation.errors.length > 0) {
+    for (const e of mutantValidation.errors) result.errors.push(e);
+    result.valid = false;
+  }
+  result.checklist.survivingMutants = mutantValidation.checklist;
+
+  // 7. SIP1: a dangling parent_plan is a WARNING at the review gate (never blocks).
   mergeParentPlanWarnings(result, content, projectPath);
 
   return result;
@@ -682,10 +692,263 @@ function validateAcceptanceCriteria(content) {
   return result;
 }
 
+// --- Surviving mutants: the one recorded place, checked when the build completes ---
+// The place is a `### Surviving Mutants` table inside the plan's `## Execution Record`
+// section, which the approval digest already leaves out (src/lib/approval-ledger.js).
+
+/** The parent heading's text starts with these words, the approval ledger's own prefix. */
+const MUTANT_RECORD_PARENT = 'execution record';
+/** The place's heading text, deeper than the parent, starts with these words. */
+const MUTANT_RECORD_PLACE = 'surviving mutants';
+/** The two accepted dispositions, quoted the same way in every refusal. */
+const MUTANT_DISPOSITION_FORMS = '"killed by <test file> — <test name>" or "accepted: <reason>"';
+/** The first token after the words is the test file. */
+const KILLED_BY_RE = /^killed by\s+(\S+)/i;
+/** A `:<line>` written after the test file, as in the File and line column. */
+const LINE_SUFFIX_RE = /:\d+$/;
+/** A cell of the table's delimiter row. */
+const DELIMITER_CELL_RE = /^:?-+:?$/;
+/** The start of a fenced block. */
+const FENCE_OPEN_RE = /^(`{3,}|~{3,})/;
+/** A trimmed line that can close a fence: one fence character, three or more times, nothing else. */
+const FENCE_CLOSER_RE = /^(?:`{3,}|~{3,})$/;
+/** Characters removed from quoted plan text: controls, and anything hidden or direction-changing. */
+const QUOTE_STRIP_RE = /[\x00-\x1f\x7f-\x9f\p{Default_Ignorable_Code_Point}\p{Cf}\p{Zl}\p{Zp}\u2800]/gu;
+/** The refusal for a table in the place whose header is not followed by a delimiter row. */
+const MUTANT_NO_DELIMITER_ERROR = 'Surviving mutants table has no delimiter row: the line after its header row ' +
+  'must be one like "|---|---|---|---|". Under "### Surviving Mutants" in "## Execution Record", ' +
+  'the table is a header row, a delimiter row, then one row per mutant.';
+/** The longest piece of plan text a refusal quotes back. */
+const QUOTED_CELL_MAX = 120;
+
+/**
+ * Plan text quoted back in a refusal: control, invisible and direction-changing
+ * characters removed first (QUOTE_STRIP_RE), then cut to QUOTED_CELL_MAX characters.
+ * The errors are logged raw by the stale sweep.
+ * @param {string} text
+ * @returns {string}
+ */
+function quoteCell(text) {
+  const clean = String(text).replace(QUOTE_STRIP_RE, '');
+  return clean.length > QUOTED_CELL_MAX ? `${clean.slice(0, QUOTED_CELL_MAX)}…` : clean;
+}
+
+/**
+ * Read a markdown heading line.
+ * @param {string} trimmed - a trimmed line
+ * @returns {{level: number, title: string}|null} null when the line is not a heading
+ */
+function headingOf(trimmed) {
+  let level = 0;
+  while (trimmed[level] === '#') level++;
+  if (level === 0 || !/^[ \t]/.test(trimmed.slice(level))) return null;
+  return { level, title: trimmed.slice(level).trim().toLowerCase() };
+}
+
+/**
+ * Split one trimmed table line that starts with `|` into trimmed cells. A `\|` is a
+ * literal pipe; a pipe inside a backtick code span does not split. A span opens on a
+ * run of N backticks only when a later run of exactly N exists on the line (the
+ * CommonMark rule), and closes on that run; an unmatched backtick is plain text.
+ * Linear in the line's length: one pass records where the last run of each length
+ * starts, a second pass splits.
+ * @param {string} line
+ * @returns {string[]}
+ */
+function splitTableRow(line) {
+  /** @type {Map<number, number>} run length -> start of the last run of that length */
+  const lastRunAt = new Map();
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] !== '`') continue;
+    let run = 1;
+    while (line[i + run] === '`') run++;
+    lastRunAt.set(run, i);
+    i += run - 1;
+  }
+  const cells = [];
+  let cell = '';
+  let codeRun = 0; // length of the open backtick run, 0 outside a code span
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '\\' && line[i + 1] === '|') { cell += '|'; i++; continue; }
+    if (ch === '`') {
+      let run = 1;
+      while (line[i + run] === '`') run++;
+      if (codeRun === 0) { if ((lastRunAt.get(run) ?? -1) > i) codeRun = run; } else if (run === codeRun) codeRun = 0;
+      cell += line.slice(i, i + run);
+      i += run - 1;
+      continue;
+    }
+    if (ch === '|' && codeRun === 0) { cells.push(cell.trim()); cell = ''; continue; }
+    cell += ch;
+  }
+  cells.push(cell.trim());
+  cells.shift();                                      // the text before the opening pipe
+  if (cells[cells.length - 1] === '') cells.pop();    // the closing pipe
+  return cells;
+}
+
+/**
+ * Whether a trimmed line is a table delimiter row such as `|---|:--:|`.
+ * @param {string|undefined} line
+ * @returns {boolean}
+ */
+function isDelimiterRow(line) {
+  if (line === undefined || !line.startsWith('|')) return false;
+  const cells = splitTableRow(line);
+  return cells.length > 0 && cells.every((c) => DELIMITER_CELL_RE.test(c));
+}
+
+/**
+ * Judge one Disposition cell. A `:<line>` after the test file is removed before the
+ * file is looked up; the lookup is read-only and resolves the path by its text:
+ * `..`, `.` and empty parts are dropped, and a symbolic link inside the project is followed.
+ * @param {string} cell
+ * @param {string} projectPath
+ * @returns {string|null} null for a valid disposition, otherwise the problem in words
+ */
+function mutantDispositionProblem(cell, projectPath) {
+  const text = cell.replace(/`/g, '').trim();
+  if (text.replace(QUOTE_STRIP_RE, '').trim() === '') return 'the Disposition is empty';
+  const killed = KILLED_BY_RE.exec(text);
+  if (killed) {
+    const file = killed[1].replace(LINE_SUFFIX_RE, '');
+    return declaredFileExistsUnder(projectPath, file)
+      ? null
+      : `the Disposition names "${quoteCell(file)}", and no such file exists in the project`;
+  }
+  if (text.toLowerCase().startsWith('accepted:')) {
+    return text.slice('accepted:'.length).replace(QUOTE_STRIP_RE, '').trim() === ''
+      ? `the Disposition "${quoteCell(text)}" gives no reason`
+      : null;
+  }
+  return `the Disposition "${quoteCell(text)}" is in neither accepted form`;
+}
+
+/**
+ * Mark every line of a fenced block that has a closing line, opener and closer
+ * included. A closing line is made only of the opener's fence character, at least as
+ * many times as the opener (the lines are trimmed, so spaces after it are allowed);
+ * a line that merely starts with the opening run, such as "```js", does not close.
+ * A backtick line with another backtick after its opening run is inline code, not a
+ * fence (CommonMark); a tilde fence may carry any text after its run. An opener with
+ * no closing line marks nothing and stays plain text, so a forgotten closing fence
+ * can never hide the record after it. Linear: a backward pass records, per line, the
+ * longest closing line of each fence character after it, so an opener that can never
+ * close is passed over without a scan; a closing opener scans forward once to its
+ * closer and the scan resumes after it, so no line is scanned twice.
+ * @param {string[]} lines - trimmed lines
+ * @returns {{fenced: boolean[], linesRead: number}} the marks, and how many line reads the scan made
+ */
+function closedFenceLines(lines) {
+  const n = lines.length;
+  const fenced = new Array(n).fill(false);
+  const ticksAfter = new Array(n).fill(0);
+  const tildesAfter = new Array(n).fill(0);
+  let linesRead = 0;
+  let ticks = 0;
+  let tildes = 0;
+  for (let i = n - 1; i >= 0; i--) {
+    linesRead++;
+    ticksAfter[i] = ticks;
+    tildesAfter[i] = tildes;
+    if (!FENCE_CLOSER_RE.test(lines[i])) continue;
+    if (lines[i][0] === '`') ticks = Math.max(ticks, lines[i].length);
+    else tildes = Math.max(tildes, lines[i].length);
+  }
+  for (let i = 0; i < n; i++) {
+    linesRead++;
+    const opener = FENCE_OPEN_RE.exec(lines[i]);
+    if (!opener) continue;
+    const [run] = opener;
+    const ch = run[0];
+    if (ch === '`' && lines[i].includes('`', run.length)) continue;           // inline code, not a fence
+    if ((ch === '`' ? ticksAfter[i] : tildesAfter[i]) < run.length) continue; // never closes: plain text
+    let j = i + 1;
+    while (!(lines[j][0] === ch && lines[j].length >= run.length && FENCE_CLOSER_RE.test(lines[j]))) { j++; linesRead++; }
+    for (let k = i; k <= j; k++) fenced[k] = true;
+    i = j;
+  }
+  return { fenced, linesRead };
+}
+
+/**
+ * Name every surviving mutant recorded in the plan's one place that has no valid
+ * disposition. Never throws on a string, reads no file, and calls `existsSync` once
+ * per `killed by` row. A plan without the place, or with a header and delimiter row
+ * and no data rows, gets no error. The scan is linear: lines are read a bounded number
+ * of times (`checklist.fenceLinesRead` counts the fence scan's reads) and the column
+ * positions are found once per table.
+ * @param {string} content - the plan text
+ * @param {string} projectPath - project root, where a `killed by` test file is looked up
+ * @returns {{errors: string[], checklist: {rows: number, open: number, fenceLinesRead: number}}}
+ */
+function validateSurvivingMutants(content, projectPath) {
+  const errors = [];
+  let rows = 0;
+  let parent = 0;    // level of the open Execution Record heading, 0 when none
+  let place = 0;     // level of the open Surviving Mutants heading, 0 when none
+  /** @type {number|null} */
+  let columns = null; // the open table's column count, null until its header is read
+  let dCol = -1;     // positions of the Disposition, File and line, and Mutant columns, -1 when missing
+  let fileCol = -1;
+  let mutantCol = -1;
+  let refused = false; // the open table was refused for a missing delimiter row; its rows are not read
+  const lines = content.split(/\r?\n/).map((raw) => raw.trim());
+  const { fenced, linesRead } = closedFenceLines(lines);
+  for (let i = 0; i < lines.length; i++) {
+    if (fenced[i]) continue;
+    const line = lines[i];
+    const heading = headingOf(line);
+    if (heading) {
+      // A level-1 heading is the plan's title (or a pasted `# pass 26` line): it neither
+      // opens nor closes the record or the place.
+      if (heading.level === 1) continue;
+      if (heading.level <= place) place = 0;
+      if (heading.level <= parent) parent = 0;
+      if (parent === 0 && heading.title.startsWith(MUTANT_RECORD_PARENT)) parent = heading.level;
+      else if (parent > 0 && heading.title.startsWith(MUTANT_RECORD_PLACE)) { place = heading.level; columns = null; refused = false; }
+      continue;
+    }
+    if (place === 0 || !line.startsWith('|')) continue;
+    if (refused) continue;
+    const cells = splitTableRow(line);
+    if (columns === null) {
+      if (!isDelimiterRow(lines[i + 1])) {
+        refused = true;
+        errors.push(MUTANT_NO_DELIMITER_ERROR);
+        continue;
+      }
+      const header = cells.map((c) => c.replace(/[*_`]/g, '').trim().toLowerCase());
+      columns = header.length;
+      dCol = header.indexOf('disposition');
+      fileCol = header.indexOf('file and line');
+      mutantCol = header.indexOf('mutant');
+      continue;
+    }
+    if (cells.every((c) => DELIMITER_CELL_RE.test(c))) continue;
+    rows++;
+    const problem = dCol < 0
+      ? 'the table has no Disposition column (its columns are Mutant, File and line, Change and Disposition)'
+      : mutantDispositionProblem(cells.length > dCol ? cells[dCol] : cells[cells.length - 1], projectPath);
+    if (problem === null) continue;
+    const where = cells[fileCol] || cells[mutantCol] || '';
+    const label = where ? `row ${rows} (${quoteCell(where)})` : `row ${rows}`;
+    const note = cells.length !== columns
+      ? ` (the row has ${cells.length} cells where the table has ${columns} columns)`
+      : '';
+    errors.push(`Surviving mutant ${label}: ${problem}${note}. Under "### Surviving Mutants" in ` +
+      `"## Execution Record", each Disposition reads ${MUTANT_DISPOSITION_FORMS}.`);
+  }
+  return { errors, checklist: { rows, open: errors.length, fenceLinesRead: linesRead } };
+}
+
 /**
  * Existence check for a declared (repo-root-relative, possibly POSIX-authored)
  * path under `root`, cross-platform. Splits on any separator run and drops
- * empty / `.` / `..` segments so a declared path can never climb above `root`.
+ * empty / `.` / `..` segments, so by its text the path cannot climb above `root`
+ * (a symbolic link inside `root` is followed). A path holding a NUL is refused
+ * (false), never passed to the file system.
  * Mirrors `stale-detector.declaredFileExists` (which is not exported); kept
  * local so the fix stays within VP1's declared file scope. Read-only.
  * @param {string} root
@@ -693,6 +956,7 @@ function validateAcceptanceCriteria(content) {
  * @returns {boolean} true if the resolved path exists under root.
  */
 function declaredFileExistsUnder(root, declared) {
+  if (declared.includes('\0')) return false;
   const parts = declared.split(/[\\/]+/).filter((p) => p.length > 0 && p !== '.' && p !== '..');
   if (parts.length === 0) return false;
   return safeFs.existsSync(path.join(root, ...parts));

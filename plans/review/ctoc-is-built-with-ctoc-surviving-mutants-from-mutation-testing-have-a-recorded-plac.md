@@ -85,47 +85,47 @@ Source: `plans/decomposition/ctoc-is-built-with-ctoc.md`. Stories marked `[MVP]`
 
 ## Acceptance Criteria
 
-- [ ] **Scenario: Recording survivors keeps the build's approval**
+- [x] **Scenario: Recording survivors keeps the build's approval**
   Given an implementation plan in the build whose recorded approval matches its text
   When the executor adds a `### Surviving Mutants` table, one row per surviving mutant, inside the plan's `## Execution Record` section
   Then the plan's recorded approval still matches its text
   And the executor's next edit to a file the plan declares is allowed
 
-- [ ] **Scenario: A fully recorded table passes the completion**
+- [x] **Scenario: A fully recorded table passes the completion**
   Given a plan in the build with every step box and every acceptance criterion ticked, and a surviving-mutants table with two rows: one whose disposition reads `killed by tests/example.test.js — <test name>` for a test file that exists, and one whose disposition reads `accepted: <reason>`
   When the executor runs `menu task complete <id>`
   Then the completion is not refused, and its printed result says nothing about surviving mutants
   And the plan moves to `plans/review/`
 
-- [ ] **Scenario: A build that ran no mutation testing is unaffected**
+- [x] **Scenario: A build that ran no mutation testing is unaffected**
   Given a plan in the build with no `### Surviving Mutants` heading, or with the heading and a table that has no rows
   When the executor runs `menu task complete <id>`
   Then the printed result says nothing about surviving mutants
   And the completion is accepted or refused for the same reasons as before this change
 
-- [ ] **Scenario: The executor's and the integrator's instructions name the place**
+- [x] **Scenario: The executor's and the integrator's instructions name the place**
   Given the executor's instructions in `agents/iron-loop/iron-loop-executor.md` and the integrator's in `agents/iron-loop/iron-loop-integrator.md`
   When each file is searched for the literal heading `### Surviving Mutants`
   Then the executor's file holds it together with its parent heading `## Execution Record`, the four columns Mutant, File and line, Change and Disposition, the two dispositions, and the rule that every mutant that survived the run is recorded, not only the ones a report lists
   And the integrator's file holds it in the instruction that a step which runs mutation testing names this place for its survivors
 
-- [ ] **Scenario: A survivor without a disposition is named at completion**
+- [x] **Scenario: A survivor without a disposition is named at completion**
   Given a plan in the build with every step box and every acceptance criterion ticked, and a surviving-mutants row for `src/lib/example.js:45` whose Disposition cell is empty
   When the executor runs `menu task complete <id>`
   Then the printed result names `src/lib/example.js:45` and the two accepted dispositions, `killed by <test file>` and `accepted: <reason>`
   And, on the recommended answer to the owner's question below, the completion is refused, the plan stays in `plans/in-progress/`, and the refusal is counted as one send-back of the verify step (Step 14)
 
-- [ ] **Scenario: A disposition in neither form is named**
+- [x] **Scenario: A disposition in neither form is named**
   Given a surviving-mutants table with one row whose disposition reads `fix later` and one whose disposition reads `accepted:` with nothing after the colon
   When the executor runs `menu task complete <id>`
   Then the printed result names both rows, and says that the first is in neither accepted form and the second gives no reason
 
-- [ ] **Scenario: A killed disposition that names a missing test file is named**
+- [x] **Scenario: A killed disposition that names a missing test file is named**
   Given a surviving-mutants row whose disposition reads `killed by tests/no-such-file.test.js`, and no such file exists in the project
   When the executor runs `menu task complete <id>`
   Then the printed result names that row and the missing file `tests/no-such-file.test.js`
 
-- [ ] **Scenario: Every open row is named, and only the open rows**
+- [x] **Scenario: Every open row is named, and only the open rows**
   Given a surviving-mutants table with three rows, where the first and the third have an empty disposition and the second reads `accepted: <reason>`
   When the executor runs `menu task complete <id>`
   Then the printed result names the first and the third row
@@ -878,48 +878,48 @@ No criterion is without an implementation action or a test.
 ## Execution Plan
 
 ### Step 8: TEST
-- [ ] Write the new describe block in `tests/plan-validator.test.js` with the helpers and every case under "Test plan" above.
-- [ ] Run `node --test --test-name-pattern="surviving mutants" tests/plan-validator.test.js`. Record verbatim that every pin passes and every red case fails for its stated reason: no `Surviving mutant` error exists yet, or the agent section is absent.
+- [x] Write the new describe block in `tests/plan-validator.test.js` with the helpers and every case under "Test plan" above.
+- [x] Run `node --test --test-name-pattern="surviving mutants" tests/plan-validator.test.js`. Record verbatim that every pin passes and every red case fails for its stated reason: no `Surviving mutant` error exists yet, or the agent section is absent.
 
 ### Step 9: PREPARE
-- [ ] Re-read the four declared files, and confirm each anchor named under "File specifications" is present exactly once:
+- [x] Re-read the four declared files, and confirm each anchor named under "File specifications" is present exactly once:
   - check 5 and the parent-plan warnings in `validateForReview`;
   - `validateAcceptanceCriteria` and `declaredFileExistsUnder`;
   - the executor's "Completing a plan — the ONE way" and "Step Execution";
   - the integrator's "Match Requirements" and "Single Responsibility".
-- [ ] If another plan has moved or changed an anchor, stop and report. No dependency is installed.
+- [x] If another plan has moved or changed an anchor, stop and report. No dependency is installed.
 
 ### Step 10: IMPLEMENT
-- [ ] `src/lib/plan-validator.js`:
+- [x] `src/lib/plan-validator.js`:
   - add the constants and `quoteCell`, `headingOf`, `splitTableRow`, `mutantDispositionProblem`, `closedFenceLines` and `validateSurvivingMutants`, each with JSDoc;
   - add check 6 in `validateForReview`, renumbering the parent-plan comment to 7;
   - add the JSDoc line on `validateForReview`.
-- [ ] `agents/iron-loop/iron-loop-executor.md`: insert the section "Surviving mutants — the one place to record them" with the exact body above.
-- [ ] `agents/iron-loop/iron-loop-integrator.md`: insert the subsection "Steps that run mutation testing" with the exact body above.
-- [ ] Wiring: confirm the live chain through `menu task complete <id>` by running the six route cases. No other call site is added.
+- [x] `agents/iron-loop/iron-loop-executor.md`: insert the section "Surviving mutants — the one place to record them" with the exact body above.
+- [x] `agents/iron-loop/iron-loop-integrator.md`: insert the subsection "Steps that run mutation testing" with the exact body above.
+- [x] Wiring: confirm the live chain through `menu task complete <id>` by running the six route cases. No other call site is added.
 
 ### Step 11: REVIEW
-- [ ] The critic reads the diff against "The rules this sketch encodes", and confirms each refusal message names the row, the place and both forms.
-- [ ] The critic confirms that no existing check changed its verdict, and that the executor's text matches what the check really does: which rows refuse, and what is not read.
+- [x] The critic reads the diff against "The rules this sketch encodes", and confirms each refusal message names the row, the place and both forms.
+- [x] The critic confirms that no existing check changed its verdict, and that the executor's text matches what the check really does: which rows refuse, and what is not read.
 
 ### Step 12: OPTIMIZE
-- [ ] One pass over the lines. No regular expression is compiled per line, and no file is read beyond one `existsSync` per `killed by` row. Remove any helper the final code no longer needs.
+- [x] One pass over the lines. No regular expression is compiled per line, and no file is read beyond one `existsSync` per `killed by` row. Remove any helper the final code no longer needs.
 
 ### Step 13: SECURE
-- [ ] The security scanner checks:
+- [x] The security scanner checks:
   - the `killed by` path resolution (no climbing, read-only);
   - the linear patterns;
   - the cut and control-character removal of quoted text;
   - that the change edits no hook, no approval boundary and no file outside `files:`.
 
 ### Step 14: VERIFY
-- [ ] Run `npm run lint`, `npm run typecheck` and `npm test`. The bar: lint and types clean, all tests pass with 0 skipped and 0 failing, and coverage at or above `.ctoc/coverage-baseline.json` `minPct`.
-- [ ] Also run `node --test tests/reachability.test.js tests/export-reachability.test.js tests/unexecutable-instruction-fence.test.js tests/menu-task-wiring.test.js tests/approval-hash-survives-execution.test.js`.
-- [ ] Corpus run, from a script in the session's scratch folder that is never committed:
+- [x] Run `npm run lint`, `npm run typecheck` and `npm test`. The bar: lint and types clean, all tests pass with 0 skipped and 0 failing, and coverage at or above `.ctoc/coverage-baseline.json` `minPct`.
+- [x] Also run `node --test tests/reachability.test.js tests/export-reachability.test.js tests/unexecutable-instruction-fence.test.js tests/menu-task-wiring.test.js tests/approval-hash-survives-execution.test.js`.
+- [x] Corpus run, from a script in the session's scratch folder that is never committed:
   - for every `.md` under `plans/`, run `validateForReview(planPath, repoRoot)`;
   - count the errors that start with `Surviving mutant`, expecting 0;
   - record the count and the number of plans read.
-- [ ] Mutation run by hand on the new check. Run the describe block once for each mutant below, then restore the code:
+- [x] Mutation run by hand on the new check. Run the describe block once for each mutant below, then restore the code:
   - the `killed by` existence test inverted;
   - the empty-reason test of `accepted:` removed;
   - the place's reset on a same-level heading removed;
@@ -929,13 +929,158 @@ No criterion is without an implementation action or a test.
   - the error push removed;
   - fence balance ignored, so an opener with no closing line hides the rest of the plan;
   - the `:<line>` suffix of a `killed by` file not removed.
-- [ ] Record every survivor of that run in this plan's own `### Surviving Mutants` table inside `## Execution Record`, with a disposition.
+- [x] Record every survivor of that run in this plan's own `### Surviving Mutants` table inside `## Execution Record`, with a disposition.
 
 ### Step 15: DOCUMENT
-- [ ] JSDoc on the six new functions and on the changed `validateForReview`; the two agent texts are the user-facing documentation.
-- [ ] Record in this plan's `## Execution Record` what landed in each declared file.
+- [x] JSDoc on the six new functions and on the changed `validateForReview`; the two agent texts are the user-facing documentation.
+- [x] Record in this plan's `## Execution Record` what landed in each declared file.
 
 ### Step 16: FINAL-REVIEW
-- [ ] Tick each acceptance criterion only against its named test's passing output.
-- [ ] The critic reads every row of this plan's own survivors table, if there is one.
+- [x] Tick each acceptance criterion only against its named test's passing output.
+- [x] The critic reads every row of this plan's own survivors table, if there is one.
 - [ ] Complete through `menu task complete <taskId>`.
+
+## Execution Record (Steps 8-10)
+
+### Step 8: TEST (red)
+- Block added at the end of `tests/plan-validator.test.js`, before the closing `console.log` lines: `describe('surviving mutants — one recorded place, checked when the build completes', …)`, 26 cases, helpers as specified. Command: `node --test --test-name-pattern="surviving mutants" tests/plan-validator.test.js`.
+- Before any source change: pass 12, fail 14, skipped 0.
+- Pins that passed (12): fully recorded table passes the completion; survivors heading with no rows is refused for the old reasons; table inside the Execution Record keeps the approval; top-level heading cancels the write permission (hash-mismatch); verdict of a plan without the change (null, prose, header-only); pipe in code span or escaped; short row takes its last cell; fenced examples never read; killed-by with `:12`; heading outside the Execution Record; place ends at sibling heading; letter case, bold headers, backticks.
+- Red cases that failed (14), each for its stated reason:
+  - four route cases (empty Disposition, neither form, missing test file, open rows): `res.ok` was true where false was expected, because no `Surviving mutant` error existed yet;
+  - eight `validateForReview` cases through `mutantErrors` (wrapped row, never-closing fence, no Disposition column, row with no file or mutant name, second Execution Record, quoting, Windows line endings, climbing path): the error list was `[]` (`actual: 0`) for the same reason;
+  - two agent-text cases (executor, integrator): the section heading is absent from the agent file.
+  - 4 + 8 + 2 = 14, matching fail 14 above.
+
+### Step 9: PREPARE
+- Each anchor present exactly once and at the line the plan names: `validateForReview` (296), check 5 (345) and the parent-plan comment (354), `validateAcceptanceCriteria` (641), `declaredFileExistsUnder` (695) in `src/lib/plan-validator.js`; "Completing a plan — the ONE way" (181) and "Step Execution" (222) in the executor; "Match Requirements" (195) and "Single Responsibility" (199) in the integrator. No other plan had moved them. No dependency installed.
+
+### Step 10: IMPLEMENT
+- `src/lib/plan-validator.js`: eight constants and the six private functions `quoteCell`, `headingOf`, `splitTableRow`, `mutantDispositionProblem`, `closedFenceLines`, `validateSurvivingMutants`, each with JSDoc, placed after `validateAcceptanceCriteria`; check 6 added to `validateForReview` (the parent-plan comment is now 7) and one JSDoc line added. Code follows the plan's reference sketch unchanged.
+- `agents/iron-loop/iron-loop-executor.md`: section "Surviving mutants — the one place to record them" inserted before "Step Execution", exact body.
+- `agents/iron-loop/iron-loop-integrator.md`: subsection "Steps that run mutation testing" inserted before "Single Responsibility", exact body.
+- Wiring: no new call site; the six route cases drive `route` to `taskComplete` to `completeTaskPlan` to `completeExecution` to `validateForReview` to `validateSurvivingMutants`, and all pass.
+- After: the Step 8 command gives pass 26, fail 0, skipped 0. `tests/plan-validator.test.js` with `tests/plan-validator-coverage.test.js`: 127 pass, 0 fail. `tests/menu-task-wiring.test.js`, `tests/approval-hash-survives-execution.test.js`, `tests/unexecutable-instruction-fence.test.js`: 135 pass, 0 fail, 0 skipped. `npx eslint` on the two JavaScript files: clean.
+
+### Decisions taken during Steps 8-10
+- The Step 8 to 10 evidence is written here, not under the step headings, because text under a step heading is part of the approved text and would cancel the build's write permission (the plan's own rule for the executor).
+- The scenario 3 verdict case needed a local helper that writes one plan file and runs `validateForReview`; it is inside the case, no new shared helper.
+
+### Fix round after the review (verdict CHANGES REQUIRED, seven findings)
+Each change was written test-first in the surviving-mutants describe block of `tests/plan-validator.test.js` and run with `node --test --test-name-pattern="surviving mutants" tests/plan-validator.test.js`. Before any source change the block read: tests 31, pass 25, fail 6, skipped 0. After: tests 31, pass 31, fail 0, skipped 0.
+
+| Finding | Test (red before, for the stated reason) | Code change |
+|---|---|---|
+| 1. Pasted `# tests 26` lines closed the place | "pasted test-runner summary lines in the record do not close the place": 1 error where 2 expected (the row after the pasted lines was never read, plain and inside an unclosed fence) | `validateSurvivingMutants`: a level-1 heading is skipped, it neither opens nor closes the record or the place |
+| 2. The executor's example sits in a fence | "the executor's instructions name the place, ...": the sentence "Write the table as plain lines, never inside a code fence." was absent from the section | `agents/iron-loop/iron-loop-executor.md`: bullet added, with the delimiter-row requirement |
+| 3. A table without a delimiter row passed | "a table without a delimiter row is refused, naming the place and the missing row": the old code read the second line as data and gave a Disposition error, no "no delimiter row" error | `isDelimiterRow` and `MUTANT_NO_DELIMITER_ERROR`: the line after the header must be a delimiter row, else one error, and the rest of that table is not read |
+| 4. A fence closed on any line starting with the opening run | "a fence closes only on a line of the same fence character, at least as long, with nothing else": a "```js" line closed the fence and the table after it was read | `closedFenceLines`: the closer is a line made only of the opener's character, at least as long |
+| 5a. An unmatched backtick swallowed the pipes after it | "a backtick with no closing run on the line does not swallow the pipes after it": errors where `[]` expected | `closingRunAfter`; `splitTableRow` opens a span only when a run of the same length follows |
+| 5b. The cell-count note used `<` | "a row with more cells than the table has columns is named with its cell count": the note was missing | `cells.length !== header.length` |
+| 6. The "#not-a-heading" test was vacuous | tightened in place: the no-space lines (`#not-a-heading`, `###not-a-heading`) now sit before an open row and exactly 1 error is expected. It passed before and after the code change (the rule existed); proven live by a by-hand mutant: with the space test removed from `headingOf` it failed (pass 30, fail 1) | none |
+| 7. Duplicated Execution Record | none | the stray copy (70 lines) is deleted from this plan; the one record is kept with its counts corrected to 4 + 8 + 2 = 14 |
+
+Other results after the fixes: `tests/plan-validator.test.js`, `tests/plan-validator-coverage.test.js`, `tests/menu-task-wiring.test.js`, `tests/approval-hash-survives-execution.test.js`, `tests/unexecutable-instruction-fence.test.js`: tests 267, pass 267, fail 0, skipped 0. `npx eslint --max-warnings 0` on `src/lib/plan-validator.js` and `tests/plan-validator.test.js`: clean. `npx tsc --noEmit`: no error in `src/lib/plan-validator.js`.
+
+### Second fix round — re-review and security scan
+Each change was written test-first in the surviving-mutants describe block of `tests/plan-validator.test.js` and run with `node --test --test-name-pattern="surviving mutants" tests/plan-validator.test.js`. Before any source change the block read: tests 35, pass 31, fail 4, skipped 0. After: tests 35, pass 35, fail 0, skipped 0. The four new cases are the four red ones; the tilde-fence pin was added to the existing fenced-example case and passed before and after.
+
+| Finding | Test | Red reason (before the change) | Code change |
+|---|---|---|---|
+| Re-review BLOCK, security S1: a backtick line with a backtick in its info string was taken as a fence opener | "a backtick line whose info string holds a backtick is inline code, not a fence" | 0 errors where 1 expected: the line "```npm test``` gave pass 26" opened a fence that closed on the later "```", hiding the record | `closedFenceLines`: a backtick opener with another backtick after its run is inline code |
+| Same finding, pin | the existing "a survivors table inside a fenced example is never read", with a fence opened by "~~~text `x`" and closed by "~~~" | pin: passed before and after | none (a tilde fence may carry any text after its run) |
+| Security S1: the fence scan was quadratic | "thousands of fence openers that never close do not hide the record, and the fence scan reads each line a bounded number of times" | the counter added to the old inner loop read 4516551 lines for the 3051-line plan (bound 4 x 3051 = 12204) | `closedFenceLines` rewritten: one backward pass for the longest closer per fence character, openers that cannot close passed over, a forward scan resumes after its closer; the checklist carries `fenceLinesRead` |
+| Security S2: a NUL in a `killed by` path crashed the completion | "a killed-by path holding a NUL is named, and the completion is refused, not crashed" | the completion threw: the file-system layer refused the path and its message carried the absolute project path | `declaredFileExistsUnder` returns false on a NUL; the two JSDoc sentences about climbing now describe the text rule and say a symbolic link is followed |
+| Security S3: quoted plan text kept direction overrides, zero-width and separator characters | "quoted plan text loses direction overrides, zero-width and separator characters" | the quote held U+202E (the error read "fix" + override + "later") where "fixlater" was expected | `QUOTE_STRIP_RE` (controls, Default_Ignorable_Code_Point, Cf, Zl, Zp, U+2800) is stripped before the cut to 120 characters |
+| Security S4, S5: the row scan was not linear | the five existing pins (pipe in a code span or escaped, unmatched backtick, table without a Disposition column, row with neither file nor mutant, letter case and bold header), labelled as pins with a comment | pins: verdict unchanged. Red evidence is a measurement script in the session scratch folder, never committed | column positions found once when the header is set; `closingRunAfter` deleted; `splitTableRow` builds a map of the last backtick run of each length in one pass |
+
+Measurements (scratch script, same plan text, before and after this round): a plan with a 20000-column header and 3000 short rows, 288028 bytes: 157 ms before, 12 ms after. A plan whose one row is a 2001223-byte line of backtick runs of 1999 distinct lengths: 6999 ms before, 113 ms after; both give the same errors (3000 and 0). The fence scan on the 3051-line many-openers plan of the test: 4516551 line reads before, 6102 after (two per line). No test asserts a time; the bound is the line-read counter.
+
+### Step 12: OPTIMIZE
+After the second fix round, the check reads as follows. One scan of the lines: `closedFenceLines` makes two passes of its own (6102 line reads for a 3051-line plan, bounded by the new test at four per line) and `validateSurvivingMutants` makes one. No regular expression is built per line: every pattern is a module constant or a fixed literal, and plan text never becomes a `RegExp`. The column positions are found once per table, and the backtick runs of a row are indexed once. One `existsSync` per `killed by` row, through `declaredFileExistsUnder`. The only repeat is the delimiter row, which is split once to be recognised and once more as a skipped row (linear, a single row per table). No unused helper: `closingRunAfter` was deleted, and `npx eslint --max-warnings 0` is clean on both files.
+
+### Step 15: DOCUMENT
+- `src/lib/plan-validator.js`: JSDoc on `quoteCell`, `headingOf`, `splitTableRow`, `isDelimiterRow`, `mutantDispositionProblem`, `closedFenceLines`, `validateSurvivingMutants`, `declaredFileExistsUnder` and `validateForReview`; this round rewrote the text of `quoteCell`, `splitTableRow`, `mutantDispositionProblem`, `closedFenceLines` (return type now `{fenced, linesRead}`), `validateSurvivingMutants` (return type gains `fenceLinesRead`; "a header and delimiter row and no data rows gets no error") and `declaredFileExistsUnder` (by its text; a symbolic link is followed; a NUL is refused). Two new constants, `FENCE_CLOSER_RE` and `QUOTE_STRIP_RE`, carry their own comment line.
+- `tests/plan-validator.test.js`: the surviving-mutants describe block, 35 cases (26 first written, 5 added in the first fix round, 4 added in the second); five existing cases carry a pin comment.
+- `agents/iron-loop/iron-loop-executor.md`: the section "Surviving mutants — the one place to record them" (22 lines added, with the plain-lines and delimiter-row bullet); not changed in the second round.
+- `agents/iron-loop/iron-loop-integrator.md`: the subsection "Steps that run mutation testing" (4 lines added); not changed in the second round.
+
+### Step 14: VERIFY
+- `npm run lint`: `eslint . --max-warnings 0`, no output, exit 0.
+- `npm run typecheck`: the typecheck test passes (1 test, 1 pass, 0 fail).
+- `npm test`: `[CTOC test-gate] coverage 99.74% (threshold 99%), skipped 0, failed 0`, then `[CTOC test-gate] PASS`. The suite reported tests 13866, pass 13866, fail 0, skipped 0. Machine load at the start of the run (`uptime`): load averages 33.12 33.90 41.88.
+- The five fence and wiring files (`tests/reachability.test.js`, `tests/export-reachability.test.js`, `tests/unexecutable-instruction-fence.test.js`, `tests/menu-task-wiring.test.js`, `tests/approval-hash-survives-execution.test.js`): tests 182, pass 182, fail 0, skipped 0.
+- Corpus run (a scratch script, not committed): `validateForReview` over every `.md` under `plans/` in this checkout, 709 plans read, 0 errors starting with `Surviving mutant` (and 0 for the missing-delimiter-row refusal), 0 plans threw.
+- Mutation run by hand on the new check, one run of the describe block per mutant, the code restored after each and compared with the saved copy (identical):
+
+| Mutant | Cases that failed | Result |
+|---|---|---|
+| the `killed by` existence test inverted | 8 | killed |
+| the empty-reason test of `accepted:` removed | 1 | killed |
+| the place's reset on a same-level heading removed | 1 | killed |
+| fence skipping removed | 2 | killed |
+| code-span tracking in `splitTableRow` removed | 1 | killed |
+| the short row's last-cell rule replaced by an empty Disposition | 2 | killed |
+| the error push removed | 19 | killed |
+| fence balance ignored, an opener with no closing line hides the rest | 3 | killed |
+| the `:<line>` suffix of a `killed by` file not removed | 1 | killed |
+
+### Surviving Mutants
+None of the nine mutants of the Step 14 run survived. The final review found one more by hand, a tenth: deleting the line that resumes the fence scan after a closer survived the whole suite. It is killed now and recorded below.
+
+| Mutant | File and line | Change | Disposition |
+|---|---|---|---|
+| M10 | src/lib/plan-validator.js:870 | the line `i = j;` in `closedFenceLines` deleted, so the scan re-reads a line inside a closed fence as an opener | killed by tests/plan-validator.test.js — the fence scan resumes after a closer: a line inside a closed fence is not read as an opener |
+
+### Acceptance criteria against passing tests
+All eight scenarios are ticked against the passing cases named in the acceptance mapping above: recording keeps the approval ("a survivors table inside the Execution Record keeps the approval and the next edit" and its negative control); a fully recorded table passes ("a fully recorded table passes the completion and the plan moves to review"); no mutation run is unaffected ("a plan with a survivors heading and no rows is refused for the same reasons as before", "no heading, a heading with prose only, and a heading with a header-only table give the verdict of a plan without the change"); the two agent files (the executor and integrator cases); an empty Disposition, neither form, a missing test file and only the open rows (the four route cases).
+
+### Step 11 REVIEW (two rounds)
+The first review found seven defects, and all seven were fixed test-first in the first fix round: pasted summary lines closing the place, the fenced example in the executor text, a table without a delimiter row passing, the fence closing on any line that starts with the opening run, an unmatched backtick swallowing the pipes after it, the cell-count note comparing with less-than, and a vacuous no-space heading test. The re-review found one silent bypass: a backtick line with a backtick in its info string opened a fence that hid the record. The security scan found six issues. Both were folded into the second fix round's change list and fixed test-first: four new red cases and one new pin, after which the surviving-mutants block read 35 of 35 in the builder's run. The final review then read the code against both change lists and found every item present and pinned, except the one surviving hand mutant named under the final review below.
+
+### Step 13 SECURE
+The security scan found six issues: a quadratic fence scan, a NUL in a killed-by path crashing the completion, hidden and direction-changing characters kept in quoted plan text, column positions looked up again on every row, a cell splitter that was not linear in the line's length, and symbolic links. The first five were fixed. The fence scan is now two linear passes with a line-read counter bounded by a test instead of a clock. The path check returns false on a NUL, so the row is named instead of crashing. Quoted text loses control, invisible, direction-changing and separator characters before the cut to 120 characters. Column positions are found once per table, and backtick runs are indexed once per row. Symbolic links were left unchanged by decision 12: a link inside the project is followed, and the JSDoc says so. Reading the code, the final review found no throw on any string input to the check, found every quoted piece of plan text passing through the stripping helper, and found that a killed-by path cannot climb out of the project by its text. It also found two further items: an accepted reason made only of invisible characters passes the no-reason refusal, and one spread of an unbounded error list (unverified) may throw on a very large record.
+
+### Step 16 FINAL-REVIEW
+The final review was read-only and re-ran nothing. Each acceptance criterion was matched by reading to a named test that proves its behaviour, and none lacks a test; the pass counts are the builder's Step 14 record. The plan's own Surviving Mutants table is valid under the new check, and the record has no line that starts with a level-1 heading marker. The coordinator checked the changed files against main: only the four declared files and the plan. Verdict: changes required, with two blocking findings. First, an accepted reason made only of invisible characters must be refused like an empty one. Second, the rule that the fence scan resumes after a closer is pinned by no test: deleting it survives the suite by hand trace, and that mutant is to be killed by one new case and recorded in this plan's Surviving Mutants table. The one-line fix for the unbounded spread is folded into the same round. A sentence in the executor text warns that a line starting with a level-1 marker ends the exempt record.
+
+### Final-review fix round
+Each change was written test-first in the surviving-mutants describe block of `tests/plan-validator.test.js`, seen red, then the code. After the round `node --test tests/plan-validator.test.js` reads: tests 102, pass 102, fail 0, skipped 0 (three new cases; the two executor pins were added to an existing case).
+
+1. Invisible-only reasons. Case "an accepted reason or a whole Disposition made only of invisible characters gives no reason", rows `accepted: ` followed by U+200B, `accepted: ` followed by U+2800, and a cell of U+200B alone. Red on the old code: 1 error where 3 expected (the two accepted rows passed; the whole-cell row was named "in neither accepted form" with an empty quote instead of "the Disposition is empty"). Green after: `mutantDispositionProblem` compares `x.replace(QUOTE_STRIP_RE, '').trim() === ''` in both emptiness tests (replace, not test, because the constant carries the g flag).
+2. The fence scan resumes after a closer. Case "the fence scan resumes after a closer: a line inside a closed fence is not read as an opener": record `~~~text`, a line of three backticks plus `js`, `~~~`, then header, delimiter and an open row, with a lone three-backtick line after the record; exactly 1 error expected. It passes on the correct code. Mutant proof: the line `i = j;` deleted from `closedFenceLines` (the rest of the file byte for byte the saved copy): the case fails with 0 errors where 1 expected (the record is hidden), and the rest of the file's cases still pass, which is why the suite did not notice before (101 of 102 pass with the mutant, the one failure being the new case). The code was restored from the saved copy and compared identical. Recorded as row M10 of the Surviving Mutants table above, disposition killed by this test.
+3. Unbounded spread. Case "a record of 150,000 open rows is refused, not crashed": 150,000 open rows, no throw, `valid` false, and 150,000 `Surviving mutant` errors. Red on the old code: with only the spread line `result.errors.push(...mutantValidation.errors)` restored, the case fails with RangeError (Maximum call stack size exceeded), so the spread really did throw at 150,000. The first version of the case threw the same RangeError inside the test's own `planText` helper (a spread of the rows there), which is not the validator; the case now splices the rows into the text as one string. Green after: `for (const e of mutantValidation.errors) result.errors.push(e);`.
+4. Executor text: the sentence that a line starting with a level-1 marker and a space (for example a pasted `node --test` summary line) ends the part of the plan the approval record leaves out, and cancels the build's write permission, added to the bullet "Only there". The pin `Never start a line in the Execution Record with` was added to the existing executor-text case after the text was written (a text sentence, so no red run; the pin fails if the sentence is removed).
+5. Executor text: "checks only that the test file exists" became "checks only that the path exists (any existing path passes, a folder included)", and the pin `checks only that the path exists` was added the same way.
+6. Decisions 14 to 16 below record the three accepted limits.
+
+A shell command that rewrote the executor text in one script was refused by the pre-tool hook (text: "CTOC refused this call because it writes, or could write, the project's settings file or its regulatory profiles, which only CTOC's menu writes; tell the human what you wanted to change and let the menu change it."). The same two sentences were then applied with the edit tool on the declared file; no settings file or profile was touched.
+
+### Step 14: VERIFY (again, on the final tree after the final-review fix round)
+- `npm run lint`: `eslint . --max-warnings 0`, no output. `npm run typecheck`: the typecheck test passes (1 test, 1 pass, 0 fail).
+- `npm test`, first run: the suite reported tests 13869, pass 13867, fail 2, skipped 0, and `[CTOC test-gate] FAIL` (coverage 99.74%, failed 2). The two failures were wall-clock scaling tests in files this plan does not touch: "the whole-file scanners stay linear on input built against them" in `tests/hotfix-check-corpus.test.js` (src/styles/statements.css: size 512 took 28.9 ms and size 2048 took 242.9 ms, 8.4 times as long) and "a passing run with a long blank stretch is read in linear time" in `tests/quality-agent-coverage.test.js` (512 KB of blank lines took 40.8 ms and 2048 KB took 521.6 ms). `uptime` at the start of that run: load averages 137.42 109.99 82.16 (other builds share the machine). Both files run alone straight after, at load averages of about 131: tests 233, pass 233, fail 0. Neither test was edited.
+- `npm test`, second run (the one full rerun): tests 13869, pass 13869, fail 0, skipped 0, `[CTOC test-gate] coverage 99.73% (threshold 99%), skipped 0, failed 0`, `corpus claims: verified 3 refuted 0 unverifiable 0 (offline ledger gate: PASS)`, then `[CTOC test-gate] PASS`. `uptime` at its start: load averages 90.81 102.27 81.07.
+- Surviving-mutants block (`--test-name-pattern="surviving mutants"` on `tests/plan-validator.test.js`): tests 38, pass 38, fail 0, skipped 0. The whole file: tests 102, pass 102, fail 0, skipped 0.
+- The five fence and wiring files: tests 182, pass 182, fail 0, skipped 0.
+- Corpus run (scratch script, not committed): `validateForReview` over every `.md` under `plans/`, 709 plans read, 0 errors starting with `Surviving mutant`, 0 plans threw. This includes this plan with its M10 row.
+- Mutant M10 (the `i = j;` line deleted) was run once more as part of the fix round: the new case fails on it, 101 of 102 pass, and the code was restored and compared identical to the saved copy.
+
+## Decisions Taken Under Ambiguity — fix round after review
+These supersede the matching text under "The rules this sketch encodes" and in the executor's body above. The plan text outside the exempt sections was not edited, because any change to it changes the approval digest and cancels the build's write permission (the rule this plan sets for the executor).
+
+1. **A level-1 heading is not read at all** (finding 1). The earlier rule "the place and the record stay open until a heading of the same or a higher level" no longer applies to level 1: a `# ...` line is the plan's title or pasted test-runner output (`# tests 26`), and closing the record on it switched the check off. The record is always a level-2 heading in practice, so a level-1 `# Execution Record` is also not taken as a record. Reviewer's reason: pasted `node --test` summary lines close the place even inside an unclosed fence.
+2. **Fence closing** (finding 4) replaces "starts with the opening run": a closing line is made only of the opener's character, at least as many times as the opener; spaces after it are dropped because lines are trimmed.
+3. **A table needs its delimiter row** (finding 3) is added to "Tables": the first line starting with `|` in a place is its header and the next line must be a delimiter row. If not, the check gives one error that names the place and the missing row, and the rest of that table is not read. A header alone with no delimiter row is refused too.
+4. **A code span opens only when a run of the same length follows on the line** (finding 5), replacing the sketch's `splitTableRow` rule; the cell-count note now appears for any row whose cell count differs from the header's.
+5. **Executor text** (finding 2): the sentence "Write the table as plain lines, never inside a code fence." is added as its own bullet, together with the delimiter-row requirement. The fenced example is kept: the agent file is not a plan, and the bullet says the fence is only there to show it.
+6. **The no-space heading test uses two lines** (finding 6): `#not-a-heading` alone would be vacuous once level-1 headings are ignored (decision 1), so `###not-a-heading` is added beside it; that one closes the place if it were read as a heading.
+7. **A backtick line with another backtick after its opening run is inline code, not a fence** (extends decision 2). CommonMark says so for a backtick fence; a tilde fence may carry any text after its run. Reason: a pasted line such as "```npm test``` gave pass 26" opened a fence that closed on a later bare "```" and hid the record between them.
+8. **The fence scan is linear and the checklist carries `fenceLinesRead`** (corrects "one pass over the lines" in the plan's security review, which was false for this scan: 16.8 s at 160 KB before). A backward pass records the longest closing line of each fence character after each line; an opener longer than that is passed over without a scan; a closing opener scans forward once and the scan resumes after its closer. `validateSurvivingMutants` returns `checklist.fenceLinesRead`, and the test bounds it at four reads per line instead of asserting a time.
+9. **The row scans are linear** (corrects "the cell splitter is linear" in the plan's security review, false at about n to the power 1.5: 4.9 s for a 2 MB line). `closingRunAfter` is deleted: `splitTableRow` records where the last backtick run of each length starts and opens a span only when a later run of that length exists. The Disposition, File and line and Mutant column positions are found once per table.
+10. **A NUL in a `killed by` path gives false, never a throw** (makes the plan's "never throws on a string" true). `declaredFileExistsUnder` returns false first, so the row is named with the path minus the NUL. The contradiction scan's own existence checks of a claimed file and a referenced script (`validateNoContradictions`) call the file-system layer directly, not this function, so a NUL in prose there is outside this plan and unchanged.
+11. **Quoting removes hidden and direction-changing characters** (supersedes the plan's "control characters removed" in the specification of `quoteCell` and in the security review). The class is the one in `src/lib/streaming-gate.js` (Default_Ignorable_Code_Point, Cf, Zl, Zp, U+2800) plus the control ranges, stripped before the cut to 120 characters.
+12. **Symbolic links: the plan's "cannot climb above the project" holds for the path's text only; a link inside the project is followed.** No code change. Reasons: the existence of absolute paths is already reported by the contradiction scan; decision 9 of the technical decisions already lets a folder pass; and the project path may not be a real path on macOS, so a real-path check could refuse every `killed by`. The two JSDoc sentences now say this.
+13. **A real level-1 heading late in a plan leaves the place open** (a consequence of decision 1). It fails toward refusing, never toward hiding: rows after it are still read.
+14. **Accepted limits found by the final review, none fixed.** `fenceLinesRead` undercounts by one per closed fence, because the first probe of the forward scan is not counted; the test bound of four reads per line still holds. A second table under the same place has its header row read as a data row, a false refusal that fails toward refusing and matches the approved specification. `quoteCell`'s cut at 120 characters can split a surrogate pair, which is cosmetic.
+15. **The unbounded spread is replaced by a loop** (final-review fix round). `for (const e of mutantValidation.errors) result.errors.push(e);` cannot exceed the call-stack limit; the old spread threw a RangeError at 150,000 refusals.
+16. **Emptiness of a Disposition is judged after the quote-strip** (final-review fix round). A cell or an accepted reason made only of invisible characters is empty or gives no reason, as it would read to a human.

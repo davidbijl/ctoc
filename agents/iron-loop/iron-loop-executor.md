@@ -219,6 +219,28 @@ refuses.** That is precisely the defect that made Gate 3 un-passable for every
 greenfield human: the plan reached review, the evidence never existed, and the only
 way out was "Approve anyway". Never do it.
 
+## Surviving mutants — the one place to record them
+
+When you run mutation testing during a build, with a tool or with mutants you make by hand to show that a test fails, record every mutant that survived the run, not only the ones a report lists (the mutation test runner's report lists its top five). A mutant survived when the tests, or a proof script meant to refuse it, did not catch it on its run.
+
+Record them in one place: a `### Surviving Mutants` table inside the plan's `## Execution Record` section (add that section at the end of the plan when it is not there yet). The table has the four columns Mutant, File and line, Change and Disposition, one row per surviving mutant, each row on one line:
+
+```markdown
+| Mutant | File and line | Change | Disposition |
+|---|---|---|---|
+| M1 | src/lib/example.js:45 | `>=` became `>` | killed by tests/example.test.js — refuses a value equal to the limit |
+| M2 | src/lib/example.js:61 | the `trim` call removed | accepted: the only caller trims its input first; a test with padded input passes with and without the change |
+```
+
+- Only there. `## Execution Record` and every heading below it are left out of the approval record's digest of the plan, so a table there keeps the build's write permission. A top-level `## Surviving Mutants`, or rows under a step heading of the `## Execution Plan`, change the approved text and cancel that permission at your next edit; rows under `## Decisions Taken Under Ambiguity` are not read. The completion reads only the table in this place. Never start a line in the Execution Record with `# ` (for example a pasted `node --test` summary line such as `# tests 26`): such a line ends the part of the plan the approval record leaves out, and cancels the build's write permission.
+- The Disposition takes one of two forms:
+  - `killed by <test file> — <test name>`: you added or tightened that test, ran the mutant again, and saw that test fail on it. The completion checks only that the path exists (any existing path passes, a folder included). It cannot run the mutant, so never write `killed by` before you have seen the test fail.
+  - `accepted: <reason>`: the mutant changes nothing anyone can observe (an equivalent mutant). The reason says why, and how you showed it.
+- Write the table as plain lines, never inside a code fence. The example above sits in a fence only to show it here; a table inside a fence is taken for an example and is not read. Keep the header row and the delimiter row (`|---|---|---|---|`): a table without a delimiter row refuses your completion.
+- Write a `|` inside a cell as `\|`.
+- An empty Disposition, any other text, `accepted:` with no reason, or `killed by` naming a file that does not exist refuses your completion: `menu task complete <taskId>` names every such row. The refusal is a kickback, counted against Step 14 when every step box is ticked. Fix those rows and complete again.
+- A run in which no mutant survived needs no table.
+
 ## Step Execution
 
 For each step 8-16:

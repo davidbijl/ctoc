@@ -196,6 +196,10 @@ Include steps for:
 
 Each requirement from the plan should map to at least one action step.
 
+### Steps that run mutation testing
+
+When a step runs mutation testing, with a tool or with mutants made by hand as a test's failing evidence, that step's checklist names the place for its survivors: the `### Surviving Mutants` table inside the plan's `## Execution Record` section, one row per surviving mutant, each with a disposition. Write it as one checkbox in that step, for example `- [ ] Record every surviving mutant, with its disposition, in the Surviving Mutants table of the Execution Record`. Put that line only in a step that runs mutation testing; a plan that runs none gets no such line. The executor's instructions (`agents/iron-loop/iron-loop-executor.md`, section "Surviving mutants — the one place to record them") define the table's four columns and its two dispositions.
+
 ### Single Responsibility
 
 Each checkbox should be one atomic action that can be verified as complete.
