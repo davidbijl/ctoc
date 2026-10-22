@@ -384,10 +384,18 @@ author (an empty one included) — the same record as
 `menu task add classify '{ref}' --touches '.ctoc/streaming/questions/{ref}'`, which you never
 add yourself. Until it is classified, that plan cannot move on without the human. Launch
 `gate-critic` alone as background WORK, then `menu task start <id> --agent-id <the harness agent id>`; its brief: the task id,
-the plan path, and "classify the questions of `{ref}`" (its section "Classifying the
+the plan path, "classify the questions of `{ref}`" (its section "Classifying the
 questions", which has it read the plan and its parent plan, classify the author's questions
-and add a question for every weighty choice the author left unasked); never the three lens
-critics. It writes the classified file to the waiting folder; the next continuation sweeps it
+and add a question for every weighty choice the author left unasked), and `planMtimeMs`; never
+the three lens critics. `planMtimeMs` is the `planMtimeMs` of the promoted entry, the plan
+file's modification time the menu read when it built `promote[]`, and the only source of that
+time: copy it into the brief digit for digit, never rounded. Never read the plan's time
+yourself: no `node -e`, no file listing, never the task's `revision-…` label and never the
+question file's stamp. When the entry's `planMtimeMs` is `null` (or the key is missing), the
+menu could not read the plan file: launch no `gate-critic` for it and do not run `menu task
+start`. Run `menu task cancel <id>` for it (a queued task cancels at once) and say in one line
+that the plan file could not be read, so the gate critic did not check its questions. The gate
+critic writes the classified file to the waiting folder; the next continuation sweeps it
 in. If it fails, the plan stays where it is: every question keeps reaching the human, and only
 his approval moves it.
 

@@ -2461,12 +2461,34 @@ function taskAdd(root, rest) {
 }
 
 /**
+ * The plan file's modification time for a `classify` hand-over: the sweeper's own read
+ * (`refToPlanPath`, then `statSync().mtimeMs`), at full precision, so the gate critic's stamp equals
+ * the time the sweep compares against. `statSync` follows a symbolic link exactly as the sweeper's
+ * own read does, so a linked plan file reports its target's time; that keeps the two times equal.
+ * null when it cannot be read (no plan file, an unsafe ref or no ref: `refToPlanPath` returns null
+ * and a null path throws too) — never a guessed, rounded or zero time. The session launches no
+ * gate critic while it is null.
+ * @param {string} root
+ * @param {string|null} ref `stage/file.md`
+ * @returns {number|null}
+ */
+function handedOverPlanMtimeMs(root, ref) {
+  try {
+    return safeFs.statSync(require('./streaming-precompute').refToPlanPath(root, ref)).mtimeMs;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * NB3: the scheduler's newly-runnable set, projected onto the just-saved in-memory
  * registry, as a compact promote list — now with the CONCURRENT-EDIT GUARD applied.
  * This is the ONLY sanctioned promotion source for the COMPLETION turn — Claude
  * dispatches exactly these tasks (never a queued task the scheduler did not return).
  * Each entry carries only what the dispatcher needs (id + the scheduler inputs), never
- * the whole task object.
+ * the whole task object. A `classify` entry also carries `planMtimeMs`, the plan file's
+ * modification time read when the list is built, at full precision, or null when the plan file
+ * cannot be read: the stamp the gate critic's brief copies.
  *
  * Before this, the guard ran ONLY on the dashboard-open path (`reconcileState`), so
  * `menu task fail|cancel|complete` published a promote list that could hand a file still
@@ -2494,7 +2516,7 @@ function taskAdd(root, rest) {
  *
  * @param {{tasks:Array<object>}} reg  a post-save in-memory registry value
  * @param {string} root  the project root, where the stop flag is read
- * @returns {{promote:Array<{id:string, kind:string, plan:(string|null), touches:string[], gitOp:boolean}>, quarantined:Array<{id:string,reason:string,summary:string}>}}
+ * @returns {{promote:Array<{id:string, kind:string, plan:(string|null), touches:string[], gitOp:boolean, planMtimeMs?:(number|null)}>, quarantined:Array<{id:string,reason:string,summary:string}>}}
  */
 function computePromote(reg, root) {
   const guarded = taskReconcile.applyQuarantine(reg, taskRegistry.nextRunnable(reg));
@@ -2505,13 +2527,19 @@ function computePromote(reg, root) {
     // payload into the COMPLETION turn (mirrors the render layer's stripCtl guard).
     // This runs LAST, after the guard, so the injection defence is unweakened.
     .filter((t) => /^t\d+$/.test(t.id))
-    .map((t) => ({
-      id: stripCtl(t.id),
-      kind: t.kind,
-      plan: t.plan == null ? t.plan : stripCtl(t.plan),
-      touches: t.touches,
-      gitOp: t.gitOp
-    }));
+    .map((t) => {
+      const plan = t.plan == null ? t.plan : stripCtl(t.plan);
+      return {
+        id: stripCtl(t.id),
+        kind: t.kind,
+        plan,
+        touches: t.touches,
+        gitOp: t.gitOp,
+        // Read now, when the list is built (never when the task was queued): the gate critic's
+        // brief copies it digit for digit (src/commands/start.md, the classify paragraph).
+        ...(t.kind === 'classify' ? { planMtimeMs: handedOverPlanMtimeMs(root, plan) } : {}),
+      };
+    });
   if (!taskRegistry.isDrainStopRequested(root)) return { promote: offered, quarantined: guarded.quarantined };
   const heldByStop = offered.filter((t) => t.kind === 'implement').map((t) => ({
     id: t.id,

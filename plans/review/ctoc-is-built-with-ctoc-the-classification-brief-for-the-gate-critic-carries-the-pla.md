@@ -94,10 +94,10 @@ Source: `plans/decomposition/ctoc-is-built-with-ctoc.md`. Stories marked `[MVP]`
 2. The gate critic classifies, and its result is accepted.
 
 ### Stories
-- [ ] `[MVP]` As the gate critic, I want the classification brief to carry the plan file's modification time, so that my stamp matches the plan I read and is not refused as superseded.
+- [x] `[MVP]` As the gate critic, I want the classification brief to carry the plan file's modification time, so that my stamp matches the plan I read and is not refused as superseded. — proved by cases 1a, 1b, 1c, 2, 3, 4, 5
   - Acceptance: the brief built for a promoted `classify` task names the task id, the plan path, "classify the questions of `{ref}`" and `planMtimeMs`, as `agents/iron-loop/gate-critic.md` requires.
   - INVEST: passes all six criteria.
-- [ ] `[MVP]` As the coordinator, I want a classification made after a plan edit to be accepted when it carries the new modification time, and refused when it carries the old one, so that the out-of-date refusal fires only when it should.
+- [x] `[MVP]` As the coordinator, I want a classification made after a plan edit to be accepted when it carries the new modification time, and refused when it carries the old one, so that the out-of-date refusal fires only when it should. — proved by cases 6, 7, 8
   - Acceptance: edit the plan, run the classification with the fresh time: accepted; replay it with the old time: refused as superseded.
   - INVEST: passes all six criteria.
 
@@ -110,31 +110,31 @@ Source: `plans/decomposition/ctoc-is-built-with-ctoc.md`. Stories marked `[MVP]`
 
 Story: the gate critic's brief carries the plan file's modification time.
 
-- [ ] **Scenario: The continuation hands over a classify task with the plan's time**
+- [x] **Scenario: The continuation hands over a classify task with the plan's time** — proved by cases 1a, 1b, 1c
   Given a plan at a gate whose question file was written by its author, is current, and has not been checked by the gate critic
   When the coordinator runs a continuation (`menu task complete <id> --continue`, `stream answer` or `stream approve`) and the menu returns the classify task to launch
   Then the returned task names the plan and carries the plan file's modification time
   And that time equals, at full precision and with any fraction of a millisecond, the time the operating system reports for the plan file when the list is built
 
-- [ ] **Scenario: "Check its questions" hands over the same time**
+- [x] **Scenario: "Check its questions" hands over the same time** — proved by case 2
   Given the same plan, with no classify task yet recorded for its current question file
   When the human chooses "Check its questions" (`stream check <ref>`)
   Then the classify task it returns to launch carries the plan file's modification time at full precision, exactly as the continuation does
 
-- [ ] **Scenario: The gate critic's brief names the time it was handed**
+- [x] **Scenario: The gate critic's brief names the time it was handed** — proved by case 3
   Given the session's dispatch instructions for a promoted classify task (the classify paragraph of `src/commands/start.md`)
   When the coordinator composes the gate critic's brief from them
   Then the instructions list the task id, the plan path, "classify the questions of `{ref}`" and `planMtimeMs`
   And they name the handed-over task as the only source of that time, copied digit for digit
   And they require no `node -e` call or other by-hand read to obtain it
 
-- [ ] **Scenario: A time with a fraction of a millisecond survives the round trip (boundary)**
+- [x] **Scenario: A time with a fraction of a millisecond survives the round trip (boundary)** — proved by case 4
   Given an unedited plan whose modification time has a fraction of a millisecond, and a classify task handed over for it
   When the gate critic's classification carries the handed-over time, copied digit for digit, and the next continuation sweeps it in
   Then the classification is accepted, and the plan's gate screen no longer says that the gate critic's check of its questions is not done
   And the same classification carrying that time rounded down to the whole millisecond (the classify task's label value) is refused as superseded
 
-- [ ] **Scenario: An unreadable plan time is never invented (error)**
+- [x] **Scenario: An unreadable plan time is never invented (error)** — proved by case 5
   Given a classify task whose plan file cannot be read when the menu builds the list of tasks to launch
   When the coordinator runs a continuation
   Then the continuation completes and returns every other task unchanged
@@ -142,20 +142,20 @@ Story: the gate critic's brief carries the plan file's modification time.
 
 Story: a classification after a plan edit is accepted with the new time and refused with the old one.
 
-- [ ] **Scenario: Reproduce the reported refusal, with the author's stamp after an edit (error)**
+- [x] **Scenario: Reproduce the reported refusal, with the author's stamp after an edit (error)** — proved by case 6, a pin
   Given a plan whose author's question file was written when the plan's time was A, and the plan was then edited so that its time is B, later than A
   When a gate-critic classification stamped A (the author's stamp, as reused on 2026-10-20) is swept in
   Then it is refused as superseded, and the plan does not move on by itself
   And its gate screen still offers "Generate its questions"
   And the discard log of the waiting folder (`.ctoc/logs/streaming-sweeper.jsonl`) gains one line with the reason `superseded`
 
-- [ ] **Scenario: After an edit, the classification carrying the handed-over time is accepted (happy path, end to end)**
+- [x] **Scenario: After an edit, the classification carrying the handed-over time is accepted (happy path, end to end)** — proved by case 7
   Given a classify task recorded for question revision A, and the plan edited to time B before the task is launched
   When the menu hands the task over, and the gate critic's classification carries the time it was handed and is swept in
   Then the handed-over time is B, and the classification is accepted
   And the plan's gate screen offers neither "Generate its questions" nor the line saying that the gate critic's check of its questions is not done
 
-- [ ] **Scenario: An edit after the classification was stamped is still refused (edge)**
+- [x] **Scenario: An edit after the classification was stamped is still refused (edge)** — proved by case 8, a pin
   Given a gate-critic classification stamped with the plan's time B at the moment it was written
   When the plan is edited to time C before that classification is swept in
   Then the classification carrying B is refused as superseded, and the plan stays waiting for the owner's approval
@@ -571,43 +571,98 @@ Cases 6 and 8 pin the sweep's existing refusal. Green on their first run is the 
 ## Execution Plan
 
 ### Step 8: TEST
-- [ ] Write `tests/the-classification-brief-carries-the-plan-time.test.js` with cases 1a, 1b, 1c, 2, 3, 4, 5, 6, 7 and 8 as specified in the test plan.
-- [ ] Run `node --test tests/the-classification-brief-carries-the-plan-time.test.js`. Record that 1a-1c, 2, 5 and 7 fail on `planMtimeMs` being absent from the entry, that 3 fails on the missing sentences, that 4 fails at its stdout match, and that 6 and 8 pass, as pins of the existing refusal.
-- [ ] If the fraction assertion in `setPlanTime` fails on this machine, stop and report it; never drop the fraction from the fixture.
+- [x] Write `tests/the-classification-brief-carries-the-plan-time.test.js` with cases 1a, 1b, 1c, 2, 3, 4, 5, 6, 7 and 8 as specified in the test plan.
+- [x] Run `node --test tests/the-classification-brief-carries-the-plan-time.test.js`. Record that 1a-1c, 2, 5 and 7 fail on `planMtimeMs` being absent from the entry, that 3 fails on the missing sentences, that 4 fails at its stdout match, and that 6 and 8 pass, as pins of the existing refusal.
+- [x] If the fraction assertion in `setPlanTime` fails on this machine, stop and report it; never drop the fraction from the fixture.
 
 ### Step 9: PREPARE
-- [ ] Re-read `src/lib/menu-screens.js` `computePromote` with its JSDoc and `queueClassification`, the classify paragraph of `src/commands/start.md`, and the two count lines in `CLAUDE.md` and `README.md`. A span that moved or changed (for example because a neighbouring plan built first) is edited as it now stands; a change that takes away the place this plan edits stops the build for a re-plan.
-- [ ] If the sweeper already carries the attribution check of the slice "Only a critique the menu launched can move a plan" (a classified pending file keeps its classification only with a recorded Write by the gate critic), write the accepted-path pending files of cases 4 and 7 through the same record that slice's tests create. Never loosen an acceptance assertion to make them pass.
-- [ ] Run `node --test tests/doc-counts.test.js tests/unexecutable-instruction-fence.test.js tests/a-requested-stop-offers-no-build.test.js tests/plans-keep-moving-without-the-human.test.js` and record that they are green before any edit.
+- [x] Re-read `src/lib/menu-screens.js` `computePromote` with its JSDoc and `queueClassification`, the classify paragraph of `src/commands/start.md`, and the two count lines in `CLAUDE.md` and `README.md`. A span that moved or changed (for example because a neighbouring plan built first) is edited as it now stands; a change that takes away the place this plan edits stops the build for a re-plan.
+- [x] If the sweeper already carries the attribution check of the slice "Only a critique the menu launched can move a plan" (a classified pending file keeps its classification only with a recorded Write by the gate critic), write the accepted-path pending files of cases 4 and 7 through the same record that slice's tests create. Never loosen an acceptance assertion to make them pass.
+- [x] Run `node --test tests/doc-counts.test.js tests/unexecutable-instruction-fence.test.js tests/a-requested-stop-offers-no-build.test.js tests/plans-keep-moving-without-the-human.test.js` and record that they are green before any edit.
 
 ### Step 10: IMPLEMENT
-- [ ] `src/lib/menu-screens.js`: add `handedOverPlanMtimeMs(root, ref)` above `computePromote`; change the `.map` to carry `planMtimeMs` on `classify` entries; update the JSDoc sentence and `@returns`.
-- [ ] `src/commands/start.md`: replace the classify paragraph's text after "its brief:" with the new text, keeping the prefix and the `menu task add classify` recipe line byte-identical.
-- [ ] `CLAUDE.md` and `README.md`: set the test-file count to the number `tests/doc-counts.test.js` expects.
-- [ ] Run the new test file: all ten cases green.
+- [x] `src/lib/menu-screens.js`: add `handedOverPlanMtimeMs(root, ref)` above `computePromote`; change the `.map` to carry `planMtimeMs` on `classify` entries; update the JSDoc sentence and `@returns`.
+- [x] `src/commands/start.md`: replace the classify paragraph's text after "its brief:" with the new text, keeping the prefix and the `menu task add classify` recipe line byte-identical.
+- [x] `CLAUDE.md` and `README.md`: set the test-file count to the number `tests/doc-counts.test.js` expects.
+- [x] Run the new test file: all ten cases green.
 
 ### Step 11: REVIEW
-- [ ] The critic checks:
+- [x] The critic checks:
   - that the hand-over time and the sweeper's compared time come from the same read;
   - that no route builds a `promote[]` list without `computePromote`, by tracing every caller from the call sites listed under Wiring, not by a text search;
   - that the start.md text leaves the session no way to obtain the time except the entry;
   - that cases 6 and 8 are pins, while the other eight fail without the change.
 
 ### Step 12: OPTIMIZE
-- [ ] Confirm that only `classify` entries are stat-ed, one `statSync` each, and that nothing else was added (no cache, no stored time, no new export).
+- [x] Confirm that only `classify` entries are stat-ed, one `statSync` each, and that nothing else was added (no cache, no stored time, no new export).
 
 ### Step 13: SECURE
-- [ ] The security scanner checks the items of the security review above against the diff:
+- [x] The security scanner checks the items of the security review above against the diff:
   - the stat path only through `refToPlanPath`;
   - no string from the registry or a plan reaches the new field;
   - no new write, shell or export;
   - the start.md text grants no execution step.
 
 ### Step 14: VERIFY
-- [ ] Run `npm test`: lint, type check, all tests, coverage at or above `.ctoc/coverage-baseline.json` `minPct`, 0 skipped, 0 flaky. Any failing test, including one that passes on a rerun, is reproduced and root-caused in the product code before anything is reported.
+- [x] Run `npm test`: lint, type check, all tests, coverage at or above `.ctoc/coverage-baseline.json` `minPct`, 0 skipped, 0 flaky. Any failing test, including one that passes on a rerun, is reproduced and root-caused in the product code before anything is reported.
 
 ### Step 15: DOCUMENT
-- [ ] The JSDoc of `computePromote` and `handedOverPlanMtimeMs`, and the classify paragraph of `src/commands/start.md`, are the documentation; no other document lists a promote entry's fields. The build record lists each changed span with its file and the final test count.
+- [x] The JSDoc of `computePromote` and `handedOverPlanMtimeMs`, and the classify paragraph of `src/commands/start.md`, are the documentation; no other document lists a promote entry's fields. The build record lists each changed span with its file and the final test count.
 
 ### Step 16: FINAL-REVIEW
-- [ ] Every acceptance box in this plan is checked against its test case and its recorded run. Cases 6 and 8 are confirmed as pins. Out of Scope still lists the check that a classification after an edit keeps every author question, for the owner to schedule.
+- [x] Every acceptance box in this plan is checked against its test case and its recorded run. Cases 6 and 8 are confirmed as pins. Out of Scope still lists the check that a classification after an edit keeps every author question, for the owner to schedule.
+
+## Decisions Taken Under Ambiguity — execution (Steps 8–10)
+
+1. **Where `handedOverPlanMtimeMs` sits.** The plan says "directly above `computePromote`, after its JSDoc block ends". Placed after that block, it would detach the JSDoc from `computePromote`. It sits above the JSDoc block of `computePromote` instead, directly above the whole documented unit.
+2. **Plan time fixtures.** `T_A`, `T_B` and `T_C` are written with 15 significant digits (`1784271999.19627`, `1784272099.31416`, `1784272199.71828`) because the plan's 17-digit literals lose precision and fail the project's lint rule `no-loss-of-precision`. Each still has a fraction of a millisecond; `setPlanTime` asserts it.
+3. **Test-file count.** `CLAUDE.md` and `README.md` already said 587 when the build started (not 586 as the plan was written); after the new test file `tests/doc-counts.test.js` expects 588, so both are set to 588 (three count lines).
+4. **Test helper shape.** `assertHandedOver(root, list, ref)` takes the project root as a parameter; the plan's helper list does not name it, and the cases need it to read the file's time.
+
+## Decisions Taken Under Ambiguity — fix round after review and security review
+
+5. **The null time no longer fails open.** The security review of the diff warned that the instruction for a `null` time let the session launch the gate critic anyway, with a brief that said the time was not available; the critic then improvised, usually by copying the author's stamp or omitting it, and an omitted stamp is accepted by the sweeper. The classify paragraph of `src/commands/start.md` now says: when the promoted entry's `planMtimeMs` is `null` (or the key is missing), launch no `gate-critic` and do not run `menu task start`; the task stays queued and comes back in a later promote list with a real time; say in one line that the plan file could not be read so its questions wait; the plan stays with the owner meanwhile. The prefix up to "its brief:" and the `menu task add classify` recipe line are byte-identical. Case 3 of the test file pins the new sentence (it failed on the old sentence before the edit). This supersedes the functional plan's decision 7 and this plan's technical decision 3 as far as what the session does with a `null`: the menu still states the time as `null`, never invented, and the session now acts on it by not launching.
+6. **The claim in the security review about a forged entry was wrong, and is corrected here, not in the review text.** The review says a forged `classify` entry "can therefore learn at most the modification time of a file inside `plans/`". `statSync` follows a symbolic link, exactly as the sweeper's own read does, so a plan file that is a link reports the time of its target, which may lie outside `plans/`. What can be learned is still only a modification time, and only by the session that already runs the menu. `statSync` is kept because the handed-over time must equal the time the sweeper compares; `lstat` would let the two disagree on a linked plan file. The JSDoc of `handedOverPlanMtimeMs` now says that it follows links like the sweeper does.
+7. **The medium security finding is the owner's accepted, separately scheduled work and is not built here.** A classification stamped with the edited plan's time is accepted, and the rule that a classification must keep every author question only compares within one revision (`existingFor` and `writePlanQuestions`, `src/lib/streaming-precompute.js`), so after an edit an author question can be dropped. The owner answered option 1, "Build the plan as written; the check is a separate plan, built if and when you choose" (`.ctoc/streaming/answers.jsonl` line 258, 2026-10-20), and "keep every author question" is his to schedule. It stays listed under Out of Scope.
+8. **Final review revises decision 5: a null time cancels the queued task.** Item 1 of the earlier change list (the task stays queued and returns in a later promote list with a real time) is revised. A null time usually means the plan file moved or was deleted, and nothing retires the queued classify task, so it would be offered with a null time on every promote list for ever. Cancelling is the only consistent rule, because the session may not list files to tell "moved" from "briefly unreadable". The classify paragraph of `src/commands/start.md` now says: launch no `gate-critic`, do not run `menu task start`, run `menu task cancel <id>` (a queued task cancels at once) and say in one line that the plan file could not be read, so the gate critic did not check its questions. The gate screen then shows its honest "did not finish; approve it yourself" line. The prefix up to "its brief:" and the `menu task add classify` recipe line are byte-identical; the unexecutable-instruction fence accepts the `menu task cancel <id>` form (run, green).
+
+## Execution Record (Steps 8–16)
+
+### Step 8: TEST
+Wrote `tests/the-classification-brief-carries-the-plan-time.test.js` with cases 1a, 1b, 1c, 2, 3, 4, 5, 6, 7 and 8 as specified.
+Red run, before any source edit: 10 cases, 2 pass, 8 fail.
+- 1a, 1b, 1c, 2: fail because `planMtimeMs` is absent from the classify entry (actual undefined).
+- 3: fails because the first required sentence is not in the classify paragraph.
+- 4: fails at "the entry carries planMtimeMs" in the real menu output (the first assertion that fails today).
+- 5: fails at "the key is present".
+- 7: fails because the handed-over `planMtimeMs` is undefined.
+- 6 and 8 pass, as pins of the sweep's existing refusal.
+The fraction assertion in `setPlanTime` held on this machine (APFS); no stop was needed.
+
+### Step 9: PREPARE
+- Re-read `computePromote` and its JSDoc, `queueClassification`, the classify paragraph of `src/commands/start.md` and the count lines. Differences from the plan: line numbers moved (`computePromote` at `src/lib/menu-screens.js:2499` before the edit, `queueClassification` at `:3205`; the classify paragraph at `src/commands/start.md:381-391`); the text of the classify paragraph is the plan's old text word for word; the count lines read 587, not 586. Nothing took away the place this plan edits.
+- Sweeper attribution check: `src/lib/streaming-questions-sweeper.js` step 11 passes `payload.classification` straight to `writePlanQuestions`; the validation is `isGateCriticClassification` (`{by, at}` shape only). No recorded-Write attribution check exists, so cases 4 and 7 write their accepted-path pending files with a plain `fs.writeFileSync`, as the plan says to do in that case.
+- Baseline before any source edit: `node --test tests/doc-counts.test.js tests/unexecutable-instruction-fence.test.js tests/a-requested-stop-offers-no-build.test.js tests/plans-keep-moving-without-the-human.test.js` gave tests 179, pass 179, fail 0.
+
+### Step 10: IMPLEMENT
+Changed spans:
+- `src/lib/menu-screens.js`: new `handedOverPlanMtimeMs(root, ref)` above the JSDoc of `computePromote`; the `.map` of `computePromote` carries `planMtimeMs` on `classify` entries only; the JSDoc sentence and `@returns` updated.
+- `src/commands/start.md`: the classify paragraph after "its brief:" replaced with the plan's new text; the prefix and the `menu task add classify` recipe line are byte-identical.
+- `CLAUDE.md` (two count lines) and `README.md` (one count line): 587 to 588. `CLAUDE.md` is 14730 bytes.
+Green run: the new test file, tests 10, pass 10, fail 0. The four baseline files again: tests 179, pass 179, fail 0 (with the new file counted by `doc-counts`). `tests/menu-task-wiring.test.js`, `tests/an-answer-starts-no-build.test.js`, `tests/reachability.test.js`, `tests/export-reachability.test.js`: tests 127, pass 127. `eslint --max-warnings 0` on the two JavaScript files: clean. `npm run typecheck`: pass 1, fail 0.
+
+Step 11 REVIEW. The review passed with no defects: the hand-over time and the sweeper's compared time come from the same read; every promote list is built by computePromote, traced by reading every route; the start.md text leaves the session no way to obtain the time except the promoted entry; cases 6 and 8 are pins and the other eight fail without the change.
+
+Step 13 SECURE. The security review warned on three points. A classification stamped with the edited plan's time can drop an author question because the keep-every-author-question rule only compares within one revision; that is the owner's accepted, separately scheduled work. The null branch failed open; the session now launches no gate critic while the time is null and the task stays queued. The plan's claim that a forged entry learns at most a time inside plans/ was wrong because the stat follows links like the sweeper's; it is corrected by a decision and in the JSDoc.
+
+Fix round after Steps 11 and 13. Change 1: the classify paragraph of src/commands/start.md now says that when the promoted entry's planMtimeMs is null or the key is missing, the session launches no gate critic, runs no menu task start, leaves the task queued (it returns in a later promote list with a real time), says in one line that the plan file could not be read so its questions wait, and leaves the plan with the owner. Case 3 of tests/the-classification-brief-carries-the-plan-time.test.js was changed first to require that sentence and failed on the old one (red: the paragraph did not include the new sentence); after the edit it passes (green). The prefix up to "its brief:" and the menu task add classify recipe line are unchanged. Change 2: the JSDoc of handedOverPlanMtimeMs in src/lib/menu-screens.js says that statSync follows links like the sweeper's own read and that the session launches no gate critic while the time is null; the correction of the review sentence is decision 6. Change 3: decision 7 records the cross-revision finding as the owner's accepted, separately scheduled work.
+
+Step 12 OPTIMIZE. Confirmed on the diff: only classify entries are stat-ed, one statSync each through handedOverPlanMtimeMs; no cache, no stored time and no export were added (the function is called only from computePromote, and it is not in the module's exports). Nothing to remove.
+
+Step 15 DOCUMENT. The documentation is the JSDoc of computePromote and handedOverPlanMtimeMs and the classify paragraph of src/commands/start.md, as the plan says; no other document lists a promote entry's fields. Changed spans: src/lib/menu-screens.js (handedOverPlanMtimeMs, the computePromote map, its JSDoc sentence and @returns); src/commands/start.md (the classify paragraph after "its brief:"); CLAUDE.md (two count lines) and README.md (one count line), 587 to 588; tests/the-classification-brief-carries-the-plan-time.test.js (ten cases). Final test-file count: 588.
+
+Step 14 VERIFY. npm run lint (eslint . --max-warnings 0): clean. npm run typecheck: pass 1, fail 0. npm test: tests 14037, pass 14037, fail 0, cancelled 0, skipped 0; coverage 99.73% against the threshold 99%; corpus claims verified 3, refuted 0, unverifiable 0; "[CTOC test-gate] PASS". Machine load during the run was high (uptime showed load averages 197.77, 173.92, 109.13), and no timing test failed. The named files run together (doc-counts, unexecutable-instruction-fence, a-requested-stop-offers-no-build, plans-keep-moving-without-the-human, menu-task-wiring, reachability, export-reachability, the new test file): tests 304, pass 304, fail 0, skipped 0.
+
+Step 16 FINAL-REVIEW. The final review checked every acceptance scenario against its test, and each one is proved by behaviour: cases 1a, 1b and 1c show the continuation, the answer route and the approve route each hand over the plan file's time at full precision, with its fraction; case 2 shows the same for "Check its questions"; case 3 pins the classify paragraph; case 4 carries the time through the real menu output and shows the whole-millisecond label value is refused; case 5 shows an unreadable time is null and leaves the other entries unchanged; case 7 shows a classification after an edit is accepted when it carries the handed-over time; cases 6 and 8 are pins of the existing refusal. One change was required and made in the final round: the earlier fix said a classify task with a null time stays queued and returns later with a real time, but a null time usually means the plan file moved or was deleted and nothing would ever retire that task; the session now cancels it and says the gate critic did not check the plan's questions. The coordinator confirmed that CLAUDE.md and README.md differ only in the test-file count and that nothing outside the plan's files changed.
+
+Final round. Decision 8 revises decision 5. Tests first: case 3 now pins the new null sentence ("Run `menu task cancel <id>` for it (a queued task cancels at once) and say in one line that the plan file could not be read, so the gate critic did not check its questions."); red run of the test file before the start.md edit: case 3 failed, the other nine passed. Case 5 was extended (after the continuation offers the classify entry with a null time, `menu task cancel <id>` runs through the real route, the result is ok and cancelled, the registry status is cancelled, and the next continuation no longer offers the entry while the planner entry stays on offer); it passed on first run because the cancel route and the promote filter already behave this way, so it pins existing behaviour and is not a red-first case. Then the classify paragraph of src/commands/start.md was changed (prefix and recipe line byte-identical). Green run: the new test file, the unexecutable-instruction fence, plans-keep-moving-without-the-human and menu-task-wiring together: tests 238, pass 238, fail 0, skipped 0. `npx eslint --max-warnings 0` on the test file: clean. The full npm test was not run in this round (the CTO Chief runs it at completion).
