@@ -83,7 +83,9 @@ claude
 /ctoc:start
 ```
 
-There is no init command. The first time you open the dashboard in a project without a `.ctoc/` folder, CTO Chief sets the project up **before** rendering — it detects your stack (languages, frameworks, linters, test runners), writes a tailored `CLAUDE.md` and `IRON_LOOP.md`, creates `.ctoc/settings.yaml`, `.ctoc/state/`, and the `plans/` stage folders. Initialization is idempotent: a file that already exists is never overwritten.
+There is no init command. The first time you open the dashboard in a project without `.ctoc/settings.yaml`, CTO Chief sets the project up **before** rendering — it detects your stack (languages, frameworks, linters, test runners), writes a tailored `CLAUDE.md`, and makes `.ctoc/settings.yaml`, `.ctoc/state/` and the `plans/` stage folders. Initialization is idempotent: a file that already exists is never overwritten. In a project that is already set up, such as a fresh git worktree of one, opening the menu only remakes the missing `plans/` stage folders and `.ctoc/` folders and the state file `.ctoc/state/iron-loop.yaml`, and writes no other file.
+
+A project set up by an earlier CTOC release may hold an `IRON_LOOP.md` full of unfilled placeholders such as `{{PROJECT_NAME}}`; setup no longer writes that file and never touches one that exists, so it is safe to delete.
 
 **Worked example.** This is the real first screen in a fresh Express project (a `package.json` and one source file), captured from the current version:
 
@@ -115,7 +117,7 @@ Claude then asks you three questions in one go:
 
 Answer them once; both choices are remembered. "Keep defaults, stop asking" and "None" are durable too — the question stops riding along. One correction to the screen text above: in **every** environment, including Production, pushing stays your act (Lesson 6) — no profile turns auto-push on.
 
-**You know it worked when** your project now contains `CLAUDE.md`, `IRON_LOOP.md`, `.ctoc/settings.yaml` and a `plans/` folder, and `/ctoc:start` opens straight onto the dashboard.
+**You know it worked when** your project now contains `CLAUDE.md`, `.ctoc/settings.yaml` and a `plans/` folder, and `/ctoc:start` opens straight onto the dashboard.
 
 <details>
 <summary><strong>Check yourself</strong></summary>

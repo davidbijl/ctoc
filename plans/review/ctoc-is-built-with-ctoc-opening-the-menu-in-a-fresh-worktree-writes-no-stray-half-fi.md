@@ -102,10 +102,10 @@ Source: `plans/decomposition/ctoc-is-built-with-ctoc.md`. Stories marked `[MVP]`
 2. Find the repository unchanged.
 
 ### Stories
-- [ ] `[MVP]` Spike: As the planner, I want it traced why opening the menu runs project setup in a fresh worktree but not in the main checkout, so that the fix aims at the real trigger.
+- [x] `[MVP]` Spike: As the planner, I want it traced why opening the menu runs project setup in a fresh worktree but not in the main checkout, so that the fix aims at the real trigger.
   - Acceptance: the plan records the condition that starts project setup and why a fresh worktree meets it.
   - INVEST: passes as a time-boxed investigation.
-- [ ] `[MVP]` As the coordinator, I want opening the menu in a fresh worktree to leave no untracked file with an unfilled `{{PROJECT_NAME}}` placeholder, so that worktrees stay clean.
+- [x] `[MVP]` As the coordinator, I want opening the menu in a fresh worktree to leave no untracked file with an unfilled `{{PROJECT_NAME}}` placeholder, so that worktrees stay clean.
   - Acceptance: in a fresh worktree, `node src/commands/start.js plan todo/<plan>.md` leaves `git status` without a new `IRON_LOOP.md`, and no file written by `src/lib/init-project.js` (template at `:708`, write at `:795-803`) contains `{{PROJECT_NAME}}`.
   - INVEST: passes all six criteria.
 
@@ -119,7 +119,7 @@ Eight scenarios. Each test runs the real `src/commands/start.js` as a separate p
 
 Technical enabler:
 
-- [ ] **Scenario: The cause is confirmed before the fix**
+- [x] **Scenario: The cause is confirmed before the fix**
   Given the current release, unchanged, and the set-up project and fresh worktree of "A fresh worktree stays clean"
   When that scenario's test runs before any product code changes
   Then it fails, and `git status --porcelain --untracked-files=all` in the worktree lists `IRON_LOOP.md` as a new untracked file
@@ -128,7 +128,7 @@ Technical enabler:
 
 First story (a fresh worktree stays clean):
 
-- [ ] **Scenario: A fresh worktree stays clean**
+- [x] **Scenario: A fresh worktree stays clean**
   Given a temporary git repository holding a set-up project, all committed: `CLAUDE.md`; `.ctoc/settings.yaml` with a usable compliance anchor; the eight plan stage folders, each holding a file (a `.gitkeep` where it would be empty, because git drops empty folders); one plan in `plans/todo/`; a byte copy of CTOC's own `.gitignore`; and no root `IRON_LOOP.md`
   And a fresh worktree of it, added inside the repository's folder the way CTOC's own worktrees sit under `.claude/worktrees/`, so the ignored `.ctoc/state/iron-loop.yaml` is absent there
   When the coordinator runs `node <CTOC>/src/commands/start.js plan todo/<that plan>.md` with the worktree as its working folder
@@ -137,13 +137,13 @@ First story (a fresh worktree stays clean):
   And the screen shows neither "CTOC is not fully set up" nor "CTOC could not finish setting up"
   And a second run of the same command shows no setup sentence at all
 
-- [ ] **Scenario: A project that only looks set up is still set up in full**
+- [x] **Scenario: A project that only looks set up is still set up in full**
   Given a brand-new git repository with no `.ctoc/settings.yaml`, whose `.ctoc/` folder holds only a `logs/` folder that a hook wrote before the menu was ever opened
   When the developer opens the menu there (`node <CTOC>/src/commands/start.js` with no arguments)
   Then `.ctoc/settings.yaml`, `.ctoc/state/iron-loop.yaml`, `CLAUDE.md` and the eight plan stage folders exist
   And the screen says "CTOC is set up for this project."
 
-- [ ] **Scenario: A repair that cannot write says so and writes nothing else**
+- [x] **Scenario: A repair that cannot write says so and writes nothing else**
   Given the fresh worktree of "A fresh worktree stays clean", in which a plain file takes the path `.ctoc/state`, so setup cannot create `.ctoc/state/iron-loop.yaml`
   When the coordinator runs the same command
   Then the screen says "CTOC could not finish setting up this project.", names `.ctoc/state/iron-loop.yaml` as missing, and ends with its "To fix it, …" sentence
@@ -151,26 +151,26 @@ First story (a fresh worktree stays clean):
 
 Second story (a brand-new project gets no unfilled placeholder):
 
-- [ ] **Scenario: A brand-new project gets no unfilled placeholder**
+- [x] **Scenario: A brand-new project gets no unfilled placeholder**
   Given a brand-new git repository holding a `package.json` whose `name` is `acme-shop`, one source file, and no `.ctoc/` folder
   When the developer opens the menu there for the first time
   Then the screen says "CTOC is set up for this project."
   And no file that exists after the run, and did not exist before it, contains a placeholder
   And the `CLAUDE.md` setup wrote contains `acme-shop`
 
-- [ ] **Scenario: Every link in the new CLAUDE.md leads to a file**
+- [x] **Scenario: Every link in the new CLAUDE.md leads to a file**
   Given that brand-new project after its first menu run
   When each relative Markdown link in the `CLAUDE.md` setup wrote is resolved against the project folder
   Then every one of them names a file that exists
   (Today the template has two such links, both to `./IRON_LOOP.md`: `.ctoc/templates/CLAUDE.md.template:41` and `:134`.)
 
-- [ ] **Scenario: The README's setup promise matches what setup writes**
+- [x] **Scenario: The README's setup promise matches what setup writes**
   Given the two README sentences that list what first setup creates: the paragraph that begins "There is no init command." and the sentence that begins "You know it worked when" (today `README.md:86` and `:118`; the wording identifies them, the line numbers only point)
   When they are compared with that brand-new project after its first menu run
   Then every file and folder the two sentences name exists
   And they name `IRON_LOOP.md` only if setup wrote it
 
-- [ ] **Scenario: A developer's own IRON_LOOP.md is kept**
+- [x] **Scenario: A developer's own IRON_LOOP.md is kept**
   Given a brand-new project with no `.ctoc/` folder that already holds an `IRON_LOOP.md` whose whole text is `# my own notes`
   When the developer opens the menu there for the first time
   Then `IRON_LOOP.md` still holds exactly `# my own notes`
@@ -308,6 +308,18 @@ Decided while planning the build (implementation planner, 2026-10-20). The owner
   The same worktree holds `plans/canvas/.gitkeep`, so the stage folders are tracked through `.gitkeep` files.
 - **Each test that skips a pre-existing `IRON_LOOP.md` now uses `CLAUDE.md`.** These are the functional plan's two named tests. Every assertion is kept, and a comment beside each change gives the reason.
 - **The test identity is `CTOC Test <test@test.invalid>`.** No real name or address goes into a fixture.
+- **Executor, Steps 8-10:**
+  - **`ensureInitialized` requires `../lib/init-project` inside the function, once, and picks `repairRequiredArtifacts` or `initProject` from the module object.** A load-time require would bypass the `require.cache` stand-ins that cases 10 of `tests/menu-repairs-what-it-reports-missing.test.js` and others use. Those stand-ins export only `initProject` and run in folders without a settings file, so they still reach `initProject`.
+  - **Case 22 picks the README sentence that begins "You know it worked when" and also names `CLAUDE.md`.** README holds two sentences with that opening, and the plan's wording does not tell them apart; the other is about the slash commands.
+  - **`repairRequiredArtifacts` returns no `detected` field**, as the plan specifies, and its `skipped` holds the state file's "already exists" entry when it is present.
+- **Executor, fix round after review and security (approved change list, CTO Chief):**
+  - **Setup refuses to write through a symbolic link.** A private helper, `refuseLinkedPath`, walks the names of a path one at a time, strictly below the project root, and throws `refused: <names so far> is a symbolic link` at the first link. The folder step and the state-file step run it inside their record callback, so the refusal lands in `failed` as `.ctoc/state/iron-loop.yaml (refused: .ctoc/state is a symbolic link)`, with no absolute path. The full setup shares both steps, so each setup folder and the state file below a link is refused and recorded, and the run reports failure; before, they were made at the link target and the run reported success. The state file is created exclusively (`wx`) when `force` is not set. A link whose target already holds everything is not refused, because nothing is written. `CLAUDE.md`, the settings file and the `.gitignore` append still follow links; that is left for the owner. Security wins over two Step 11 checks that no longer hold word for word: `initProject` now refuses and records a setup folder or state file below a link, and `ensureDirectories` and `ensureStateFile` are no longer purely moved code.
+  - **Why not `escapesRoot` of `real-path-confinement.js`:** it reports a plain file at `.ctoc/state` as its own not-a-folder fault, which gives cases 18 and 25 a false "refused" reason.
+  - **Correction to the plan's security review.** "writes only fixed relative paths under it" and "the repair writes only empty folders under the project and the state file" were false with a symbolic link at `.ctoc`, `.ctoc/state`, `plans` or below. They hold after the fix (cases 28 and 29).
+  - **Correction to the README text in File specifications.** The last sentence of the "There is no init command." paragraph is now: "In a project that is already set up, such as a fresh git worktree of one, opening the menu only remakes the missing `plans/` stage folders and `.ctoc/` folders and the state file `.ctoc/state/iron-loop.yaml`, and writes no other file." The old wording named only `.ctoc/state/`, but the repair also makes the other `.ctoc/` folders. Case 32 holds it.
+  - **The reason of a thrown setup error is scrubbed where it is caught,** in `ensureInitialized`: the project root becomes `<project>`, then the home folder becomes `<home>`, and a failure to find the home folder is named in the reason. It is not done through an export of `init-project`, because that catch runs exactly when that module failed to load or a test stand-in lacks the export (case 10's stand-in exports only `initProject`). Case 30 holds it; `sanitizeReason` alone did not, because it stops at the first space of a folder name.
+  - **The narrow repair adds no `.ctoc/logs/` or `.ctoc/state/` line to `.gitignore`.** Accepted as design: changing a tracked `.gitignore` in a fresh worktree is what this plan removes. The full setup of a new project still adds both.
+  - **Fixtures read none of the developer's git settings.** `cleanEnv()` sets `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_SYSTEM` to the null device after the `GIT_*` filter, and the menu child of `driveMenu` gets the same environment. Case 31 holds it.
 
 ## Implementation Details
 
@@ -664,3 +676,75 @@ The critic checks that:
 - no file a brand-new project receives carries a placeholder;
 - the README's two sentences match what setup writes;
 - no edit falls outside `files:`.
+
+## Execution Record (Steps 8–16)
+
+### Step 8: TEST (executor, Steps 8–10 run)
+
+Re-pointed tests, run on the unchanged release: `tests/menu-reports-what-init-did.test.js` and `tests/init-project-coverage.test.js` together gave tests 44, pass 44, fail 0, skipped 0. Case 9 of the first now seeds `CLAUDE.md` and asserts `skipped` names `CLAUDE.md`. The second is renamed `should_skip_and_preserve_CLAUDE_md_when_it_already_exists`, and its header and block comment say the IRON_LOOP.md branch went with the file. Every assertion kept.
+
+Cases 15 to 27 written into `tests/menu-repairs-what-it-reports-missing.test.js` (cases 1 to 14 untouched). Run on the unchanged release, `node --test tests/menu-repairs-what-it-reports-missing.test.js`: tests 27, pass 18, fail 9.
+- Green before the fix, as the plan expects: 15, 16, 19, 23 (and 1 to 14).
+- Red before the fix, as the plan expects: 17, 18, 20, 21, 22, 24, 25, 26, 27.
+
+Stop conditions, checked before any product change: case 15 found exactly `.ctoc/state/iron-loop.yaml` missing (green); case 16 left `git status` unchanged and showed no setup sentence (green). Neither fired.
+
+Case 17 red output, the `status` difference: actual ` M CLAUDE.md` then `?? IRON_LOOP.md`, expected empty. Both lines the plan requires are present, so the fixture's stale lessons block does catch the narrowing.
+
+Other red reasons: 18 the plan screen opens with the plan's own text and has no setup sentence; 20 `IRON_LOOP.md` holds an unfilled placeholder; 21 the Iron Loop link is not the GitHub address; 22 the paragraph after the setup paragraph is not the safe-to-delete note; 24 and 25 `repairRequiredArtifacts` is not a function; 26 `CLAUDE.md` was rewritten (stale lessons block refreshed); 27 `withSetupFailure` is not a function.
+
+One observation for the critic: the fixture plan `plans/todo/fresh-worktree-fixture.md` (`# A plan in the build queue`) makes the plan route print its "This plan is empty." screen (`brokenPlanScreen` in `src/lib/streaming-gate.js`); why the one-line fixture counts as empty was not investigated. Cases 16 and 17 still compare the whole of `git status` and the setup sentences, which do not depend on that text.
+
+Correction found while implementing, recorded here because it changed a Step 8 test: README holds two sentences that begin "You know it worked when" (line 59 is about the slash commands; line 118 is about first setup). Case 22 first picked the first one. It now picks the one that also names `CLAUDE.md`, which is the setup sentence. The red result above for case 22 was therefore for the wrong sentence on its first assertions; its last assertion (the note) failed for the right reason, and the run after Step 10.1 failed on the right sentence (see Step 10).
+
+### Step 9: PREPARE
+
+Re-read `src/lib/init-project.js` (setup body, `record`, `REQUIRED_ARTIFACTS`, the read-back) and `src/commands/start.js` (`verifySetup`, `ensureInitialized`, `setupMessage`, `main()` sub-command branch). The line numbers had not moved enough to matter; the code matched the plan's description. Whether another plan's build holds `src/commands/start.js`, `README.md` or `.ctoc/templates/CLAUDE.md.template` was checked only inside this worktree (`plans/in-progress/` holds this plan alone); the other build worktree was not opened, as the brief forbids it.
+
+### Step 10: IMPLEMENT (executor)
+
+Item 1, `src/lib/init-project.js`: removed the template path and step 4. `node --test tests/menu-repairs-what-it-reports-missing.test.js`: pass 19, fail 8. Case 20 went green (no IRON_LOOP.md written). Case 21 red: "the relative link ./IRON_LOOP.md names a file that does not exist". Case 22 red: "README promises IRON_LOOP.md, and setup did not write it". As the plan expects.
+
+Item 2, `.ctoc/templates/CLAUDE.md.template` (the two links) and `README.md` (the two sentences and the note): cases 20, 21 and 22 green. pass 21, fail 6 (17, 18, 24, 25, 26, 27).
+
+Item 3, `src/lib/init-project.js`: `ensureDirectories`, `ensureStateFile` and `missingRequired` extracted as moved code; `repairRequiredArtifacts` added and exported. Cases 24 and 25 green. pass 23, fail 4 (17, 18, 26, 27). `tests/init-project-coverage.test.js`, `tests/init-tells-the-truth.test.js` and `tests/init-project.test.js` together: tests 90, pass 90.
+
+Item 4, `src/commands/start.js`: `ensureInitialized` chooses by the settings file. Cases 17 and 26 green. pass 25, fail 2 (18, 27).
+
+Item 5, `src/commands/start.js`: `withSetupFailure` added, exported, and called in the sub-command branch of `main()`. Cases 18 and 27 green. `node --test tests/menu-repairs-what-it-reports-missing.test.js`: tests 27, pass 27, fail 0, skipped 0.
+
+Item 6: `.ctoc/templates/IRON_LOOP.md.template` deleted with `git rm` (staged deletion, the only git write). `.ctoc/operations/README.md` now links `/docs/IRON_LOOP.md`.
+
+Checks after Step 10: the ten test files named in Step 14 for the menu, init, template and README (`tests/menu-repairs-what-it-reports-missing.test.js`, `tests/menu-reports-what-init-did.test.js`, `tests/init-project-coverage.test.js`, `tests/init-tells-the-truth.test.js`, `tests/menu-auto-init.test.js`, `tests/menu-coverage.test.js`, `tests/ctoc-start-command.test.js`, `tests/claude-md-lessons.test.js`, `tests/claude-md-keeps-every-rule.test.js`, `tests/readme-numbers.test.js`) together: tests 263, pass 263, fail 0, skipped 0. `tests/export-reachability.test.js` and `tests/reachability.test.js`: tests 47, pass 47. `npm run typecheck` and `npm run lint`: exit 0 each.
+
+Full suite once, `node --test tests/*.test.js`: tests 13895, pass 13893, fail 2, skipped 0. Both failures are timing tests: `tests/hotfix-check-corpus.test.js` ("the whole-file scanners stay linear on input built against them": size 1024 took 21.4 ms and size 4096 took 235.3 ms) and `tests/quality-agent-coverage.test.js` ("a long run of digits ..."; it passed on one rerun and failed on another). The machine's load average was about 120 during these runs. Neither test touches a file this plan changes. They are not explained as flaky: they need a rerun at normal load in Step 14, and a cause in the product code if they still fail.
+
+Used the Edit tool for the test file, the README, the template and the source, because the Bash call carrying the same edits as a script was refused by the hook twice (text below).
+
+Hook refusal, verbatim: "PreToolUse:Bash hook error: CTOC refused this call because it writes, or could write, the project's settings file or its regulatory profiles, which only CTOC's menu writes; tell the human what you wanted to change and let the menu change it." The scripts only edited declared files; their text named the settings file path inside test fixtures and README sentences.
+
+### Fix round after review and security (executor)
+
+The approved change list was applied in order, each new case written and run red first. All five cases sit in `tests/menu-repairs-what-it-reports-missing.test.js` (cases 28 to 32; header range now 15 to 32).
+
+Red run before any product change: tests 32, pass 27, fail 5 (28, 29, 30, 31, 32), skipped 0. Red reasons: 28 wrote `iron-loop.yaml` outside the project through the linked `.ctoc/state` (the assertion stops at the first fixture, so only the first of its three fixtures was seen red; the second and third are held by the green run); 29 made all eight stage folders at the link target; 30 the reason held the unscrubbed `Jane Doe` and `Client Acme` folder names; 31 `git status` printed nothing because the developer's global exclude file hid `stray.txt`; 32 `.ctoc/logs/` is not named by the README sentence (`plans/`, `.ctoc/state/`).
+
+Green after each change: change 1 (`refuseLinkedPath`, folder and state-file steps, exclusive create) turned 28 and 29 green (pass 29); change 2 (scrub in the `ensureInitialized` catch) turned 30 green (pass 30); change 3 (`GIT_CONFIG_GLOBAL` and `GIT_CONFIG_SYSTEM` set to the null device in `cleanEnv()`, and `driveMenu` given that environment) and change 4 (the README sentence, exactly as the list gives it) turned 31 and 32 green. `tests/menu-repairs-what-it-reports-missing.test.js` with `tests/readme-numbers.test.js`: tests 94, pass 94, fail 0, skipped 0. Case 22 stayed green. Case 28 and case 29 fail loudly, never skip, where a symbolic link cannot be made. Decisions for change 5 are in the second "Decisions Taken Under Ambiguity" section above.
+
+Step 12 OPTIMIZE: no change. The new helper adds one `lstat` per name of a path, and only inside a write that is about to happen; the repair still does strictly less than the full setup. Every branch of `refuseLinkedPath` is reached by cases 25, 28 and 29 (absent name, plain file, link). Nothing was removable.
+
+Step 15 DOCUMENT: `docs/PROJECT_REFERENCE.md` "Project Init Procedure" now gives the text from File specifications, with one sentence added that both runs refuse to write through a symbolic link below the project root. JSDoc: `refuseLinkedPath` (new), `ensureDirectories`, `ensureStateFile`, `repairRequiredArtifacts` and `ensureInitialized` say what is refused and where the thrown-error scrub happens; `withSetupFailure` already carried its JSDoc and needed no change.
+
+Step 14 VERIFY: `npm run lint` exit 0 with zero warnings; `npm run typecheck` pass 1, fail 0. `npm test` (one run, load average 23 to 44 by `uptime` before and after): tests 13900, pass 13900, fail 0, skipped 0, coverage 99.74% against `minPct` 99, `[CTOC test-gate] PASS`. No timing test failed in this run. The plan's named test files together (`menu-reports-what-init-did`, `menu-repairs-what-it-reports-missing`, `menu-auto-init`, `init-tells-the-truth`, `init-project-coverage`, `ctoc-start-command`, `claude-md-lessons`, `claude-md-keeps-every-rule`, `export-reachability`, `reachability`, `readme-numbers`): tests 248, pass 248, fail 0, skipped 0. The approval check reports `coverage.approved: true` after the edits.
+
+Left untouched, for the owner: the untracked root `IRON_LOOP.md` in this worktree; and the items the change list names as outside this plan (`start.md` around line 483, `plans/implementation/real-projects-do-not-stall-on-the-menu.md` line 147, the comments in `tests/ctoc-start-command.test.js`, the `.gitignore` append, `CLAUDE.md` and settings-file writes following links, the unhelpful failure sentence of an older project without a usable compliance setting).
+
+Step 11 REVIEW. The review passed with one low README wording finding. The narrow repair writes only the missing setup folders and the git-ignored state file. The full setup is unchanged apart from no longer writing IRON_LOOP.md. The failure sentence reaches a sub-command screen only when setup failed, so every healthy sub-command screen stays byte-identical. The two re-pointed tests keep every assertion. Two of its checks no longer hold word for word after the security fix: the full setup now refuses and records a folder or state file below a symbolic link, and the shared folder and state-file helpers are no longer purely moved code. The plan's decisions record both.
+
+Step 13 SECURE. Rated WARN with four items; three were fixed test-first and one was accepted as design. First, setup no longer writes through a symbolic link below the project root. Each folder and the state file is checked name by name, refused and recorded without an absolute path, and the state file is created exclusively. Cases 28 and 29 cover this. Second, a thrown setup error is scrubbed where the menu catches it, the project folder first and then the home folder (case 30). Third, the test fixtures and the menu child read none of the developer's git settings (case 31). Fourth, the narrow repair adds no lines to .gitignore; that is accepted as design, because changing a tracked .gitignore in a fresh worktree is what this plan removes. The CLAUDE.md, settings-file and .gitignore writes of the full setup still follow links, and that is left to the owner.
+
+Step 16 FINAL-REVIEW. Changes were required, and only in the tests. Every acceptance scenario maps to a passing behaviour case that drives the real menu as a separate process. A fresh worktree of the fixture keeps git status exactly as it was (case 17), and case 18 shows the repair lands in the worktree itself. The routing from the menu entry point to the narrow repair is in place, and nothing at runtime reads the deleted template. Three approved changes were in the code but not pinned by any case: scrubbing the project folder before the home folder, naming a failed home-folder lookup, and never checking the project root itself for a link; each got one small case in the final-review fix round. The coordinator checked the changed files against main: only the plan's declared files and the plan.
+
+Final-review fix round (tests only, in `tests/menu-repairs-what-it-reports-missing.test.js`). Each case was shown to bite: a copy of the product file was saved, one line mutated, the file run, the copy put back and compared byte for byte (identical each time). Case 30 now creates the project folder inside the fake home folder; with the two scrubs in `src/commands/start.js` swapped (home folder first) cases 30 and 30b were red, and green after the restore. New case 30b stubs the home-folder lookup to throw and asserts the reason holds `<project>` and `[home-directory scrub skipped:`; with that text removed from `src/commands/start.js` case 30b was red, green after the restore. New case 28b makes a symbolic link to a seeded project, removes the state file and repairs through the link, asserting success and the state file back; with `refuseLinkedPath` in `src/lib/init-project.js` also checking the root, case 28b was red, green after the restore. New case 28c plants a dangling link at the state file name, stubs the link check to read that name as absent, and asserts the link target is never created and the failure is recorded; the stub sits on the shared file-system wrapper object, so no product code changed; with the exclusive create flag changed to a plain write in `src/lib/init-project.js` case 28c was red, green after the restore. No product file differs from before the round (compared with the saved copies).
+
+Step 14 VERIFY after the fix round: `npm run lint` exit 0 with zero warnings; `npm run typecheck` pass 1, fail 0. `npm test`, first run (load average 76 before, 130 after by `uptime`): tests 13903, pass 13901, fail 2, skipped 0, coverage 99.74% against `minPct` 99, gate FAIL on two wall-clock tests that read no file this plan changed: "the whole-file scanners stay linear on input built against them" and "a long run of digits in a run's output is read in linear time by the skipped and passed fallbacks", the first in `tests/hotfix-check-corpus.test.js`, the second in `tests/quality-agent-coverage.test.js` (the output also listed the enclosing "runFullTests and runSpecificTests" group of that file as failed). Those two files run alone at load 125 (before) and 101 (after) gave tests 233, pass 232, fail 1. The one rerun of the full `npm test` (load average 101 before, 117 after): tests 13903, pass 13902, fail 1, skipped 0, coverage 99.74%, gate FAIL on "the whole-file scanners stay linear on input built against them" in `tests/hotfix-check-corpus.test.js` (its failed assertion expected true, got false). No test was edited or skipped. The machine load was 76 to 130 throughout, against 23 to 44 in the earlier passing run, so the gate is not PASS in this round; the build tests (`tests/menu-repairs-what-it-reports-missing.test.js`) pass in both runs.

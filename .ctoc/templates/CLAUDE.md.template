@@ -38,7 +38,7 @@ Red lines (never compromise): no code without tests on critical paths, no secret
 
 ## Iron Loop (16 Steps)
 
-Every feature follows 16 steps. This is non-negotiable. Full details in [IRON_LOOP.md](./IRON_LOOP.md).
+Every feature follows 16 steps. This is non-negotiable. Full details in [CTOC's Iron Loop document](https://github.com/robotijn/ctoc/blob/main/docs/IRON_LOOP.md).
 
 ```
 Phase 0: IDEATION (Step 1)                       [vision-advisor, product-owner]
@@ -131,5 +131,5 @@ Parallelize research (WebSearch, Read, Grep). Serialize writes (Edit, Write, Git
 
 ## References
 
-- [Iron Loop Methodology](./IRON_LOOP.md)
+- [Iron Loop Methodology](https://github.com/robotijn/ctoc/blob/main/docs/IRON_LOOP.md)
 - [CTOC Documentation](https://github.com/robotijn/ctoc)

@@ -5,7 +5,8 @@
  * leaves dark: glob-style language markers, per-language framework detection
  * (Rust / Ruby / Java-Kotlin), the project-structure renderer (dir-first sort,
  * >20-entry truncation, directory line), the already-initialized idempotency
- * branches (IRON_LOOP.md and iron-loop.yaml are NOT clobbered), the second
+ * branches (CLAUDE.md and iron-loop.yaml are NOT clobbered; the IRON_LOOP.md
+ * branch went with the file, which setup no longer writes), the second
  * operand of the .gitignore `||`, and the post-commit hook install decision
  * (installed / already-installed / throw). Every test pins a branch that goes
  * RED under mutation — not merely "no throw".
@@ -266,22 +267,24 @@ describe('init-project dark branches', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Idempotency: a second init must NOT clobber an existing IRON_LOOP.md or
-  // iron-loop.yaml (lines 674-676 and 712-714). These are the already-exists
-  // skip arms; mutating them to overwrite reddens the content assertion.
+  // Idempotency: a second init must NOT clobber an existing CLAUDE.md or
+  // iron-loop.yaml. These are the already-exists skip arms; mutating them to
+  // overwrite reddens the content assertion. The IRON_LOOP.md arm went with the
+  // file: setup no longer writes a project-root IRON_LOOP.md (owner's answer
+  // "Stop writing IRON_LOOP.md"), so CLAUDE.md is the pre-existing file tested.
   // ---------------------------------------------------------------------------
   describe('idempotency — existing artifacts are preserved', () => {
-    it('should_skip_and_preserve_IRON_LOOP_md_when_it_already_exists', () => {
+    it('should_skip_and_preserve_CLAUDE_md_when_it_already_exists', () => {
       // Arrange
-      const ironPath = path.join(tempDir, 'IRON_LOOP.md');
-      fs.writeFileSync(ironPath, '# hand-written iron loop notes');
+      const claudePath = path.join(tempDir, 'CLAUDE.md');
+      fs.writeFileSync(claudePath, '# hand-written notes');
 
       // Act
       const result = initProject(tempDir);
 
       // Assert
-      assert.ok(result.skipped.some(s => s.includes('IRON_LOOP.md')), 'IRON_LOOP.md must be reported skipped');
-      assert.equal(fs.readFileSync(ironPath, 'utf8'), '# hand-written iron loop notes');
+      assert.ok(result.skipped.some(s => s.includes('CLAUDE.md')), 'CLAUDE.md must be reported skipped');
+      assert.equal(fs.readFileSync(claudePath, 'utf8'), '# hand-written notes');
     });
 
     it('should_skip_and_preserve_iron_loop_state_yaml_when_it_already_exists', () => {
