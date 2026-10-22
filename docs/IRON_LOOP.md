@@ -289,6 +289,13 @@ Kickbacks are normal — they mean the quality gate is working. But infinite loo
 | Same-step kickbacks | 3 | Stop. Escalate to user with diagnosis. |
 | Total kickbacks per plan | 5 | Stop. Present full kickback history + root cause analysis. |
 
+What is counted, in one count per plan (`.ctoc/state/kickbacks/<plan>.json`):
+- a completion refused before review, against the first required step that is missing or unchecked (Step 14 when none is);
+- a failed verify, against Step 14;
+- a send-back from a review, security or quality round, against the step it names, also when the plan has already finished. The session records it on that round's completion (`menu task complete <id> --continue --send-back <step>`). The plan is not moved.
+
+Past a limit, the plan is listed on the menu's `inbox escalations` screen and in the dashboard's escalation count.
+
 When the circuit breaker trips, present:
 1. Which steps keep failing and why
 2. What was tried each time

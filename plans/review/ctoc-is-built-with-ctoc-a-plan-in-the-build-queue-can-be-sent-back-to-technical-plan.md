@@ -154,19 +154,19 @@ The decomposer's four stories became three: "`claude:reject` performs the send-b
 
 ### Offered on the plan screen
 
-- [ ] **Scenario: A build-queue plan's screen offers the send-back**
+- [x] **Scenario: A build-queue plan's screen offers the send-back** — proved by B1
   Given a plan in the build queue titled "Readers skip the rejection header", with no question waiting for it
   When the coordinator opens it with `plan todo/<file>.md`
   Then its question offers exactly four options: Discuss, View/Edit, Delete and "Send it back — wrong way", the last with the description "The requirements are right; the technical approach is wrong. It goes back to be re-planned."
   And the action for "Send it back — wrong way" is `claude:reject todo/<file>.md implementation`
   And no option label or description on the screen contains a stage directory name
 
-- [ ] **Scenario: Plans in other stages show the options they show today**
+- [x] **Scenario: Plans in other stages show the options they show today** — proved by B2
   Given one plan each in requirements, technical planning, `plans/in-progress/` and `plans/done/`, and the options and actions each one's screen shows today, written into the test before any source change
   When each is opened with `plan <stage>/<file>.md` after the change
   Then each screen's options and actions are identical to the recorded ones, and none offers "Send it back — wrong way"
 
-- [ ] **Scenario: The review screen is unchanged**
+- [x] **Scenario: The review screen is unchanged** — proved by B3
   Given a plan in review
   When it is opened with `plan review/<file>.md`
   Then it offers "Send it back — wrong thing" and "Send it back — wrong way" with the actions `claude:reject review/<file>.md functional` and `claude:reject review/<file>.md implementation`, character for character as before this change
@@ -174,7 +174,7 @@ The decomposer's four stories became three: "`claude:reject` performs the send-b
 
 ### Sent back with a reason
 
-- [ ] **Scenario: The menu command sends the plan back with its reason**
+- [x] **Scenario: The menu command sends the plan back with its reason** — proved by C1
   Given a plan in the build queue titled "Readers skip the rejection header", with the approval record of its build-it decision and no build task
   When the coordinator runs the action of "Send it back — wrong way" through `node src/commands/start.js` with the reason `the "files:" list misses src/lib/increment-feed.js and $HOME paths`
   Then the plan is in technical planning and no longer in the build queue
@@ -182,57 +182,57 @@ The decomposer's four stories became three: "`claude:reject` performs the send-b
   And the approval record of the build-it decision is gone, as `rejectPlan` withdraws it today
   And the command prints one result line that names "Readers skip the rejection header" and says it was sent back to be re-planned; it prints no dashboard and no stage directory name
 
-- [ ] **Scenario: No reason, or another destination, is refused**
+- [x] **Scenario: No reason, or another destination, is refused** — proved by C2, C8, C11, C13, C15, C16
   Given a plan in the build queue
   When the command runs on it once with an empty reason, and once with the destination `functional` and a reason
   Then the first run prints a refusal sentence saying a reason is required, and the second prints one saying a build-queue plan can only be sent back to be re-planned
   And after both runs the plan file is byte-identical, still in the build queue, with its approval record unchanged
 
-- [ ] **Scenario: A plan whose build has started is not sent back**
+- [x] **Scenario: A plan whose build has started is not sent back** — proved by C3, C3b
   Given the coordinator opened a build-queue plan's screen, and its build task was claimed afterwards, which moved the plan to `plans/in-progress/`
   When the command runs on `todo/<file>.md`
   Then it prints a refusal sentence saying the plan is being built
   And the plan file, its place in `plans/in-progress/` and the build task are unchanged
 
-- [ ] **Scenario: A queued build of the plan is cancelled with it**
+- [x] **Scenario: A queued build of the plan is cancelled with it** — proved by C4, C4b, C5
   Given a plan in the build queue with a queued build task that no agent has claimed
   When the command sends the plan back with a reason
   Then that build task is cancelled
   And the result line says the queued build was cancelled
   And `menu task start <that task id>` run afterwards starts no build and moves no plan
 
-- [ ] **Scenario: The plan waits in technical planning**
+- [x] **Scenario: The plan waits in technical planning** — proved by D1
   Given a plan just sent back, with no questions generated for it since
   When the menu's continuation runs (`menu task complete <id> --continue` on another finished task)
   Then the plan is still in technical planning, and the build queue holds no copy of it
 
 ### Named by its title
 
-- [ ] **Scenario: Sent back from its screen, it comes back under its title**
+- [x] **Scenario: Sent back from its screen, it comes back under its title** — proved by E1
   Given a plan titled "Readers skip the rejection header", the only plan in the build queue of a temporary project
   When the coordinator opens `plan todo/<file>.md`, takes "Send it back — wrong way" and runs the command its action names with a reason
   Then the opening screen (`node src/commands/start.js` with no words) names that plan "Readers skip the rejection header", and its question reads "Shall I build “Readers skip the rejection header”?"
   And `plan implementation/<file>.md` shows a Topic line that begins "Topic: Readers skip the rejection header"
   And neither the opening screen's question nor the Topic line contains "REVISION"
 
-- [ ] **Scenario: A second send-back keeps the title**
+- [x] **Scenario: A second send-back keeps the title** — proved by E2
   Given that plan was revised, crossed into the build queue again, and is sent back a second time with another reason
   When the owner opens the opening screen and the plan's own screen
   Then both name it "Readers skip the rejection header"
   And the plan file holds both reasons
 
-- [ ] **Scenario: Plans sent back before this change show their titles**
+- [x] **Scenario: Plans sent back before this change show their titles** — proved by E3, A3
   Given a copy of `plans/functional/finished-plans-are-not-sent-back-after-an-update.md`, which carries `# REVISION 2` and `# REVISION 1` above its own title, in requirements of a temporary project
   When the owner opens the opening screen and `plan functional/<file>.md`
   Then both name it "Finished plans are not sent back after an update"
   And the plan file is byte-identical before and after
 
-- [ ] **Scenario: A real title that begins with "Revision" still shows**
+- [x] **Scenario: A real title that begins with "Revision" still shows** — proved by E4, A5
   Given a sent-back plan whose own title is "Revision history is kept for every plan"
   When the owner opens its plan screen
   Then its Topic line begins "Topic: Revision history is kept for every plan"
 
-- [ ] **Scenario: A sent-back plan with no title heading of its own**
+- [x] **Scenario: A sent-back plan with no title heading of its own** — proved by E5, A6
   Given a sent-back plan with no level-1 heading besides the rejection header, and the frontmatter line `title: "Readers skip the rejection header"`
   When the owner opens the opening screen and the plan's own screen
   Then both name it "Readers skip the rejection header"
@@ -242,25 +242,25 @@ The decomposer's four stories became three: "`claude:reject` performs the send-b
 
 Added by the implementation planner from the owner's answer "Hold it in technical planning until it has been revised" (see "The owner's answers and what they change").
 
-- [ ] **Scenario: A sent-back plan with fresh questions waits until it is changed**
+- [x] **Scenario: A sent-back plan with fresh questions waits until it is changed** — proved by D2, D6
   Given a plan just sent back from the build queue, whose questions were then written for its current text, classified by the gate critic, and need nobody
   When the menu's continuation runs (`menu task complete <id> --continue` on another finished task)
   Then the plan is still in technical planning, and the build queue holds no copy of it
   And the opening screen shows the sentence that it waits for a change or your approval, its "Yes — build it" option is not marked "Recommended", and "Open the plan" is the one recommended option
   And no status line calls it ready to move on by itself
 
-- [ ] **Scenario: A change to its files: list alone lets it move**
+- [x] **Scenario: A change to its files: list alone lets it move** — proved by D3
   Given that held plan
   When only its `files:` list is changed, and fresh classified questions that need nobody are written for the changed text
   And the continuation runs
   Then the plan crosses into the build queue on its evidence
 
-- [ ] **Scenario: Your approval still moves it**
+- [x] **Scenario: Your approval still moves it** — proved by D4
   Given that held plan, unchanged
   When the owner approves it with `stream approve implementation/<file>.md`
   Then it moves into the build queue, recorded as his approval
 
-- [ ] **Scenario: Plans sent back before this change are not held**
+- [x] **Scenario: Plans sent back before this change are not held** — proved by D5
   Given a plan in technical planning that carries `# REVISION 1`, `revision: 1` and `tag: rejected` but no hold mark, with fresh classified questions that need nobody
   When the continuation runs
   Then it crosses into the build queue as before
@@ -403,6 +403,16 @@ Every line number below was re-read in the main checkout on 2026-10-20. Nothing 
       - the Implementation Order's `CREATE` of the test file, which the build creates.
     - The test fixtures' made-up paths (`src/readers.js`, `src/feed.js`, `src/other.js`) are never written after such a word.
 31. **The send-back offer adds an option to a question that already carries no recommended option.** The lifecycle question (`:1727-1741`) never had one, and the scenario pins its four options and the send-back's words. It is listed under Neighbours, not changed here.
+
+32. **Four type annotations the type check needed (executor, Step 10).** `npm run typecheck` (`tests/typecheck.test.js`, baseline 0) reported nine errors for the code as specified: `rejectPlan`'s fifth parameter has the default value `/** @type {{ holdUntilRevised?: boolean }} */ ({})`; `sendBackFromBuildQueue` has the typedef `SendBackResult` and its lock callback is annotated `@returns {SendBackResult}`; `sendBackCommand`'s `refuse` casts its object to `{ ok: false, refused: true, reason: string, text: string }`; and the reason decoding tests `!('answer' in decoded)` instead of `typeof decoded.answer !== 'string'` (same truth table, narrows the union). Behaviour is unchanged.
+33. **No sentence on a held plan's own screen when its questions are checked and need nobody (executor, Step 10).** The plan specifies the held sentence for the opening screen and for the checking line (`uncheckedLines`), and the held plan screen's two option descriptions; its body shows the reason at the top. The plan screen therefore carries no `SENT_BACK_UNREVISED_LINE` for a classified held plan, and the test asserts the options, not that sentence, on that screen. Built as written; recorded for the critic.
+
+34. **A send-back that stops part-way is told apart by the plan's bytes (CTO Chief's change list, executor).** The plan's bytes are read before anything is cleared or written. If the send-back throws and the file is now missing, unreadable or different, the plan is no longer what its queued builds were approved to build: they are cancelled and the result says "stopped part-way". If the bytes are the same, nothing is cancelled (Decision 20 kept) and the result says "Nothing was sent back". The cause goes to the warn log (`send_back_failed`, and `send_back_cancel_failed` per cancel that did not happen), never to the result line. A cancel that throws is counted as cancelled when the task is read again and is `cancelled` (someone cancelled it at the same moment); no error text is matched. The clause "it cannot start while the plan is out of the build queue" is dropped, since it is false on the failure path.
+35. **A plan file in the build queue that is a link or not a plain file is refused (`not-a-plain-file`).** `lstat` inside the lock, before the byte read, so a link's target is never rewritten. The test fails loudly when links cannot be made, as `tests/the-owner-answers-an-inbox-question.test.js` does; it is never skipped.
+36. **Decision 25's remaining case is reversed.** Decision 25 recorded, and did not fix, a reason with a line that is only `---` followed by a `# ` line. The command now refuses such a reason (`reason-holds-separator`), after `rejectPlan`'s own removal of control characters, so `-\x01--` is caught too. A reason of only invisible or control characters (white space, `Cc`, `Cf`, `Default_Ignorable_Code_Point`) is refused with the no-reason sentence. Refused, never escaped; `decodeAnswer` is untouched. The Security Review's "Input validation" row keeps its approved text; Decision 39 supersedes it and names these refusals.
+37. **The validation screen of a held plan leads with Back.** For a plan in technical planning that `isSentBackUnrevised`, the clean validation screen lists Back first ("Recommended — ...") and Confirm approve second with `HELD_APPROVE_DESCRIPTION`; the action strings are unchanged. An unreadable plan counts as not held. Left out, recorded: the hold mark is matched anywhere in the file (it only keeps a plan held, which fails toward the owner's approval).
+38. **How the tests were proved to bite (executor, resumed round).** Each of these was removed one at a time from the built code and the new test file run; each made the named case fail, and the code was restored byte for byte: the changed/unchanged decision in the catch (C9, C9b), the reload of a task whose cancel threw (C10c), the two warn-log writes (C9, C10), the singular and plural could-not-cancel words (C10, C10b), the stopped-part-way words (C9), the plain-file test (C14), the separator refusal and its control-character strip (C15), the invisible-character refusal (C16), the held branch (D9, D9b). Two mutations did not fail at first and the tests were tightened: C9b now asserts the whole refusal sentence, and C16 now includes a Hangul filler (U+3164), a character only `Default_Ignorable_Code_Point` catches. The status-file injection of C9b (a folder where the status file would be) does make `clearStatus` throw before `rejectPlan` writes on this machine, and the plan's bytes and approval record stay as they were.
+39. **The Security Review's "Input validation" row is superseded by this entry (executor, Step 10, at the owner's CTO Chief's change list).** The row, as approved, names the strict decoding of the reason (`decodeAnswer`: UTF-8 fatal, the size cap, refusal of a blank reason and of a marker line). The built command also refuses, after `rejectPlan`'s own removal of control characters, a reason that holds a line of only `---` (`reason-holds-separator`, which would end the reason early inside the plan, and also catches `-\x01--`), and a reason made only of invisible or control characters (white space, `Cc`, `Cf`, `Default_Ignorable_Code_Point`), which gets the no-reason sentence. Both are refused, never escaped, and `decodeAnswer` is untouched. Where the row and this entry differ, this entry governs (see entries 36 and 38).
 
 ## Neighbours (seen, not built here; scheduling is the owner's)
 
@@ -1146,25 +1156,25 @@ No criterion is left without an implementation action and a test.
 ## Execution Plan
 
 ### Step 8: TEST
-- [ ] Write `tests/a-build-queue-plan-can-be-sent-back-and-keeps-its-title.test.js` exactly as the Test Plan specifies (cases A1-A8, B1-B3, C1-C13 with C3b, C4b and C6b, D1-D8, E1-E8), before any source change (test-driven development). Take B2's literals from a run of the unchanged code. If they differ from the expected values above, record the difference: the run is the authority.
-- [ ] Run `node --test tests/a-build-queue-plan-can-be-sent-back-and-keeps-its-title.test.js` before any source change. Record in this plan, per case, red with the reason the Test Plan names, or green where it says green (B2, B3's first half, D5, D8). A case green where red is expected does not test the change: fix the case before going on.
+- [x] Write `tests/a-build-queue-plan-can-be-sent-back-and-keeps-its-title.test.js` exactly as the Test Plan specifies (cases A1-A8, B1-B3, C1-C13 with C3b, C4b and C6b, D1-D8, E1-E8), before any source change (test-driven development). Take B2's literals from a run of the unchanged code. If they differ from the expected values above, record the difference: the run is the authority.
+- [x] Run `node --test tests/a-build-queue-plan-can-be-sent-back-and-keeps-its-title.test.js` before any source change. Record in this plan, per case, red with the reason the Test Plan names, or green where it says green (B2, B3's first half, D5, D8). A case green where red is expected does not test the change: fix the case before going on.
 
 ### Step 9: PREPARE
-- [ ] Re-read every cited line in `src/lib/actions.js`, `src/lib/streaming-gate.js`, `src/lib/menu-screens.js`, `src/lib/increment-feed.js`, `src/lib/loop-b-driver.js`, `src/lib/inbox.js`, `src/commands/start.js`, `src/commands/start.md` and `docs/ENFORCEMENT.md`. Where the code differs from this plan, follow the code and record the difference. The plans that share these files may have landed first.
-- [ ] Reproduce the friction on a temporary project at the unchanged code: `node src/commands/start.js claude:reject todo/<x>.md implementation "<reason>"` prints the dashboard and moves nothing. Record the first line of what it printed.
-- [ ] Repeat the search `match\(/\^#` over `src/`, and the pattern `startsWith\('# '\)`. Any title reader beyond the six goes through `planOwnTitle` in Step 10, and is named here.
-- [ ] Run `node --test tests/streaming-gate.test.js tests/streaming-gate-coverage-holes.test.js tests/menu-screens.test.js tests/plan-question-screen.test.js tests/plans-keep-moving-without-the-human.test.js tests/menu-task-wiring.test.js tests/actions-coverage.test.js tests/inbox-coverage.test.js tests/start-command-coverage-holes.test.js` and record the result as the baseline for Step 10.
+- [x] Re-read every cited line in `src/lib/actions.js`, `src/lib/streaming-gate.js`, `src/lib/menu-screens.js`, `src/lib/increment-feed.js`, `src/lib/loop-b-driver.js`, `src/lib/inbox.js`, `src/commands/start.js`, `src/commands/start.md` and `docs/ENFORCEMENT.md`. Where the code differs from this plan, follow the code and record the difference. The plans that share these files may have landed first.
+- [x] Reproduce the friction on a temporary project at the unchanged code: `node src/commands/start.js claude:reject todo/<x>.md implementation "<reason>"` prints the dashboard and moves nothing. Record the first line of what it printed.
+- [x] Repeat the search `match\(/\^#` over `src/`, and the pattern `startsWith\('# '\)`. Any title reader beyond the six goes through `planOwnTitle` in Step 10, and is named here.
+- [x] Run `node --test tests/streaming-gate.test.js tests/streaming-gate-coverage-holes.test.js tests/menu-screens.test.js tests/plan-question-screen.test.js tests/plans-keep-moving-without-the-human.test.js tests/menu-task-wiring.test.js tests/actions-coverage.test.js tests/inbox-coverage.test.js tests/start-command-coverage-holes.test.js` and record the result as the baseline for Step 10.
 
 ### Step 10: IMPLEMENT
-- [ ] `src/lib/inbox.js`: export `decodeAnswer`.
-- [ ] `src/lib/actions.js`: the `hashString` import, `SENT_BACK_KEY`, `sentBackDigest`, `isSentBackUnrevised`, `rejectPlan`'s `opts` and its one write, `sendBackFromBuildQueue` below `claimBuild`, and the two exports, exactly as specified.
-- [ ] `src/lib/streaming-gate.js`: the two import lines, `BUILD_QUEUE_SEND_BACK`, `planOwnTitle` with the `planTitle` delegate, `planDecisionScreen` (title, held Approve words, unchecked line, build-queue offer), `pendingGateDecisions` (the hold, the descriptor field, the type and the header paragraph), `movesOnItsOwn`, the two constants, `regimeLine`, `uncheckedLines`, `buildOptions`, `nameOfPlanAt`, `SEND_BACK_REASON_REFUSALS`, `sendBackCommand`, `sendBackRefusal`, and the two exports.
-- [ ] `src/lib/menu-screens.js`: the `claude:reject` case and `planNameAt`. `src/lib/increment-feed.js` and `src/lib/loop-b-driver.js`: `planOwnTitle` in place of `titleOf`.
-- [ ] `src/commands/start.js`: the standard-input shape and its comment.
-- [ ] Rerun the Step 8 command until every case is green, then the Step 9 baseline files. Any existing assertion that now fails is read before anything changes. If it pins the old plan-screen slug fallback, it is replaced by a stricter assertion, with the reason beside it. Otherwise the code is wrong.
+- [x] `src/lib/inbox.js`: export `decodeAnswer`.
+- [x] `src/lib/actions.js`: the `hashString` import, `SENT_BACK_KEY`, `sentBackDigest`, `isSentBackUnrevised`, `rejectPlan`'s `opts` and its one write, `sendBackFromBuildQueue` below `claimBuild`, and the two exports, exactly as specified.
+- [x] `src/lib/streaming-gate.js`: the two import lines, `BUILD_QUEUE_SEND_BACK`, `planOwnTitle` with the `planTitle` delegate, `planDecisionScreen` (title, held Approve words, unchecked line, build-queue offer), `pendingGateDecisions` (the hold, the descriptor field, the type and the header paragraph), `movesOnItsOwn`, the two constants, `regimeLine`, `uncheckedLines`, `buildOptions`, `nameOfPlanAt`, `SEND_BACK_REASON_REFUSALS`, `sendBackCommand`, `sendBackRefusal`, and the two exports.
+- [x] `src/lib/menu-screens.js`: the `claude:reject` case and `planNameAt`. `src/lib/increment-feed.js` and `src/lib/loop-b-driver.js`: `planOwnTitle` in place of `titleOf`.
+- [x] `src/commands/start.js`: the standard-input shape and its comment.
+- [x] Rerun the Step 8 command until every case is green, then the Step 9 baseline files. Any existing assertion that now fails is read before anything changes. If it pins the old plan-screen slug fallback, it is replaced by a stricter assertion, with the reason beside it. Otherwise the code is wrong.
 
 ### Step 11: REVIEW
-- [ ] Dispatch `iron-loop-critic` with these attacks:
+- [x] Dispatch `iron-loop-critic` with these attacks:
   - find a screen or status line that still shows "REVISION 1" for a sent-back plan;
   - find an order of events in which a build claim and a send-back both succeed on one plan;
   - find an automatic write that releases the hold of a plan in technical planning without a planner;
@@ -1174,10 +1184,10 @@ No criterion is left without an implementation action and a test.
   - confirm that `rejectPlan`'s existing callers, the review screen and the options of every other stage are byte for byte unchanged.
 
 ### Step 12: OPTIMIZE
-- [ ] Confirm the hold costs one regular-expression test per plan in technical planning per decisions read, and one hash only for a plan that carries the mark, over text `readPlans` already read, with no extra file read. Confirm `planOwnTitle` makes one pass over the body lines and parses the frontmatter only when no heading names the plan and the caller passed none. No change is expected.
+- [x] Confirm the hold costs one regular-expression test per plan in technical planning per decisions read, and one hash only for a plan that carries the mark, over text `readPlans` already read, with no extra file read. Confirm `planOwnTitle` makes one pass over the body lines and parses the frontmatter only when no heading names the plan and the caller passed none. No change is expected.
 
 ### Step 13: SECURE
-- [ ] Dispatch `security-scanner` on the diff with the Security Review table. Its scope:
+- [x] Dispatch `security-scanner` on the diff with the Security Review table. Its scope:
   - path joins only after `parseAnyRef` or `isUnsafePlanFile`;
   - the reason only on standard input and through `rejectPlan`'s encoding;
   - the lock held across the check and the write;
@@ -1187,20 +1197,75 @@ No criterion is left without an implementation action and a test.
   - nothing timed.
 
 ### Step 14: VERIFY
-- [ ] Run `npm test`: `# fail 0`, 0 skipped, and coverage at or above `.ctoc/coverage-baseline.json` `minPct`.
-- [ ] Run `npx eslint --max-warnings 0 src/lib/actions.js src/lib/streaming-gate.js src/lib/menu-screens.js src/lib/increment-feed.js src/lib/loop-b-driver.js src/lib/inbox.js src/commands/start.js tests/a-build-queue-plan-can-be-sent-back-and-keeps-its-title.test.js` and `npm run typecheck`: both clean.
-- [ ] Run `node --test tests/export-reachability.test.js tests/reachability.test.js tests/false-green-fence.test.js tests/menu-task-wiring.test.js tests/gate-numbers-fence.test.js tests/instruction-surfaces-say-the-moment.test.js`: all green, and no baseline file changed.
+- [x] Run `npm test`: `# fail 0`, 0 skipped, and coverage at or above `.ctoc/coverage-baseline.json` `minPct`.
+- [x] Run `npx eslint --max-warnings 0 src/lib/actions.js src/lib/streaming-gate.js src/lib/menu-screens.js src/lib/increment-feed.js src/lib/loop-b-driver.js src/lib/inbox.js src/commands/start.js tests/a-build-queue-plan-can-be-sent-back-and-keeps-its-title.test.js` and `npm run typecheck`: both clean.
+- [x] Run `node --test tests/export-reachability.test.js tests/reachability.test.js tests/false-green-fence.test.js tests/menu-task-wiring.test.js tests/gate-numbers-fence.test.js tests/instruction-surfaces-say-the-moment.test.js`: all green, and no baseline file changed.
 
 ### Step 15: DOCUMENT
-- [ ] The JSDoc of every new and changed function as specified, the `claude:reject` row and the new subsection of `src/commands/start.md`, and the paragraph in `docs/ENFORCEMENT.md`.
-- [ ] Update the count lines with `node -e "const r=require('./src/scripts/release.js');console.log(JSON.stringify([r.updateDocCountsInClaudeMd(process.cwd()),r.updateDocCountsInReadme(process.cwd())]))"`. Read the diff of `CLAUDE.md` and `README.md`: only count lines may differ, and `CLAUDE.md` stays at or under 15,000 bytes.
+- [x] The JSDoc of every new and changed function as specified, the `claude:reject` row and the new subsection of `src/commands/start.md`, and the paragraph in `docs/ENFORCEMENT.md`.
+- [x] Update the count lines with `node -e "const r=require('./src/scripts/release.js');console.log(JSON.stringify([r.updateDocCountsInClaudeMd(process.cwd()),r.updateDocCountsInReadme(process.cwd())]))"`. Read the diff of `CLAUDE.md` and `README.md`: only count lines may differ, and `CLAUDE.md` stays at or under 15,000 bytes.
 
 ### Step 16: FINAL-REVIEW
-- [ ] Dispatch `iron-loop-critic` against the seventeen scenarios and the vision's status line. Each box quotes the test that proves it and its result.
-- [ ] Put four things in front of the owner in full, from the built tree on a temporary project:
+- [x] Dispatch `iron-loop-critic` against the seventeen scenarios and the vision's status line. Each box quotes the test that proves it and its result.
+- [x] Put four things in front of the owner in full, from the built tree on a temporary project:
   - the build-queue plan screen;
   - the command's result line;
   - the opening screen of the sent-back plan, before and after a change to it;
   - the "Next up to build" line naming a sent-back plan by its title.
 
   An untracked `IRON_LOOP.md` that the menu writes in a fresh worktree belongs to "Opening the menu in a fresh worktree writes no stray half-filled IRON_LOOP.md". It is left in place, never staged, and recorded.
+
+## Execution Record (Steps 8–16)
+
+### Step 8: TEST
+
+**Evidence (Step 8, executor).** `tests/a-build-queue-plan-can-be-sent-back-and-keeps-its-title.test.js` was written before any source change: 43 cases (A1-A8, B1-B3, C1-C13 with C3b, C4b and C6b, D1-D8, E1-E8). First run on the unchanged code: `node --test tests/a-build-queue-plan-can-be-sent-back-and-keeps-its-title.test.js` gave `# tests 43`, `# pass 3`, `# fail 40`, `# skipped 0`.
+- Green, as the Test Plan expects (pins): B2 (the options and actions of the functional, technical-planning, in-progress and done screens, taken from a run of the unchanged code and equal to the values the Test Plan expected), D5 and D8. B3's first half is green inside B3, whose second half is red.
+- Red for the reason named: A1-A8 (`streamingGate.planOwnTitle is not a function`); B1 (three options, not four); B3 (the command printed the dashboard); C1-C8, C11-C13 and D1, D2, D3, D4, D6 (the command printed the dashboard, so `ok`/`reason` are absent and the plan did not move); C3, C3b, C4, C4b, C5, C6, C6b (same); C9 (the dashboard path reads the replaced folder and throws `ENOTDIR`); C10 (same, no send-back ran); D7 (`rejectPlan` ignores a fifth argument, so zero mark lines instead of one); E1 and E2 (the screen offers no send-back action); E3 ("Topic: REVISION 2"); E4, E5 (`Topic: REVISION 1`); E6 (`Next up to build: REVISION 1.`); E7 (the feed title is `REVISION 1`); E8 (the sweep line reads `• REVISION 1 —`).
+- No case was green where red was expected.
+
+### Step 9: PREPARE
+
+**Evidence (Step 9, executor).**
+- Cited lines: the anchor of every edit the plan specifies (the function, constant, export block, route case, table row and paragraph each change attaches to) in `src/lib/actions.js`, `src/lib/streaming-gate.js`, `src/lib/menu-screens.js`, `src/lib/increment-feed.js`, `src/lib/loop-b-driver.js`, `src/lib/inbox.js`, `src/commands/start.js`, `src/commands/start.md` and `docs/ENFORCEMENT.md` was re-read in this worktree and sits where the plan says, with one off-by-one (`planTitle` starts at `:168`, its comment at `:167`). Nothing differs from the plan. The line numbers of prose-only citations (searches, comments) were not each re-read.
+- Friction reproduced at the unchanged code on a temporary project under the operating system's temp folder: `node src/commands/start.js claude:reject todo/x.md implementation "the approach is wrong"` printed `CTOC v6.14.134` as its first line (the dashboard), exit status 0; `plans/implementation/x.md` did not exist and `plans/todo/x.md` was still there.
+- Searches repeated. Pattern `match\(/\^#` over `src/`: 15 lines. The six title readers are still exactly `src/lib/streaming-gate.js:169`, `:1596`, `:2330`, `src/lib/menu-screens.js:3109`, `src/lib/increment-feed.js:62` and `src/lib/loop-b-driver.js:113`. The other 9 lines are not plan-name readers: `src/tabs/vision.js:232` (the `# Vision:` title of a vision plan), matches on `##` or step headings in `src/hooks/validate-plan-steps.js` (`:77`, `:129`), `src/lib/unexecutable-instruction-scan.js:187`, `src/lib/plan-validator.js` (`:577`, `:650`, `:1549`) and `src/lib/plan-index/sync-unit.js:138`, and `src/lib/plan-validator.js:1325` (`hasTitle`, a presence test that a `# REVISION` heading also satisfies). Pattern `startsWith\('# '\)` over `src/`: 0 lines. A wider search for any other pattern opening with `^#` found only `src/lib/ctoc-project-detector.js:31` and a comment in `src/lib/step-13-verify.js:590`. No seventh title reader.
+- Baseline: `node --test tests/streaming-gate.test.js tests/streaming-gate-coverage-holes.test.js tests/menu-screens.test.js tests/plan-question-screen.test.js tests/plans-keep-moving-without-the-human.test.js tests/menu-task-wiring.test.js tests/actions-coverage.test.js tests/inbox-coverage.test.js tests/start-command-coverage-holes.test.js` gave `# tests 409`, `# pass 409`, `# fail 0`, `# skipped 0`.
+
+### Step 10: IMPLEMENT
+
+**Evidence (Step 10, executor).** Every sub-item above is implemented as specified, in the order of the Implementation Order (steps 2 to 6; steps 7 and 8 belong to Step 15).
+- `node --test tests/a-build-queue-plan-can-be-sent-back-and-keeps-its-title.test.js`: `# tests 43`, `# pass 43`, `# fail 0`, `# skipped 0`.
+- The Step 9 baseline files plus the new file in one run: `# tests 452`, `# pass 452`, `# fail 0`, `# skipped 0`. No existing assertion needed to change.
+- `npx eslint --max-warnings 0` over the seven changed source files and the new test file: exit 0. `node --test tests/typecheck.test.js tests/export-reachability.test.js tests/reachability.test.js tests/false-green-fence.test.js tests/gate-numbers-fence.test.js tests/instruction-surfaces-say-the-moment.test.js` together with the new file, `tests/streaming-gate.test.js` and `tests/actions-coverage.test.js`: `# tests 286`, `# pass 286`, `# fail 0`.
+- Typing (a deviation in form only, recorded under "Decisions Taken Under Ambiguity", item 32).
+
+### Step 11: REVIEW
+
+**Evidence (Step 11, iron-loop-critic).** CHANGES REQUIRED. Medium: a successful send-back could print a task id or path in its result line (cancel errors echoed). Medium: a send-back stopped part-way left the plan buildable without its approval, with its queued build still queued. Low: the held plan's "Check validation" route led to a screen whose first option was approve. All the plan's Step 11 attacks otherwise held: no "REVISION 1" anywhere; no claim and send-back double success; no automatic write releases the hold; `rejectPlan`'s other callers, the review screen and the other stages are unchanged.
+
+### Step 12: OPTIMIZE
+
+**Evidence (Step 12, executor).** Read in the built code: `isSentBackUnrevised` is one multi-line regular-expression test and hashes only when the mark matched; `planOwnTitle` is one pass over the body lines and parses the frontmatter only after no heading named the plan and the caller passed none; the hold reads `plan.content` that `readPlans` already read; `validateScreen` reads the plan file once more, for an interactive screen only. No change made.
+
+### Step 13: SECURE
+
+**Evidence (Step 13, security-scanner).** WARN. Medium: the same part-way defect. Medium: the standard-input recipe in `src/commands/start.md` was not yet written (Step 15). Low: a reason line of only `---` could replace the title. Low: a reason of only control or invisible characters passed as non-blank. Low: a symbolic link in the build queue was written through. Info: a hold mark matched anywhere in the file (safe direction only, left as is).
+
+**Synthesis.** Four changes inside the plan's files (part-way failure and the queued-build words; link refusal; misleading-reason refusals; held validation screen), applied test-first, see Decisions 34 to 39 and the Step 14 evidence. Left out: the hold mark matched anywhere (safe direction), and the `src/commands/start.md` recipe (Step 15's own work, done).
+
+### Step 14: VERIFY
+
+**Evidence (Step 14, executor).**
+- `npm test`: `[CTOC test-gate] coverage 99.74% (threshold 99%), skipped 0, failed 0` and `[CTOC test-gate] PASS`; the suite printed `# tests 13882`, `# pass 13882`, `# fail 0`, `# skipped 0`.
+- `npx eslint --max-warnings 0` over the eight files: exit 0. `npm run typecheck`: `# pass 1`, `# fail 0` (baseline 0 errors).
+- The six fence files: `# tests 210`, `# pass 210`, `# fail 0`, `# skipped 0`. `git status` shows no change under `.ctoc/`.
+- `node --test tests/a-build-queue-plan-can-be-sent-back-and-keeps-its-title.test.js`: `# tests 51`, `# pass 51`, `# fail 0`, `# skipped 0`.
+
+### Step 15: DOCUMENT
+
+**Evidence (Step 15, executor).** The count command printed `[{"updated":[],"failures":[]},{"updated":[],"failures":[]}]` (the earlier pass had already moved both lines to 587, the number of `tests/*.test.js` files). The diff of `CLAUDE.md` and `README.md` against the base holds only those count lines; `CLAUDE.md` is 14,730 bytes. The `claude:reject` row and the subsection of `src/commands/start.md` give the reason only on standard input through a quoted heredoc with a fresh marker made in its own call, and say to start no build of a plan whose send-back stopped part-way. The paragraph in `docs/ENFORCEMENT.md` is written. Every new and changed function carries its JSDoc.
+
+### Step 16: FINAL-REVIEW
+
+**Evidence (Step 16, iron-loop-critic).** All seventeen scenarios are proved by behaviour tests in `tests/a-build-queue-plan-can-be-sent-back-and-keeps-its-title.test.js`: scenario 1 by B1; 2 by B2; 3 by B3; 4 by C1; 5 by C2, C8, C11, C13, C15, C16; 6 by C3, C3b; 7 by C4, C4b, C5; 8 by D1; 9 by E1; 10 by E2; 11 by E3, A3; 12 by E4, A5; 13 by E5, A6; 14 by D2, D6; 15 by D3; 16 by D4; 17 by D5. The status line is proved by E6, E7, E8. Every change-list item is built and pinned; the `src/commands/start.md` recipe and the wiring are confirmed; two sentence fixes are applied (the link-refusal and opening-screen wording in `docs/ENFORCEMENT.md`, and Decision 36's pointer to Decision 39).

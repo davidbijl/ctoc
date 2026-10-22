@@ -601,7 +601,10 @@ const getVisionCounts = memoize(function getVisionCountsImpl(projectPath) {
  *
  * @param {string} visionSlug - Slug of the parent vision
  * @param {string} [projectPath] - Project root path
- * @returns {Array<{ name: string, path: string, scope: string, dependsOn: string, bgStatus: string }>}
+ * @returns {Array<{ name: string, path: string, title: string, scope: string, dependsOn: string, bgStatus: string }>}
+ *   `title` is the frontmatter title as trimmed text ('' when missing or a list); `scope` is the
+ *   first line of the Problem Statement, read on both Unix and Windows line endings and past blank
+ *   lines; `parent_vision` and `depends_on` are read as text (a list reads as its items joined by ", ").
  */
 function getVisionStubs(visionSlug, projectPath) {
   const root = projectPath || findProjectRoot();
@@ -612,20 +615,33 @@ function getVisionStubs(visionSlug, projectPath) {
 
   // Filter by parent_vision matching the vision slug
   const stubs = plans.filter(plan => {
-    const parentVision = plan.metadata.parent_vision || '';
+    // Read as text: the frontmatter reader turns `parent_vision: 2026` into a number.
+    const parentVision = String(plan.metadata.parent_vision || '');
     return parentVision.includes(visionSlug);
   });
 
   return stubs.map(stub => {
     // Extract scope from first line of Problem Statement
-    const scopeMatch = stub.content.match(/## Problem Statement\n(.+)/);
+    // `\r?` reads a Windows checkout too; `.` stops before the `\r`. Blank lines after the heading
+    // are skipped; `\s` and `[^#\s]` share no character, so the match is linear, and a heading
+    // that follows an empty Problem Statement is never taken as the scope.
+    const scopeMatch = stub.content.match(/## Problem Statement\r?\n\s*([^#\s].*)/);
     const scope = scopeMatch ? scopeMatch[1].trim() : '';
+    // The frontmatter title, from the same parser as every other field. That parser
+    // turns `title: 2026` into a number and `title: "false"` into a boolean; both are
+    // shown as text. A missing title, or a block list in its place, names nothing.
+    const rawTitle = stub.metadata.title;
+    const title = rawTitle == null || typeof rawTitle === 'object' ? '' : String(rawTitle).trim();
+
+    // depends_on is read as text too: a number, `true` or a block list (an array) is shown as written.
+    const deps = stub.metadata.depends_on || 'none';
 
     return {
       name: stub.name,
       path: stub.path,
+      title,
       scope,
-      dependsOn: stub.metadata.depends_on || 'none',
+      dependsOn: Array.isArray(deps) ? deps.join(', ') : String(deps),
       bgStatus: stub.bgStatus || 'none'
     };
   });

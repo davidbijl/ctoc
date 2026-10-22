@@ -10,7 +10,7 @@
  *   - plans/review/  : built, waiting for your OK;
  *   - plans/done/    : shipped —
  * via the existing fail-soft reader (`state.readPlans`), and names each by its human
- * TITLE via the existing `streaming-gate.humanPlanName` (+ `state.parseMetadata`).
+ * TITLE via the existing `streaming-gate.humanPlanName` (+ `streaming-gate.planOwnTitle`).
  *
  * "SINCE YOU LAST LOOKED" — the simplest correct definition: a BOUNDED RECENT WINDOW,
  * the last N increments by modified time, most-recent-first. This needs NO new persisted
@@ -46,24 +46,8 @@ const DEFAULT_CAP = 10;
 /** Lazy-require the readers so a broken install fails open at the call site, not on load. */
 function deps() {
   const state = require('./state');
-  const { humanPlanName } = require('./streaming-gate');
-  return { readPlans: state.readPlans, getPlansDir: state.getPlansDir, parseMetadata: state.parseMetadata, humanPlanName };
-}
-
-/**
- * The plan's raw one-line title: its `# Heading`, else its frontmatter `title`, else its
- * slug. Mirrors `loop-b-driver.titleOf` (not exported there), then handed to humanPlanName.
- * @param {string} content
- * @param {string} slug
- * @param {(c: string) => any} parseMetadata
- * @returns {string}
- */
-function titleOf(content, slug, parseMetadata) {
-  const m = typeof content === 'string' ? content.match(/^#[ \t]+(.+)$/m) : null;
-  if (m) return m[1].trim();
-  const md = parseMetadata(content) || {};
-  const t = md.title;
-  return typeof t === 'string' && t.trim() ? t.trim() : String(slug || '');
+  const { humanPlanName, planOwnTitle } = require('./streaming-gate');
+  return { readPlans: state.readPlans, getPlansDir: state.getPlansDir, humanPlanName, planOwnTitle };
 }
 
 /**
@@ -93,7 +77,7 @@ function recentIncrements(root, cap = DEFAULT_CAP) {
     }
     for (const p of plans) {
       try {
-        const title = d.humanPlanName(titleOf(p.content, p.name, d.parseMetadata), p.name);
+        const title = d.humanPlanName(d.planOwnTitle(p.content, p.name, p.metadata), p.name);
         if (!title) continue;
         const modifiedMs = p.modified instanceof Date ? p.modified.getTime() : Number(p.modified) || 0;
         items.push({ title, when: p.ago || '', modifiedMs });

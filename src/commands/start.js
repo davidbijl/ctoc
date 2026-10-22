@@ -746,6 +746,19 @@ function verifySetup(root) {
  * non-empty `missingBefore` with an empty `missing` is a repair that demonstrably
  * happened — rather than inferred from what `initProject` claims it wrote.
  *
+ * WHICH setup runs: a project that already holds `.ctoc/settings.yaml` (the one required
+ * item a set-up project commits) is repaired NARROWLY with `repairRequiredArtifacts` —
+ * only the missing setup folders and `.ctoc/state/iron-loop.yaml`, nothing else. That is
+ * what a fresh git worktree of a set-up project needs, because git ignores `.ctoc/state/`;
+ * the full setup would also refresh a tracked `CLAUDE.md` and `.gitignore`, which `git
+ * status` shows. A project without the settings file (brand new, or holding only a hook's
+ * `.ctoc/logs/`) gets the full `initProject`. Either run refuses to write through a
+ * symbolic link below the root (a refused item is reported in `failed`, hence in `reason`).
+ *
+ * `reason` never holds the project folder or the home folder: a per-item failure is
+ * scrubbed where it is recorded, and a thrown error (a setup module that failed to load
+ * names a path under the home directory) is scrubbed here, where it is caught.
+ *
  * Fails open: a setup problem produces a MESSAGE, never a refusal to render.
  * A caught error is `attempted: true, ok: false` with the message in `reason` —
  * collapsing "we tried and failed" into "we did not try" is how the original
@@ -770,8 +783,13 @@ function ensureInitialized(projectPath) {
   if (missingBefore.length > 0) {
     attempted = true;
     try {
-      const { initProject } = require('../lib/init-project');
-      const report = initProject(root);   // idempotent: skips every file already present
+      // A project that holds `.ctoc/settings.yaml` is already set up, so only the missing
+      // folders and the git-ignored state file are made; any other project gets the full
+      // setup. The module is required here (not at load) so a test can stand in for it.
+      const initModule = require('../lib/init-project');
+      const report = safeFs.existsSync(underRoot(root, REQUIRED_SETTINGS))
+        ? initModule.repairRequiredArtifacts(root)
+        : initModule.initProject(root);   // idempotent: skips every file already present
       // The report is KEPT. It records what was actually written; the read-back
       // below records what the world actually holds.
       if (report && Array.isArray(report.created)) created = report.created;
@@ -789,7 +807,19 @@ function ensureInitialized(projectPath) {
         reason = `setup could not write: ${failed.join('; ')}`;
       }
     } catch (err) {
-      reason = err && err.message ? err.message : String(err);
+      // Scrubbed HERE, where it is caught: this catch runs exactly when the setup module
+      // failed to load (its message then names the plugin folder under the home directory)
+      // or threw as a whole, so the error text is raw. The project root goes first, then
+      // the home directory; if the home cannot be found the scrub is partial and says so.
+      // Not an export of init-project: that module is what may be missing here.
+      const message = err && err.message ? err.message : String(err);
+      reason = message.split(root).join('<project>');
+      try {
+        const home = require('os').homedir();
+        if (home) reason = reason.split(home).join('<home>');
+      } catch (homedirErr) {
+        reason += ` [home-directory scrub skipped: ${homedirErr.message}]`;
+      }
     }
   }
 
@@ -871,6 +901,29 @@ function setupMessage(setup) {
 }
 
 /**
+ * Put a FAILED setup's sentence at the top of a sub-command screen.
+ *
+ * A sub-command (`plan todo/<plan>.md`, `browse ...`) used to drop the setup sentence
+ * entirely, so a repair that could not write left the human with a screen that said
+ * nothing about it. Only a failure is shown there: a healthy or repaired project keeps
+ * its sub-command screen byte-identical, so no existing screen's first line moves. The
+ * sentence goes through `setupMessage`, hence through `sanitizeReason`, and is set into
+ * a string field that `JSON.stringify` prints, so it cannot break the screen's structure.
+ *
+ * @param {any} result - a route's screen
+ * @param {{ attempted: boolean, ok: boolean, missing: string[], reason?: (string|null) }} setup
+ * @returns {any}
+ */
+function withSetupFailure(result, setup) {
+  if (!setup || setup.ok || !result || typeof result !== 'object') return result;
+  const sentence = setupMessage(setup);
+  result.text = (typeof result.text === 'string' && result.text.length > 0)
+    ? sentence + '\n\n' + result.text
+    : sentence;
+  return result;
+}
+
+/**
  * Tokenize CLI args WITHOUT corrupting already-tokenized argv (finding M6).
  * The shell already tokenizes a multi-element argv, so only the single-combined-
  * string convenience form (one element, e.g. `["browse functional"]`) is split
@@ -947,24 +1000,26 @@ function main() {
     // NOT duplicated into this branch).
     const { route } = require('../lib/menu-screens');
     const splitArgs = splitCliArgs(rest);
-    // The owner's answer to an inbox question arrives on STANDARD INPUT (a quoted heredoc in the main
-    // session), never on the command line: standard input is read for exactly
-    // `inbox answer <id> --stdin`, once, and only when it is not a terminal. `tty.isatty(0)` asks without
+    // The owner's answer to an inbox question, and the reason of a build-queue send-back, arrive on
+    // STANDARD INPUT (a quoted heredoc in the main session), never on the command line: standard input
+    // is read for exactly `inbox answer <id> --stdin` and `claude:reject <ref> <dest> --stdin`, once, and
+    // only when it is not a terminal. `tty.isatty(0)` asks without
     // building process.stdin (which would put a pipe in non-blocking mode so the read below could fail
     // with EAGAIN). `readStandardInput` reads descriptor 0 into a buffer capped at the answer limit plus
     // two bytes (no input at all, or EAGAIN before any byte, is undefined; EAGAIN after some bytes and any
     // other read error is a marker the route refuses with its own sentence), so the cap lives in one
     // place, the inbox module.
     let answerText;
-    if (splitArgs.length === 4 && splitArgs[0] === 'inbox' && splitArgs[1] === 'answer'
-      && splitArgs[3] === '--stdin' && !require('tty').isatty(0)) {
+    const readsStdin = splitArgs.length === 4 && splitArgs[3] === '--stdin'
+      && ((splitArgs[0] === 'inbox' && splitArgs[1] === 'answer') || splitArgs[0] === 'claude:reject');
+    if (readsStdin && !require('tty').isatty(0)) {
       answerText = require('../lib/inbox').readStandardInput(0);
     }
     // A route may answer asynchronously (`hotfix check --run-tests` runs the tests), so the
     // answer is printed once it settles. A synchronous route still throws exactly as before:
     // the call happens before Promise.resolve.
     Promise.resolve(route(splitArgs, app.projectPath, { liveAgentIds, answerText })).then((result) => {
-      console.log(JSON.stringify(result, null, 2));
+      console.log(JSON.stringify(withSetupFailure(result, setup), null, 2));
     });
     return;
   }
@@ -1030,6 +1085,7 @@ module.exports = {
   ensureInitialized,
   verifySetup,
   setupMessage,
+  withSetupFailure,
   needsComplianceRegimePrompt,
   attachComplianceQuestion,
   enterSearchMode,
