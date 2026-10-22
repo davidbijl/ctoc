@@ -64,10 +64,10 @@ Source: `plans/decomposition/ctoc-is-built-with-ctoc.md`. Stories marked `[MVP]`
 2. Move a slice that edits an earlier slice's new file into the build queue.
 
 ### Stories
-- [ ] `[MVP]` Spike: As the planner, I want the refusal reproduced on a pair of slices where the second only edits a file the first creates, so that the fix aims at the check that really refused.
+- [x] `[MVP]` Spike: As the planner, I want the refusal reproduced on a pair of slices where the second only edits a file the first creates, so that the fix aims at the check that really refused.
   - Acceptance: the plan records the exact refusal text and the function that produced it; if it is not `checkPlanDeclaresCountMovers` in `src/lib/documented-counts.js` (called at `src/lib/plan-validator.js:1341`), the plan is rewritten around the real check before any build step.
   - INVEST: passes as a time-boxed investigation; Valuable is qualified, because its value is choosing the right fix.
-- [ ] `[MVP]` As the planner, I want the check before the build queue to accept a slice that only edits a file an earlier, not-yet-built slice creates, so that dependent slices are not refused or forced to declare a `CLAUDE.md` they do not need.
+- [x] `[MVP]` As the planner, I want the check before the build queue to accept a slice that only edits a file an earlier, not-yet-built slice creates, so that dependent slices are not refused or forced to declare a `CLAUDE.md` they do not need.
   - Acceptance: through `validateForQueue`, a slice that depends on the creating slice and declares that file is accepted without declaring `CLAUDE.md`; a slice that really creates a counted file and omits `CLAUDE.md` is still refused with today's message.
   - INVEST: passes; Independent is qualified, because it is ordered after the investigation inside this plan.
 
@@ -83,14 +83,14 @@ Words used below. A **counted file** is a declared path of one of the six kinds 
 
 ### Story 1: reproduce the refusal
 
-- [ ] **Scenario 1: The refusal is reproduced and its source is recorded**
+- [x] **Scenario 1: The refusal is reproduced and its source is recorded**
   Given slice one, in technical planning, declares `tests/widget-rules.test.js` and `CLAUDE.md`, and that test file is not on disk
   And slice two, in technical planning, names slice one in `depends_on` and declares only `tests/widget-rules.test.js`
   When the validation screen for slice two is opened
   Then the screen lists a `✗` refusal line for `tests/widget-rules.test.js`
   And this plan records, before any build step, that line word for word, the function that produced it, and that no other check run at the move into the build queue refuses the pair
 
-- [ ] **Scenario 2: A different source rewrites the plan before any build**
+- [x] **Scenario 2: A different source rewrites the plan before any build**
   Given the line recorded in scenario 1 came from a function other than `checkPlanDeclaresCountMovers` in `src/lib/documented-counts.js` (called at `src/lib/plan-validator.js:1341`), or no refusal appeared
   When the investigation ends
   Then this plan is rewritten around what was actually seen before any build step starts
@@ -98,20 +98,20 @@ Words used below. A **counted file** is a declared path of one of the six kinds 
 
 ### Story 2: accept a slice that edits its predecessor's file
 
-- [ ] **Scenario 3: A slice that edits its predecessor's file moves into the build queue**
+- [x] **Scenario 3: A slice that edits its predecessor's file moves into the build queue**
   Given slice one sits in the build queue with the approval block its crossing put at the top of its file, and declares `tests/widget-rules.test.js` and `CLAUDE.md`, and that test file is not on disk
   And slice two, in technical planning, names slice one in `depends_on` and declares `tests/widget-rules.test.js` without `CLAUDE.md`
   When the validation screen for slice two is opened
   Then the screen lists no `✗` line naming `tests/widget-rules.test.js`
   And slice two's plan screen in the menu offers its move into the build queue, and taking that move puts slice two in `plans/todo/`
 
-- [ ] **Scenario 4: The predecessor has not crossed into the build queue yet**
+- [x] **Scenario 4: The predecessor has not crossed into the build queue yet**
   Given slice one is still in technical planning and declares `tests/widget-rules.test.js` and `CLAUDE.md`, and that test file is not on disk
   And slice two names slice one in `depends_on` and declares `tests/widget-rules.test.js` without `CLAUDE.md`
   When the validation screen for slice two is opened
   Then the screen lists no `✗` line naming `tests/widget-rules.test.js`
 
-- [ ] **Scenario 5: The file comes from a slice further up the chain**
+- [x] **Scenario 5: The file comes from a slice further up the chain**
   Given slice one, in the build queue, declares `tests/widget-rules.test.js` and `CLAUDE.md`, and that test file is not on disk
   And slice two names slice one in `depends_on` and does not declare the test file
   And slice three names only slice two in `depends_on` and declares `tests/widget-rules.test.js` without `CLAUDE.md`
@@ -120,13 +120,13 @@ Words used below. A **counted file** is a declared path of one of the six kinds 
 
 ### Story 3: give that pass only when it is earned
 
-- [ ] **Scenario 6: A slice that really brings a counted file into being is still refused with today's message**
+- [x] **Scenario 6: A slice that really brings a counted file into being is still refused with today's message**
   Given a slice in technical planning declares `src/lib/widget-rules.js` without `CLAUDE.md`, that module is not on disk, and no plan in its `depends_on` chain declares it
   When the validation screen for that slice is opened
   Then the screen lists today's refusal for `src/lib/widget-rules.js`, word for word, with the library-module count kind
   And the slice's plan screen does not offer its move into the build queue
 
-- [ ] **Scenario 7: A dependency list that reaches no plan declaring the file gives no pass**
+- [x] **Scenario 7: A dependency list that reaches no plan declaring the file gives no pass**
   Given slice one, under the same parent plan as slice two, declares `tests/widget-rules.test.js` and `CLAUDE.md`, and that test file is not on disk
   And slice two declares `tests/widget-rules.test.js` without `CLAUDE.md`, and its `depends_on` is, in turn, each of these five:
   (a) `none`;
@@ -137,13 +137,13 @@ Words used below. A **counted file** is a declared path of one of the six kinds 
   When the validation screen for slice two is opened in each of the five cases
   Then each of the five screens lists today's refusal for `tests/widget-rules.test.js`, and the screen appears in every case
 
-- [ ] **Scenario 8: A finished predecessor whose file is missing gives no pass**
+- [x] **Scenario 8: A finished predecessor whose file is missing gives no pass**
   Given slice one is in `plans/done/` and declares `tests/widget-rules.test.js` and `CLAUDE.md`, but that test file is not on disk
   And slice two names slice one in `depends_on` and declares `tests/widget-rules.test.js` without `CLAUDE.md`
   When the validation screen for slice two is opened
   Then the screen lists today's refusal for `tests/widget-rules.test.js`
 
-- [ ] **Scenario 9: A predecessor that does not declare CLAUDE.md is named in the refusal**
+- [x] **Scenario 9: A predecessor that does not declare CLAUDE.md is named in the refusal**
   Given slice one, in the build queue, declares `tests/widget-rules.test.js` but not `CLAUDE.md`, and that test file is not on disk
   And slice two names slice one in `depends_on` and declares `tests/widget-rules.test.js` without `CLAUDE.md`
   When the validation screen for slice two is opened
@@ -270,6 +270,11 @@ Decisions 14 to 29 were taken by the implementation planner while writing the te
 27. **New test cases go into the existing `tests/plan-declares-count-moving-ratchets.test.js`,** as Decision 8 proposed. Every declared file already exists, so this plan is no count mover and declares no `CLAUDE.md`. That was checked against the very rule this plan changes.
 28. **`src/lib/documented-counts.js` changes in comments only (Step 15).** Its header says "checked at Gate 2" and gives the creation trigger; one paragraph is added saying that the gate withholds the refusal for a path an earlier, not-yet-finished slice in the `depends_on` chain declares together with `CLAUDE.md`, and naming where that happens. No code in that file changes.
 29. **The question file for this plan is an empty list.** The only owner fork, whether to change this gate at all, is answered (Decision 14). Where the guard lives, how the walk runs and the refusal wording are quality decisions taken here, not owner decisions.
+30. **The reproduction record is written in the Execution Record, not under "Reproduction record" in Implementation Details.** The approval record covers everything in Implementation Details, so writing there would break the plan's approval. The record sits in a fenced block under `### Reproduction record (observed in Step 8)` inside `## Execution Record (Steps 8–16)` at the end of the plan, which the approval digest excludes. Same content, as Decision 24 requires.
+31. **Fix round after review and security (Step 13 warn): the walk is bounded and never throws; this corrects the plan's claims.** The Security review line "Four folder listings bound its size", the JSDoc line "this never throws" and the Error handling line "`validateForQueue` therefore cannot throw from the walk" were not true as first built: a predecessor whose `depends_on` listed 120,000 to 200,000 names made `queue.push(...names)` throw a RangeError (the validation screen crashed), and `queue.shift()` made the walk quadratic (400,000 unknown names took 9.4 s). The listings bound the number of plans, not the length of a dependency list. Built now: the queue is walked by index, a name is pushed one at a time and only when it is a plan in the four folders and not yet seen (marked seen when pushed), so the queue never holds more than the number of plan files. Order stays breadth-first (cases 11h, 11i, 11m hold). Test 11n.
+32. **A finished plan ends a branch even when a stale copy of the name sits in an unfinished folder.** The walk now also lists `plans/done` and drops any name found there, as the scheduler's rule does (it sees `done/<name>.md` and gives no blocker). Test 11o. A review predecessor whose file is missing stays as Decision 3 says.
+33. **An unsafe dependency token withholds the pass; this supersedes Decision 6's "dropped silently" (security wins: fail closed where the scheduler fails closed).** If any token other than `none` fails `isSafePlanSlug`, `dependencyNames` returns null. For the slice's own list the walk returns no predecessor. For a predecessor's own list the predecessor is left out entirely: it neither earns the pass nor is its chain walked, because the scheduler refuses its whole list, so it can never be queued or built. The change list said "do not follow a predecessor whose own list has such a token"; leaving it out entirely is the stricter reading, chosen because a plan that can never build cannot be the one that brings the file into being. Tests 11p (a to e). Decision 6's second sentence still holds: a slice with no counted file is not newly refused for an odd `depends_on` (11k).
+34. **Step 13's named attacks are pinned.** `slice-one/../slice-one` and a name holding a NUL character each give no pass (11q); they were green before and after the fix.
 
 ## Implementation Details
 
@@ -566,42 +571,112 @@ Today's line that 11e, 11f, 11g and 11j(1) pin (the library-module form in 11e):
 ## Execution Plan (Steps 8-16)
 
 ### Step 8: TEST
-- [ ] Write the failing tests first, in `tests/plan-declares-count-moving-ratchets.test.js` only: extend `writePlan` with the `dependsOn` and `parentPlan` options, add the helpers and cases 11a to 11m exactly as in the Test plan, and drive the real menu with `route(['validate', …])`, `route(['plan', …])` and `route(['stream', 'approve', …])` in a sandbox, never in the real plan folders.
-- [ ] Run `node --test tests/plan-declares-count-moving-ratchets.test.js` and confirm the red set: 11a, 11b, 11c, 11d, 11h, 11i, 11j(2), 11l and 11m fail on the assertions about the missing pass or the predecessor wording; 11e, 11f, 11g, 11j(1) and 11k pass on the unchanged code; cases 1 to 10 still pass.
-- [ ] Write the "Observed in Step 8" record under "Reproduction record" from 11a's red output, inside a fenced block. Apply the stop rule there before going on.
+- [x] Write the failing tests first, in `tests/plan-declares-count-moving-ratchets.test.js` only: extend `writePlan` with the `dependsOn` and `parentPlan` options, add the helpers and cases 11a to 11m exactly as in the Test plan, and drive the real menu with `route(['validate', …])`, `route(['plan', …])` and `route(['stream', 'approve', …])` in a sandbox, never in the real plan folders.
+- [x] Run `node --test tests/plan-declares-count-moving-ratchets.test.js` and confirm the red set: 11a, 11b, 11c, 11d, 11h, 11i, 11j(2), 11l and 11m fail on the assertions about the missing pass or the predecessor wording; 11e, 11f, 11g, 11j(1) and 11k pass on the unchanged code; cases 1 to 10 still pass.
+- [x] Write the "Observed in Step 8" record under "Reproduction record" from 11a's red output, inside a fenced block. Apply the stop rule there before going on.
 
 ### Step 9: PREPARE
-- [ ] Confirm that the four declared files are the whole change: no new file and no new dependency. Then confirm, by reading, that the cited line numbers still match; sibling plans may have moved them.
-- [ ] Run `node --test tests/an-unreadable-dependency-list-refuses-the-plan.test.js tests/export-reachability.test.js` once, green, as the baseline for the guard move.
+- [x] Confirm that the four declared files are the whole change: no new file and no new dependency. Then confirm, by reading, that the cited line numbers still match; sibling plans may have moved them.
+- [x] Run `node --test tests/an-unreadable-dependency-list-refuses-the-plan.test.js tests/export-reachability.test.js` once, green, as the baseline for the guard move.
 
 ### Step 10: IMPLEMENT
-- [ ] `src/lib/plan-validator.js`: move `isSafePlanSlug` in, export it, then add `UNFINISHED_STAGES`, `dependencyNames`, `unfinishedPredecessors` and the new count-mover block in `validateForQueue`, as specified in File specifications.
-- [ ] `src/lib/actions.js`: delete `isSafePlanSlug` and import it from `./plan-validator` (`:27`).
-- [ ] Re-run the Step 8 file: every case green, with cases 1 to 10 unchanged.
+- [x] `src/lib/plan-validator.js`: move `isSafePlanSlug` in, export it, then add `UNFINISHED_STAGES`, `dependencyNames`, `unfinishedPredecessors` and the new count-mover block in `validateForQueue`, as specified in File specifications.
+- [x] `src/lib/actions.js`: delete `isSafePlanSlug` and import it from `./plan-validator` (`:27`).
+- [x] Re-run the Step 8 file: every case green, with cases 1 to 10 unchanged.
 
 ### Step 11: REVIEW
-- [ ] Re-read the diff against the acceptance mapping. Check that today's refusal string is byte-identical, that the walk runs only when `countCheck.ok` is false, that no path is built from a token that has not passed `isSafePlanSlug` and the folder index, and that the plan itself is never its own predecessor.
-- [ ] Confirm that `actions.js` behaviour is unchanged: the four guard callers call the same function.
+- [x] Re-read the diff against the acceptance mapping. Check that today's refusal string is byte-identical, that the walk runs only when `countCheck.ok` is false, that no path is built from a token that has not passed `isSafePlanSlug` and the folder index, and that the plan itself is never its own predecessor.
+- [x] Confirm that `actions.js` behaviour is unchanged: the four guard callers call the same function.
 
 ### Step 12: OPTIMIZE
-- [ ] The walk lists four folders once per validation that already refuses, and reads each reached plan once. Nothing else is to be optimised. Do not cache across calls: plans move between stages between calls.
+- [x] The walk lists four folders once per validation that already refuses, and reads each reached plan once. Nothing else is to be optimised. Do not cache across calls: plans move between stages between calls.
 
 ### Step 13: SECURE
-- [ ] Walk the Security review checklist against the code as written. Add, as a test, any attack that lands; for example a `depends_on` of `slice-one/../slice-one` or one holding a NUL character must give no pass, as 11f does.
-- [ ] Confirm that the rendered predecessor reference cannot carry control characters (it is built only from a name that passed `isSafePlanSlug`).
+- [x] Walk the Security review checklist against the code as written. Add, as a test, any attack that lands; for example a `depends_on` of `slice-one/../slice-one` or one holding a NUL character must give no pass, as 11f does.
+- [x] Confirm that the rendered predecessor reference cannot carry control characters (it is built only from a name that passed `isSafePlanSlug`).
 
 ### Step 14: VERIFY
-- [ ] Run `npm test`, the gated entry point: the whole suite, the coverage floor at `.ctoc/coverage-baseline.json` `minPct` (99) and the gate for 0 skipped tests.
-- [ ] Run lint and the type check through the repository's standard commands.
-- [ ] Result: `# fail 0`, 0 skipped, no flaky test. Any failing test is reproduced and root-caused before anything is changed.
+- [x] Run `npm test`, the gated entry point: the whole suite, the coverage floor at `.ctoc/coverage-baseline.json` `minPct` (99) and the gate for 0 skipped tests.
+- [x] Run lint and the type check through the repository's standard commands.
+- [x] Result: `# fail 0`, 0 skipped, no flaky test. Any failing test is reproduced and root-caused before anything is changed.
 
 ### Step 15: DOCUMENT
-- [ ] `src/lib/documented-counts.js`: add the header paragraph "THE GATE'S PREDECESSOR PASS" (comments only).
-- [ ] `src/lib/plan-validator.js`: rewrite the comment above the count-mover block so it states both stamp shapes (merged today, prepended on older plans) and the pass, and give JSDoc to `UNFINISHED_STAGES`, `dependencyNames` and `unfinishedPredecessors`.
-- [ ] Tick the stories' checkboxes in this plan for what the tests prove.
+- [x] `src/lib/documented-counts.js`: add the header paragraph "THE GATE'S PREDECESSOR PASS" (comments only).
+- [x] `src/lib/plan-validator.js`: rewrite the comment above the count-mover block so it states both stamp shapes (merged today, prepended on older plans) and the pass, and give JSDoc to `UNFINISHED_STAGES`, `dependencyNames` and `unfinishedPredecessors`.
+- [x] Tick the stories' checkboxes in this plan for what the tests prove.
 
 ### Step 16: FINAL-REVIEW
-- [ ] Confirm that Steps 8 to 15 are done and the reproduction record is filled in a fence.
-- [ ] Re-open the validation screen through the menu in a sandbox for scenarios 3 and 9, and check that what a person reads matches the acceptance criteria.
-- [ ] Confirm that the two corrections (Decisions 25 and 26) are still true of the code as built.
-- [ ] Confirm that only the four declared files changed.
+- [x] Confirm that Steps 8 to 15 are done and the reproduction record is filled in a fence.
+- [x] Re-open the validation screen through the menu in a sandbox for scenarios 3 and 9, and check that what a person reads matches the acceptance criteria.
+- [x] Confirm that the two corrections (Decisions 25 and 26) are still true of the code as built.
+- [x] Confirm that only the four declared files changed.
+
+## Execution Record (Steps 8–16)
+
+### Step 8: TEST
+
+#### Reproduction record (observed in Step 8)
+
+Fixture: `slice-one` and `slice-two` in the technical-planning folder of a temporary project (no `tests/`, `src/` or `CLAUDE.md` in it); `slice-one` declares the test file and `CLAUDE.md`; `slice-two` has `depends_on: slice-one` and declares the test file only. Route: `validate implementation/slice-two.md`, on the unchanged code, from the red run of test 11a.
+
+Slice two's validation screen, its `✗` lines (exactly one):
+
+```
+  ✗ Plan will create "tests/widget-rules.test.js" (moves the testFiles count, currently 0) but does not declare "CLAUDE.md" in its files:. Add "CLAUDE.md" so the build can update the documented count.
+```
+
+Producing function: `validateForQueue` in `src/lib/plan-validator.js`, the count-mover branch (the only place in `src/` that contains the words "Plan will create"; search: pattern `Plan will create` over `src`, 1 match), from the offender `checkPlanDeclaresCountMovers` in `src/lib/documented-counts.js` returns. No other `✗` line appeared for slice two.
+
+Slice one's validation screen: no `✗` line; it reads "All checks passed."
+
+Stop-rule check: the observed line equals the prediction word for word (count 0 as predicted), it comes from `validateForQueue`'s count-mover branch, and no other `✗` line appeared for either slice. The stop rule did not fire; Step 10 may start.
+
+#### Red run of the new cases (before any product code changed)
+
+Command: `node --test tests/plan-declares-count-moving-ratchets.test.js`. Cases 1 to 10 of the file: all pass. Cases 11a, 11b, 11c, 11d, 11h, 11i, 11j(2), 11l and 11m: fail on the assertions about the missing pass or the predecessor wording. Cases 11e, 11f (a, b, c, c2, d, e), 11g, 11j(1) and 11k: pass on the unchanged code. This is the red set the plan predicted.
+
+### Step 9: PREPARE
+
+The four declared files are the whole change: no new file, no new dependency. The cited line numbers had moved since the plan was written (sibling plans landed): `validateForQueue` now begins at `src/lib/plan-validator.js:1572`, and the guard sat at `src/lib/actions.js:1672-1685`. The code was read at its current place. Baseline run of the guard's suites (the unreadable-dependency-list suite and the export-reachability suite): 34 tests, 34 passed, 0 failed, 0 skipped.
+
+### Step 10: IMPLEMENT
+
+- `src/lib/plan-validator.js`: the guard moved in, unchanged in body, and exported; added `UNFINISHED_STAGES`, `dependencyNames`, `unfinishedPredecessors`; the count-mover block in `validateForQueue` replaced as specified (today's refusal text byte-identical; the walk runs only when today's check already refuses).
+- `src/lib/actions.js`: the guard and its JSDoc deleted; imported from `./plan-validator` in the existing require line. The four callers are untouched.
+- Placement choice: the moved guard and the new functions sit directly above `validateForQueue`, not above `planSlugExists` (function declarations are hoisted, so order does not matter).
+- Result: `node --test tests/plan-declares-count-moving-ratchets.test.js`: 32 tests, 32 passed, 0 failed, 0 skipped (cases 1 to 10 unchanged, all of 11a to 11m green). The eleven suites named in the plan's "Suites that must stay green" list plus `tests/reachability.test.js`: 389 tests, 389 passed, 0 failed, 0 skipped. `eslint` with `--max-warnings 0` on the three changed code files: clean.
+
+### Fix round after Step 11 review (pass) and Step 13 security (warn)
+
+Four changes from the approved change list, each test written first and seen red.
+- Change 1, bounded walk (Decision 31): test 11n red with "Maximum call stack size exceeded" (RangeError from the spread), green after the walk by index and one-at-a-time pushes.
+- Change 2, stale copy beside a finished plan (Decision 32): test 11o red (the stale copy earned the pass), green after `plans/done` is listed and ends the branch.
+- Change 3, unsafe dependency tokens (Decision 33): tests 11p a, b, c, d, e red (the pass was given), green after `dependencyNames` returns null on any unsafe token.
+- Change 4, named attacks (Decision 34): tests 11q a and b green before and after (pins).
+- Red set of this round: 7 failing tests (11n, 11o, 11p a to e); `tests/plan-declares-count-moving-ratchets.test.js` then 41 tests, 41 passed.
+
+### Step 12: OPTIMIZE
+
+Nothing to optimise beyond change 1: the quadratic `shift` and the spread are gone. Four folder listings plus `plans/done` once per validation that already refuses; each reached plan read once; no cache across calls.
+
+### Step 13: SECURE
+
+The security warn is closed by changes 1 to 3. The Security review lines on Denial of service and Fail closed are now true as built (Decision 31). Output injection stays closed: the rendered reference is built only from a name that passed `isSafePlanSlug`. The validation screen printing error lines unstripped and direction-changing characters missing from the strip helpers are outside this plan's files and are left to the owner. Correction made in the final round: the doc comment of the moved guard, the duplicate posix helper and the dead `raw === null` check are not outside this plan's files; all three are in `src/lib/plan-validator.js`, a declared file. The doc comment is fixed in the final round, the posix helper is as the spec asked, and the dead null check is harmless and left.
+
+### Step 15: DOCUMENT
+
+`src/lib/documented-counts.js` header: the paragraph "THE GATE'S PREDECESSOR PASS" (comments only). `src/lib/plan-validator.js`: the comment above the count-mover block states both stamp shapes, the pass, the finished-plan rule and the unsafe-token rule; JSDoc on `UNFINISHED_STAGES`, `dependencyNames`, `planNamesIn` and `unfinishedPredecessors` now says what they do. The stories' and scenarios' checkboxes are ticked for what tests 11a to 11q prove.
+
+### Step 14: VERIFY
+
+- `npm run lint` (eslint, `--max-warnings 0`): clean.
+- `npm run typecheck`: pass (1 test, 1 passed).
+- `npm test`, run once, load average 34.70 49.80 55.58 at start (`uptime`): 13948 tests, 13948 passed, 0 failed, 0 cancelled, 0 skipped; coverage 99.75% against the 99% floor (`plan-validator.js` 99.86% lines, uncovered 350-352, which this change did not touch); `[CTOC test-gate] PASS`. No timing test failed, so no rerun was needed.
+
+### Final round (Steps 11, 13 and 16)
+
+Step 11 REVIEW. The reviewer read the change against the plan's acceptance mapping and found no defects. Today's refusal text is byte-identical. The walk through other plans runs only when today's check already refuses. No file path is built from a dependency name unless it has passed the bare-name guard and matched a plan file name just read from one of the four unfinished-stage folders. The plan being checked is never its own predecessor. The guard moved from src/lib/actions.js to src/lib/plan-validator.js unchanged in body, and its callers in actions.js still call that same function. The review passed.
+
+Step 13 SECURE. The security review raised three warnings, and all three were fixed test-first. First, a predecessor listing 120,000 to 200,000 dependency names made the walk throw a RangeError, and the old way of taking names off the queue made it slow down quadratically; the queue is now walked by index, and each name is added once, only when it is a known unfinished plan not yet seen (test 11n). Second, a stale copy of a finished plan sitting in an unfinished folder could earn the pass; the walk now lists the finished folder too and stops at any name found there, as the scheduler does (test 11o). Third, unsafe dependency names were dropped silently; any unsafe name now withholds the pass, and a predecessor whose own list holds one is left out of the walk entirely, because the scheduler refuses that list and the plan can never build (tests 11p a to e). The two named attacks, a name that climbs out and back in and a name holding a NUL character, give no pass (tests 11q). The validation screen printing error lines unstripped, and the strip helpers missing direction-changing characters, are outside this plan's files and are left to the owner.
+
+Step 16 FINAL-REVIEW. Every acceptance scenario has a proving case that drives the real menu routes (validate, plan screen and stream approve) in a temporary project and checks the text a person reads. Scenario 3 shows no refusal line for the test file, offers "Yes — build it", and the move puts the slice in the build queue with the owner's approval recorded. Scenario 9 shows exactly one refusal line, which names the earlier slice as the one that brings the file into being without declaring CLAUDE.md, and no move is offered. The reproduction record sits in a fenced block and matched the prediction word for word. Both corrections about the approval stamp shape and the documented-counts check still hold, and Decisions 31 to 34 match the code exactly. One comment-only fix was applied in the final round: the bare-name guard's doc comment now says the scheduler's dependency parser reports unsafe names so the plan is refused, and names all its callers. The coordinator confirmed that only the four declared files and the plan changed.

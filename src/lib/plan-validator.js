@@ -1567,6 +1567,117 @@ function validateForExecution(planPath, projectPath) {
 }
 
 /**
+ * A plan slug is a bare filename token — the ONLY shape that may be joined into a
+ * path under `plans/`. Anything with a separator, a `.`/`..` traversal, a NUL, or
+ * any character outside `[A-Za-z0-9._-]` is UNSAFE and must be refused before any
+ * `path.join`/filesystem access. Shared by the build-claim reconcile and
+ * `classifyCompletionFault` (refuse), `planDependsOn` (reports the token as
+ * refused, so `taskSpecFromPlan` refuses the plan) and `unfinishedPredecessors`
+ * here (withholds the pass). Lives here because `actions.js` already requires
+ * this module at load time, so this module cannot require `actions.js`.
+ * @param {*} slug
+ * @returns {boolean} true iff `slug` is a bare, path-safe plan slug
+ */
+function isSafePlanSlug(slug) {
+  return typeof slug === 'string'
+    && /^[A-Za-z0-9._-]+$/.test(slug)
+    && slug !== '.' && slug !== '..' && !slug.includes('..');
+}
+
+/**
+ * The stages whose plans can still bring a declared file into being: technical
+ * planning, the build queue, the build and review. A finished plan is excluded (its
+ * file should be on disk); functional and vision plans bring no file into being
+ * themselves (their slices do).
+ */
+const UNFINISHED_STAGES = Object.freeze(['implementation', 'todo', 'in-progress', 'review']);
+
+/**
+ * The dependency names in a depends_on value, split as the scheduler splits them
+ * (actions.planDependsOn: whitespace or commas; `none` dropped). If ANY other token
+ * fails isSafePlanSlug the answer is `null`, not a shorter list: the scheduler refuses
+ * the whole list in that case (the plan can never be queued), so the pass fails closed
+ * with it. Pure; never throws.
+ * @param {*} raw - parseMetadata(content).depends_on (string, array, number, boolean or undefined)
+ * @returns {string[]|null} the safe names, or null when the list holds an unsafe token
+ */
+function dependencyNames(raw) {
+  if (raw === undefined || raw === null) return [];
+  const names = [];
+  for (const token of String(raw).split(/[\s,]+/)) {
+    if (token === '' || token.toLowerCase() === 'none') continue;
+    if (!isSafePlanSlug(token)) return null;
+    names.push(token);
+  }
+  return names;
+}
+
+/** The `.md` plan names (without the extension) in one stage folder; [] when it cannot be read. */
+function planNamesIn(plansDir, stage) {
+  try {
+    return safeFs.readdirSync(path.join(plansDir, stage)).filter((f) => f.endsWith('.md') && f.length > 3).map((f) => f.slice(0, -3));
+  } catch {
+    return []; // a missing or unreadable stage folder holds no predecessor
+  }
+}
+
+/**
+ * The not-yet-finished plans a plan's depends_on chain reaches, directly or through
+ * further not-yet-finished plans, in breadth-first order, each with its declared files.
+ * A name is resolved ONLY against `.md` file names read from the four UNFINISHED_STAGES
+ * folders (first folder wins); no path is ever built from a depends_on token. A name
+ * that resolves to nothing there, or that is also found in plans/done (a finished plan
+ * ends the branch, as the scheduler's rule does), ends its branch. The plan itself is
+ * never its own predecessor, and a cycle ends the walk. A dependency list holding an
+ * unsafe token gives no pass: the plan's own list gives an empty answer, and a
+ * predecessor's list leaves that predecessor out. Fails toward "no predecessor": an
+ * unreadable folder or plan is skipped. Bounded: the queue holds each plan file name
+ * at most once (marked when pushed), is walked by index, and is never filled by spread,
+ * so a list of any length neither throws nor goes quadratic.
+ * @param {string} planPath - the plan being validated
+ * @param {string} content - its content
+ * @param {string} projectPath - project root
+ * @returns {Array<{ref: string, files: string[]}>} ref is "<stage>/<name>.md"
+ */
+function unfinishedPredecessors(planPath, content, projectPath) {
+  const plansDir = path.join(projectPath, 'plans');
+  const stageOf = new Map();
+  for (const stage of UNFINISHED_STAGES) {
+    for (const name of planNamesIn(plansDir, stage)) if (!stageOf.has(name)) stageOf.set(name, stage);
+  }
+  const finished = new Set(planNamesIn(plansDir, 'done'));
+  const seen = new Set([path.basename(planPath, '.md')]);
+  const queue = [];
+  /** @param {string[]} names */
+  const enqueue = (names) => {
+    for (const name of names) {
+      if (seen.has(name) || finished.has(name) || !stageOf.has(name)) continue;
+      seen.add(name);
+      queue.push(name);
+    }
+  };
+  const own = dependencyNames(parseMetadata(content).depends_on);
+  if (own === null) return [];
+  enqueue(own);
+  const out = [];
+  for (let i = 0; i < queue.length; i++) {
+    const name = queue[i];
+    const stage = stageOf.get(name);
+    let text;
+    try {
+      text = safeFs.readFileSync(path.join(plansDir, stage, `${name}.md`), 'utf8');
+    } catch {
+      continue; // an unreadable predecessor gives no pass
+    }
+    const theirs = dependencyNames(parseMetadata(text).depends_on);
+    if (theirs === null) continue; // the scheduler refuses its list: it never builds, so it earns nothing
+    out.push({ ref: `${stage}/${name}.md`, files: parseFilesField(extractFrontmatterRegion(text)) });
+    enqueue(theirs);
+  }
+  return out;
+}
+
+/**
  * Validate plan before adding to queue
  */
 function validateForQueue(planPath, projectPath) {
@@ -1597,24 +1708,58 @@ function validateForQueue(planPath, projectPath) {
   // agents/**/*.md, or skills/**/*.md) MUST declare CLAUDE.md, so the build that
   // moves the count has permission to update it — CLAUDE.md is the ONE ratchet the
   // PreToolUse hook withholds without a declaration. Read the declared files with
-  // the MULTI-BLOCK reader (a gate-stamped plan prepends an approval block, so the
-  // single-block reader returns [] for every plan already in todo/). A hard ERROR
-  // (a warning would be ignored) — this is the Gate-2 crossing, the moment the
-  // declaration must be right, before a build is committed to the plan.
+  // the MULTI-BLOCK reader: a gate crossing now merges its approval marker into the
+  // plan's one frontmatter block, but plans stamped earlier carry a PREPENDED approval
+  // block, which the single-block reader cannot see past (it returns [] for them). A
+  // hard ERROR (a warning would be ignored) — this is the Gate-2 crossing, the moment
+  // the declaration must be right, before a build is committed to the plan.
+  //
+  // THE PREDECESSOR PASS: a slice that only EDITS a file an earlier, not-yet-finished
+  // slice brings into being is not the plan that creates it. Only when today's check
+  // already refuses, each offender is decided one by one: a plan reached through this
+  // plan's depends_on chain that declares the path AND CLAUDE.md earns the pass (no
+  // refusal; recorded in checklist.countMovers.coveredByPredecessor); one that declares
+  // the path without CLAUDE.md is named in a refusal; none at all leaves today's text.
+  // The scheduler's own rules bound the walk: a finished plan ends a branch, and an
+  // unsafe depends_on token withholds the pass (the scheduler refuses that whole list).
   const declaredFiles = parseFilesField(extractFrontmatterRegion(content));
   const countCheck = checkPlanDeclaresCountMovers(declaredFiles, projectPath);
+  const coveredByPredecessor = [];
+  const refusedMovers = [];
   if (!countCheck.ok) {
+    /** @param {string} f */
+    const posix = (f) => String(f).replace(/\\/g, '/');
+    const preds = unfinishedPredecessors(planPath, content, projectPath);
     for (const off of countCheck.offenders) {
+      const declaring = preds.filter((p) => p.files.some((f) => posix(f) === off.path));
+      const creator = declaring.find((p) => p.files.some((f) => posix(f) === 'CLAUDE.md'));
+      if (creator) {
+        coveredByPredecessor.push({ path: off.path, plan: creator.ref });
+        continue;
+      }
       const countPhrase = off.currentCount != null ? `, currently ${off.currentCount}` : '';
-      result.errors.push(
-        `Plan will create "${off.path}" (moves the ${off.countClass} count${countPhrase}) but ` +
-        `does not declare "CLAUDE.md" in its files:. Add "CLAUDE.md" so the build can update the ` +
-        `documented count.`
-      );
+      if (declaring.length > 0) {
+        const ref = declaring[0].ref;
+        result.errors.push(
+          `Plan only edits "${off.path}", which "${ref}" (a plan it depends on) will create (moves the ` +
+          `${off.countClass} count${countPhrase}), but "${ref}" does not declare "CLAUDE.md" in its files:. ` +
+          `Add "CLAUDE.md" to "${ref}" so its build can update the documented count.`
+        );
+        refusedMovers.push({ ...off, predecessor: ref });
+      } else {
+        result.errors.push(
+          `Plan will create "${off.path}" (moves the ${off.countClass} count${countPhrase}) but ` +
+          `does not declare "CLAUDE.md" in its files:. Add "CLAUDE.md" so the build can update the ` +
+          `documented count.`
+        );
+        refusedMovers.push(off);
+      }
     }
-    result.valid = false;
+    if (refusedMovers.length > 0) result.valid = false;
   }
-  result.checklist.countMovers = { ok: countCheck.ok, offenders: countCheck.offenders };
+  result.checklist.countMovers = countCheck.ok
+    ? { ok: true, offenders: countCheck.offenders, coveredByPredecessor }
+    : { ok: refusedMovers.length === 0, offenders: refusedMovers, coveredByPredecessor };
 
   // SIP1: a dangling parent_plan reference is a WARNING (never blocks the queue
   // gate) — merge only warnings, never flip `valid`.
@@ -1946,6 +2091,7 @@ module.exports = {
   validateParentPlan,
   validateNoContradictions,
   validateTransition,
+  isSafePlanSlug,
   validateStepLabels,
   formatValidationResult,
   ESCALATION_STATUSES,

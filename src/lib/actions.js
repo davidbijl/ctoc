@@ -24,7 +24,7 @@ const { parseMetadata, readPlans, getPlansDir, readTodoQueueOrder } = require('.
 const { refineLoop, appendDeferredQuestions, integrate } = require('./iron-loop');
 const { writeStatus, clearStatus } = require('./background');
 const { findProjectRoot } = require('./project-root');
-const { validateForReview, validateTransition } = require('./plan-validator');
+const { validateForReview, validateTransition, isSafePlanSlug } = require('./plan-validator');
 const gateOrder = require('./gate-order');
 const { logTransition } = require('./transition-log');
 const { invalidate } = require('./cache');
@@ -1669,21 +1669,6 @@ function completeExecution(planPath, projectPath, options = {}) {
  * @returns {{ran: boolean, fault: (null|'caller'), reason?: string, blocked?: boolean,
  *   stage?: string, newPath?: (string|null), verify?: Object|null, errors?: string[]}}
  */
-/**
- * A plan slug is a bare filename token — the ONLY shape that may be joined into a
- * path under `plans/`. Anything with a separator, a `.`/`..` traversal, a NUL, or
- * any character outside `[A-Za-z0-9._-]` is UNSAFE and must be refused before any
- * `path.join`/filesystem access. Shared by `completeTaskPlan` (refuses) and
- * `planDependsOn` (skips) so both guard on one code path.
- * @param {*} slug
- * @returns {boolean} true iff `slug` is a bare, path-safe plan slug
- */
-function isSafePlanSlug(slug) {
-  return typeof slug === 'string'
-    && /^[A-Za-z0-9._-]+$/.test(slug)
-    && slug !== '.' && slug !== '..' && !slug.includes('..');
-}
-
 /**
  * Discriminate a `completeTaskPlan` guard failure into a REPORT about the plan vs a
  * FAULT in the CALL, so a mistaken call never reads as a security-flavoured verdict
