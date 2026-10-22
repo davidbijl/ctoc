@@ -62,13 +62,14 @@ Each match under `src/` was read in context. The table names where a call is wri
 | `src/lib/approval-ledger.js`, `resolveHash` (643–655) | takes the fingerprint for every new record | every writer below takes the corrected reading |
 | `src/lib/approval-residency.js`, `classifyResidency` (line 182) | todo and done residents must match their record | every row below it |
 | `src/lib/plan-coverage.js` line 591, through `isApprovedForCoverage` | a todo or in-progress plan's `files:` grant edit permission only while its record matches | a building plan loses its edit permission |
-| `src/lib/continuation-queue.js` line 76 and `src/lib/menu-screens.js` line 2965 | list the approved build queue | the plan drops off the list |
+| `src/lib/continuation-queue.js` line 76 and `src/lib/menu-screens.js` line 2991 | list the approved build queue | the plan drops off the list |
 | `src/lib/stale-cleanup.js` line 332 | picks the stage a stale plan is sent back to, walking past stages its record cannot vouch for | the plan is walked back further |
-| `src/lib/iron-loop-enforcer.js` line 418 | classifies a plan in a gate-destination folder | the plan reads as unapproved |
+| `src/lib/iron-loop-enforcer.js` line 419 | classifies a plan in a gate-destination folder | the plan reads as unapproved |
 | `src/hooks/human-gate-check.js` line 269 | sends a todo or done plan whose record does not match back a stage (header lines 63–70) | registered only in `.claude-plugin/hooks.json` (line 98); `hooks/hooks.json` registers only `src/hooks/protect-records.js` and says every other CTOC hook stays unregistered on purpose. Which of the two files Claude Code loads is believed from that wording, not verified here |
 | `src/scripts/ledger-backfill.js` lines 220 and 264 | re-records one plan; runs the residency sweep | the re-record route |
-| `src/lib/streaming-gate.js` line 870 | uses only whether the boundary can be found | changes only if an unclosed fence makes the boundary unfindable |
-| writers: `src/lib/actions.js` line 346, `src/lib/streaming-gate.js` lines 741 and 921, `src/lib/stale-cleanup.js` line 261 | write new records through `resolveHash` | take the corrected reading from the change on |
+| `src/lib/streaming-gate.js` line 906 | uses only whether the boundary can be found | changes only if an unclosed fence makes the boundary unfindable |
+| writers: `src/lib/actions.js` line 347, `src/lib/streaming-gate.js` lines 777 and 957 | write new records through `resolveHash` | take the corrected reading from the change on |
+| `src/lib/stale-cleanup.js` lines 261–262 | writes a whole-file record (`computeContentHash`, no `content`) | unaffected: no reading applies to a whole-file record |
 
 ## Business Alignment
 
@@ -216,11 +217,13 @@ One constraint holds for all of the above, from the module's own rule (lines 395
 
 ## Forks asked as questions
 
-The questions file `.ctoc/streaming/questions/pending/functional__a-heading-inside-a-code-block-does-not-end-the-approved-section.md.json` carries four questions, each with one recommended option and what that pick rests on:
-- **How moved approvals are handled.** Recommended: keep each approval on the reading it was made with (new records carry a reading stamp; every record is checked with exactly one reading; no record is rewritten). Other option: the owner re-records the moved records in his own terminal, as on 2026-09-03.
-- **What counts as a code fence.** Recommended: the standard Markdown fence rule (three or more backticks or tildes; the closing fence uses the same character and is at least as long) at any indentation. Other options: the same rule with at most three spaces of indentation; any three-backtick or three-tilde line switching code on or off.
-- **What happens with an unclosed code fence.** Recommended: the fingerprint cannot be taken, so recording is refused and checking does not match. Other option: the block runs to the end of the file.
-- **How left-out headings match.** Recommended: level 2 and deeper, and the name whole or followed by a space or an opening parenthesis. Other options: the level rule only; the name rule only.
+The questions file, promoted with the plan, is `.ctoc/streaming/questions/functional__a-heading-inside-a-code-block-does-not-end-the-approved-section.md.json`. It holds six questions, each with one recommended option, and the owner answered all six on 2026-10-21 with option 1, the recommended one (`.ctoc/streaming/answers.jsonl` lines 282, 284, 286, 288, 290 and 292; verified by reading both files):
+- **How moved approvals are handled** (`q10-moved-approval-fingerprints`, answers line 282). Answer: "Keep each approval on the reading it was made with": new records carry a reading stamp, every record is checked with exactly one reading, and no record is rewritten. Not chosen: the owner re-records the moved records in his own terminal, as on 2026-09-03.
+- **What counts as a code fence** (`q11-what-counts-as-a-code-fence`, answers line 284). Answer: "The standard Markdown fence rule, at any indentation": three or more backticks or tildes, and the closing fence uses the same character and is at least as long. Not chosen: the same rule with at most three spaces of indentation; any three-backtick or three-tilde line switching code on or off.
+- **What happens with an unclosed code fence** (`q12-unclosed-code-fence`, answers line 286). Answer: "Refuse: the fingerprint cannot be taken", so recording is refused and checking does not match. Not chosen: the block runs to the end of the file.
+- **How left-out headings match** (`q13-how-left-out-headings-match`, answers line 288). Answer: "Level 2 or deeper, and the whole name or the name then a space or parenthesis". Not chosen: the level rule only; the name rule only.
+- **Does a level-1 line end a left-out section** (`q14-level-one-line-ends-left-out-section-r1792577057391`, answers line 290). Answer: "It does, as today: only lines inside a code block change". Not chosen: it never does; only test-runner summary lines stop being headings.
+- **Can an indented heading-shaped line start a left-out section** (`q15-indented-heading-starts-left-out-section-r1792577057391`, answers line 292). Answer: "An indented line can end a left-out section but never start one". Not chosen: keep the plan's choice that indentation never matters.
 
 ## Evidence added by the coordinator (2026-10-21)
 
@@ -230,11 +233,11 @@ The CTO Chief folded this in on the coordinator's report from a review of the su
   - The coordinator reports such lines also appear outside any code block.
   - A simple open-close toggle over each file's fence lines, run in this session, reads all seven as inside a fence: 00084 fence lines 379–399, 00158 fence lines 355–374. That toggle is not the corrected fence reader.
   - Which reading holds is not verified. The read-only measurement step settles it with the corrected reader and lists every such line it finds outside a code block.
-- **Whether a level-1 line may end a left-out section is an open fork.** The coordinator states that plans use level 1 only for their title. Verified counter-case: the triggering plan carries a level-1 revision header, `# REVISION 1` at line 19, above its title at line 28. Revision headers are written when a plan comes back with feedback. The open question: should a level-1 line outside a code block, below the title, end a left-out section? The choices are these:
+- **Whether a level-1 line may end a left-out section: answered "It does, as today".** The coordinator states that plans use level 1 only for their title. Verified counter-case: the triggering plan carries a level-1 revision header, `# REVISION 1` at line 19, above its title at line 28. Revision headers are written when a plan comes back with feedback. The question was whether a level-1 line outside a code block, below the title, ends a left-out section. It was a choice of the fingerprint algorithm, so it went to the owner, with these choices:
   - It never does. A left-out section ends only at a heading of its own level or a higher level other than level 1.
-  - It does, as today. Only code-block lines are corrected.
+  - It does, as today. Only code-block lines are corrected. This is the owner's answer ("It does, as today: only lines inside a code block change", `.ctoc/streaming/answers.jsonl` line 290).
   - Only lines shaped like test-runner summaries are not headings.
-  This is a choice of the fingerprint algorithm, so it is a question for the owner, not a silent choice (new scenario "a level-1 line outside any code block inside the build record").
+  The scenario "a level-1 line outside any code block inside the build record" pins that answer.
 - **A fence closer is fence characters only.** A line of three backticks followed by `js` inside a block opened by three backticks is content, not a closer, as in the standard Markdown (CommonMark) rule that a closing fence carries no info string (new scenario "a fence line with an info string inside a code block is content, not a closer").
 
 ## Technical order relative to other plans (facts, not a schedule)
@@ -245,12 +248,12 @@ The CTO Chief folded this in on the coordinator's report from a review of the su
 - **The parked plan "Finished plans are not sent back after an update".** It designs a `spec_version` stamp on the same three functions (`resolveHash`, `contentMatches`, `computeSpecHashWith`). Whichever of the two is built first defines the stamp the other extends. Its fallback for an unstamped record tries two readings; this plan's rule is one reading per record, so the two designs are reconciled at technical planning.
 - **"The approval re-record script cannot write an approval nobody gave".** The re-record answer runs that script, whose arguments and confirmation that plan changes.
 - **"CTOC's hooks are actually loaded by Claude Code".** While the gate-check hook is unregistered, a moved record sends no plan back by itself. Once it is registered, `src/hooks/human-gate-check.js` sends a todo or done plan whose record does not match back a stage (header lines 63–70).
-- **The protected list.** `src/lib/approval-ledger.js` is on CTOC's protected list (`src/lib/protected-paths.js` line 61), so its edits need a covering plan whose record is a human kind.
+- **The protected list.** `src/lib/approval-ledger.js` is on CTOC's protected list (`src/lib/protected-paths.js` line 61). The human-kind check that list feeds runs only from edit hooks Claude Code does not load; the authority for this change is the owner's order of 2026-10-22 and his six answers (technical planning, slice 2).
 
 ## Risks
 
 ### Technical Risks
-- Moved records revoke a building plan's edit permission: a todo or in-progress plan whose record moves loses its `files:` grant (`src/lib/plan-coverage.js` line 591) and drops off the approved build queue (`src/lib/continuation-queue.js` line 76, `src/lib/menu-screens.js` line 2965).
+- Moved records revoke a building plan's edit permission: a todo or in-progress plan whose record moves loses its `files:` grant (`src/lib/plan-coverage.js` line 591) and drops off the approved build queue (`src/lib/continuation-queue.js` line 76, `src/lib/menu-screens.js` line 2991).
   - Likelihood: MEDIUM (how many move is not measured)
   - Impact: HIGH
   - Mitigation: Measure before any code change, and land the chosen handling in the same change as the corrected reading.
@@ -313,3 +316,59 @@ The CTO Chief folded this in on the coordinator's report from a review of the su
 - **Scenarios follow the recommended answers.** Scenarios marked with a question's name are written for its recommended option; another answer replaces them as that question says.
 - **No question about building order.** The technical order against the sibling and the related plans is recorded as fact; when each is built is the owner's schedule.
 - **This file avoids the defect it describes.** It holds no code fence and no line whose trimmed text starts with a heading marker other than its real headings, so its own record is read the same way before and after the change. Outside the acceptance criteria it uses plain bullets, because checkbox lines are dropped from the fingerprint.
+
+## Slices (dependency-ordered)
+
+Technical planning, 2026-10-22. This plan is an index; each slice is built on its own through Steps 8 to 16.
+
+| # | Slice file | Scope (one line) | depends_on |
+|---|---|---|---|
+| 1 | a-heading-inside-a-code-block-does-not-end-the-approved-section-s1-measure-the-moved-approvals.md | A throwaway, read-only program measures every specification-scoped record under today's and the corrected reading, writes the full table and three lists into its one declared file, `.ctoc/verification/a-heading-inside-a-code-block-measurement.md`, with a pointer and the totals in its own build record. It writes no question. No source, test or record file changes. | - |
+| 2 | a-heading-inside-a-code-block-does-not-end-the-approved-section-s2-the-corrected-reading-and-its-stamp.md | `src/lib/approval-ledger.js` gains the corrected reading (code fences; only level-2-or-deeper, whole-name, shallow headings start a left-out section; an unclosed fence has no fingerprint), stamps new records `spec_version: 3`, and checks every record with exactly the reading its stamp names; unstamped records keep today's reading. | s1 |
+| 3 | a-heading-inside-a-code-block-does-not-end-the-approved-section-s3-the-approve-refuses-an-unclosed-fence.md | The owner's approve refuses a plan with an unclosed fence before it changes anything, naming the line in the file on disk; the menu's continuation leaves such a plan asked. | s2 |
+
+What the order and the protected file require (facts, not a schedule):
+- Slice 2 edits `src/lib/approval-ledger.js`, on CTOC's protected list (`src/lib/protected-paths.js` line 61). The human-kind check for that list (line 76; `src/lib/plan-coverage.js` lines 613–621) runs only from edit hooks Claude Code does not load (`hooks/hooks.json` line 2; `src/hooks/protect-records.js` lines 138–139), and the menu's crossing on answered questions checks no protected-file condition (`src/lib/streaming-gate.js` lines 1144–1146 and 900–908). The authority for this protected-file change is the owner's order of 2026-10-22 to take this plan into the build queue on recorded evidence, with his six recorded answers at the functional stage; slice 2's build carries no step that checks its own record's kind. The missing protected-list check on the evidence crossing is reported to the owner as a CTOC friction, not fixed here. Everything else on the protected list stands.
+- Slice 1 must declare a real file: `files: []` reads as no files (`src/lib/actions.js` line 2085), so the build queue would refuse it (lines 2185–2192) and slice 2's dependency on it would throw (lines 2231–2240). Its one declared file is the measurement file.
+- Slice 1's measurement file is shown to the owner in full in the coordinator's report of slice 1's completion. Slice 2 depends on slice 1 only for that file being written, and `depends_on` already guarantees it: a predecessor counts as satisfied only once it is in review or done (`src/lib/continuation-queue.js` line 129, `SATISFYING_STAGES`; lines 141–158, `locatePredecessor`), and slice 1 reaches review only after its Step 10 has written the file. Slice 2 holds on no answer; its Step 9 reads the file (slice 2's Decision on the removed hold).
+- After this plan only `spec_version: 3` is a valid stamp. 1 and 2 are reserved names (1, the six-name reading of the parked plan "Finished plans are not sent back after an update"; 2, today's reading, implied by a missing stamp and never written). The parked plan's tests conflict with this: new entries carry `spec_version: 2` (`plans/functional/finished-plans-are-not-sent-back-after-an-update.md` lines 461 and 551), a stamp of 3 gives no match (line 459), and an unstamped record is tried under two readings (lines 276–277), against the rule here that a record is checked with one reading only. Those conflicts go to whoever re-plans that plan, who takes them to the owner.
+- Every slice's own build record holds no line starting with a hash mark other than real headings: each slice is checked with today's reading while it is built. And every code fence opened in the Execution Record is closed with the same character and at least the same length, on a closing line that holds nothing but those characters. After slice 2 lands, the finish on evidence records a slice with the corrected reading (`crossOnEvidence` reads the plan and calls `writePipelineEntry`, `src/lib/streaming-gate.js` lines 774–783, which calls `resolveHash`, `src/lib/approval-ledger.js` line 742); an unclosed fence makes that throw, and `crossOnEvidence` swallows it and returns false (lines 799–800), so the slice would stall in review without a word.
+
+Acceptance criteria mapping:
+
+| Scenario of this plan | Slice | Test or step |
+|---|---|---|
+| the real build log after line 842 no longer counts as approved text | 2 | test 1 |
+| a heading-shaped line inside a code block in the specification no longer hides approved text | 2 | test 2 |
+| every code-block shape CTOC's plans use hides headings | 2 | test 3 |
+| an unclosed code fence is refused, never read to the end of the file | 2, 3 | slice 2 test 4; slice 3, both B6d cases |
+| the mismatch explanation never names a line inside a code block | 2 | test 5 |
+| a plan title that begins with a left-out name stays inside the fingerprint | 2 | test 6 |
+| a specification heading that only begins with a left-out name stays inside the fingerprint | 2 | test 7 |
+| the real build-written headings stay left out | 2 | test 8 |
+| the moved records are measured before anything changes | 1 | Steps 8 to 10, the table in the measurement file, its pointer and totals in the build record |
+| a record the measurement cannot judge is listed, never skipped | 1 | the verdicts `record-unreadable`, `no-plan`, `corrected-cannot-bind`; totals add up; its last line cannot arise under the owner's answer on moved approvals (Decisions — technical planning, second bullet) |
+| no recorded approval silently stops matching | 2 | test 9; Step 14 (live-ledger test, re-run of slice 1's table) |
+| the golden digest does not move | 2 | Step 14; test 14 for the corrected reading |
+| a fence line with an info string inside a code block is content, not a closer | 2 | test 10 |
+| pasted test-runner summary lines inside a code block do not end the build record | 2 | test 11 |
+| a level-1 line outside any code block inside the build record | 2 | test 12 (the owner's answer: it ends the section) |
+| the owner's answer on indented headings (no scenario of its own) | 2 | test 13 |
+
+Risk mitigations:
+
+| Risk of this plan | Mitigation | Where |
+|---|---|---|
+| Moved records revoke a building plan's edit permission | No existing record changes reading: every unstamped record stays on today's walk | slice 2, `contentMatches`; Step 14 re-run of slice 1's table |
+| A check that accepts a match under either reading | One reading per record; an unknown stamp fails closed; a second golden checked against a hand-built digest | slice 2, tests 9 and 14 |
+| The fence rule misreads a real shape | Every shape tested; the whole corpus read by two independent implementations that must agree | slice 2 test 3; slice 1; slice 2 Step 14 |
+| A builder leaves a fence open in its build record | The refusal names the fence's line, in the file on disk on the owner's route | slice 2 test 4; slice 3 |
+| The sibling plan works on the same done plan | Slice 1 records that plan's verdict; slice 2 test 1 reads it from whichever folder holds it and locates lines by content | slices 1 and 2 |
+| The parked plan designs a stamp on the same functions | One stamp, `spec_version`; only 3 is valid and written here; 1 and 2 are reserved names that fail closed | slice 2, Decisions |
+| The protected file needs the owner's authority | The owner's order of 2026-10-22 and his six recorded answers; the evidence crossing's missing protected-list check is reported as a CTOC friction | slice 2, Decisions |
+
+## Decisions Taken Under Ambiguity — technical planning
+
+- **No stop question in slice 1 and no hold in slice 2 (CTO Chief decision, technical planning round 2, 2026-10-22).** This replaces round 1's design, in which slice 1 wrote an owner question when a plan outside `plans/done/` had an unclosed fence and slice 2's Step 8 held until it was answered. Reason, as the round-2 critic and the CTO Chief found it (not re-verified here): the question could never reach the owner, because it would be written while slice 1 sits in `in-progress/`, a stage no gate screen asks, or discarded as plan-gone after the move; its format was named wrongly; and the hold could wait forever or be released by another plan's answer under the same question id. The question is also not the owner's to answer: his answer to "What happens with an unclosed code fence" ("Refuse: the fingerprint cannot be taken", `.ctoc/streaming/answers.jsonl` line 286) already decides that such a plan cannot be recorded until its fence is closed, and slice 3 makes the refusal name the fence's line, so whoever crosses such a plan next closes the fence then. So slice 1 lists those plans in its measurement file and writes no question, and slice 2's Step 9 names each one outside `plans/done/` in its Execution Record.
+- **The acceptance criterion "a record the measurement cannot judge is listed, never skipped" and its last line.** That line has the builder stop and ask when any record would stop matching because the corrected reading cannot find its boundary. Under the owner's answer to "How moved approvals are handled" (`.ctoc/streaming/answers.jsonl` line 282), every existing record is unstamped and stays on today's reading after slice 2 lands, so no existing record can stop matching for that reason and the condition cannot arise. The "cannot bind" list is about each plan's next recording, which the answer on line 286 settles. The approved text of that criterion is not changed.
+- **The refinement loop ran three critic rounds.** Round 3's eight findings, as the CTO Chief's brief counts them, were text fixes applied in this final pass, with none needing the owner.
