@@ -1,0 +1,10 @@
+{
+  "content_sha256": "fb5290c90a3c92b6bdaf202578f0eb256e51de97345166f871d335906b78c7eb",
+  "hash_scope": "specification",
+  "stage_from": "implementation",
+  "stage_to": "todo",
+  "approved_at": "2026-10-22T09:18:36.374Z",
+  "advanced_by": "sufficiency",
+  "evidence": "sufficiency: implementation/a-finished-plan-can-be-sent-back-for-a-text-only-revision-s5-the-checks-run-again.md — 1 question(s) computed, 1 answered (q10-who-may-start-the-rerun-r1792659776146); 0 unanswered, 0 blocking; attested by: not recorded; enough (no unanswered fork)",
+  "plan_basename": "a-finished-plan-can-be-sent-back-for-a-text-only-revision-s5-the-checks-run-again"
+}

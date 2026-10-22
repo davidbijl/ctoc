@@ -1,0 +1,10 @@
+{
+  "content_sha256": "84e15025d62588fdc9fb61077c7e96f01b663643b7b775ab7977c40b6ef7581c",
+  "hash_scope": "specification",
+  "stage_from": "implementation",
+  "stage_to": "todo",
+  "approved_at": "2026-10-22T09:13:11.697Z",
+  "advanced_by": "sufficiency",
+  "evidence": "sufficiency: implementation/a-finished-plan-can-be-sent-back-for-a-text-only-revision-s1-a-background-agent-cannot-send-it-back.md — no questions were computed (0 question(s) computed), 0 answered; 0 unanswered, 0 blocking; attested by: not recorded; enough (no unanswered fork)",
+  "plan_basename": "a-finished-plan-can-be-sent-back-for-a-text-only-revision-s1-a-background-agent-cannot-send-it-back"
+}
