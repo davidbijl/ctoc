@@ -41,15 +41,25 @@
  * "process restart" is indistinguishable from any two sequential calls — the count
  * lives only on disk (satisfies M9).
  *
- * Concurrency: CLAUDE.md mandates plans are processed SEQUENTIALLY ("Never
- * parallelize plan implementation"). The plan currently executing is the sole
- * writer of its own counter, so no locking is required here.
+ * Concurrency: every read-modify-write of one plan's count runs under
+ * `.ctoc/state/kickbacks/<slug>.lock`, created exclusively. A call that finds it held
+ * does not wait. It throws, and `actions.recordStepKickback` reports the send-back or
+ * the failed verify as NOT counted and appends a `breaker-failure` escalation, so a
+ * count is never lost silently. A lock older than 60 seconds was left by a call that
+ * died, and it is taken over. ponytail: a takeover can leave two holders: a holder
+ * suspended for more than a minute, or two calls that find the same dead lock at once
+ * (the second deletes the first one's new lock). Then one count can be lost as without
+ * the lock. Upgrade path: a heartbeat like the plan-index store's.
  *
- * LIVE CALL SITE: `recordKickback` is wired into the executor's step-failure path
- * via actions.completeExecution → actions.recordStepKickback (a blocked pre-review
- * completion, and a failing Step 14 VERIFY, each record a kickback against the
- * failing step). Covered end-to-end by tests/circuit-breaker-wiring.test.js, which
- * drives the real completeExecution path — not a simulation.
+ * LIVE CALL SITES: `recordKickback` is reached through actions.recordStepKickback from
+ * three routes:
+ *   - a completion refused before review, in actions.completeExecution;
+ *   - a failing Step 14 VERIFY, in the same function;
+ *   - a send-back the session records on a review, security or quality round's completion
+ *     (menu-screens.taskComplete, through `menu task complete <id> --continue --send-back
+ *     <step>`, per the owner's answers of 2026-10-20), for a plan that is being built, is
+ *     in review or is done.
+ * tests/circuit-breaker-wiring.test.js covers both the real completion and the real menu route.
  *
  * Cross-platform: path.join, safe-fs, and a `\r?\n`-tolerant frontmatter regex.
  *
@@ -66,6 +76,9 @@ const safeFs = require('./safe-fs');
 const SAME_STEP_MAX = 3;
 // Per-plan escalates when the total EXCEEDS this (i.e. on the 6th).
 const PER_PLAN_MAX = 5;
+// A count lock older than this was left by a call that died; the next call takes it over
+// (the same age as actions.BUILD_START_LOCK_STALE_MS).
+const COUNT_LOCK_STALE_MS = 60000;
 
 /**
  * Step keys that would pollute Object.prototype if used as map keys. Rejected.
@@ -340,8 +353,14 @@ function readKickbackCounts(planPath, projectPath) {
  * The return value of `recordKickback` is the primary observable the tests
  * assert; this log is the durable human record.
  *
+ * The log is replaced through a temp file and a rename, never written in place: a link at the
+ * log path is replaced, not written through, and a reader never sees a half-written log. The
+ * temp file is deleted when the write or rename fails.
+ *
  * @param {string} projectPath - project root
  * @param {Object} entry - the escalation entry to append
+ * @throws {Error} `could not write the escalations log: …` (a failed delete of the temp file is
+ *   named in the message); the log path is left as it was
  */
 function appendEscalation(projectPath, entry) {
   const logsDir = path.join(projectPath, '.ctoc', 'logs');
@@ -360,7 +379,26 @@ function appendEscalation(projectPath, entry) {
   } catch {
     // best-effort: if the dir already exists, mkdir with recursive is a no-op
   }
-  safeFs.writeFileSync(logPath, JSON.stringify(existing, null, 2) + '\n', 'utf8');
+  // Written through a temp file and a rename (as writeKickbackState does): the rename replaces
+  // whatever sits at the log path, so a link there is never written through to its target, and a
+  // reader never sees a half-written log. `wx` refuses a temp name that already exists.
+  const tmp = `${logPath}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  try {
+    safeFs.writeFileSync(tmp, JSON.stringify(existing, null, 2) + '\n', { encoding: 'utf8', flag: 'wx' });
+    safeFs.renameSync(tmp, logPath);
+  } catch (err) {
+    // A failed delete of the temp file is recorded into the rethrown message, never discarded.
+    let cleanupNote = '';
+    try {
+      safeFs.unlinkSync(tmp);
+    } catch (cleanupErr) {
+      const code = cleanupErr && cleanupErr.code ? cleanupErr.code : 'unknown error';
+      // ENOENT: the temp file was never created (the write itself failed), nothing is left over.
+      if (code !== 'ENOENT') cleanupNote = ` (the temp file could not be removed either: ${code})`;
+    }
+    const cause = err && err.message ? err.message : String(err);
+    throw new Error(`could not write the escalations log: ${cause}${cleanupNote}`, { cause: err });
+  }
 }
 
 /**
@@ -371,6 +409,95 @@ function appendEscalation(projectPath, entry) {
  */
 function planSlug(planPath) {
   return path.basename(planPath, '.md');
+}
+/**
+ * Run `fn` while holding the plan's count lock, `.ctoc/state/kickbacks/<slug>.lock`,
+ * created exclusively (`wx`) beside the counter file. It mirrors actions.withBuildStartLock
+ * with one difference: a held lock THROWS instead of answering busy, because its only
+ * caller (recordKickback, through actions.recordStepKickback) reports a throw as "not counted".
+ *
+ * What sits at the lock path is judged with `lstat`, so a link is never followed: anything that
+ * is not a plain file is reported and left alone. A plain file not older than the stale age is
+ * another call's lock; an older one was left by a call that died and is deleted. The release
+ * deletes the lock only if it is still ours (a plain file of at most 64 bytes holding our mark).
+ *
+ * @template T
+ * @param {string} projectPath - project root
+ * @param {string} slugValue - the plan's bare slug (no separators), as kickbackStatePath takes it
+ * @param {() => T} fn
+ * @returns {T}
+ * @throws {Error} when the lock is held, is not a plain file, is older than the stale age but
+ *   cannot be deleted (any failure but ENOENT), or the counter's folder is unusable
+ */
+function withCountLock(projectPath, slugValue, fn) {
+  const dir = path.join(projectPath, '.ctoc', 'state', 'kickbacks');
+  const lockPath = path.join(dir, `${slugValue}.lock`);
+  const mark = `${process.pid}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+  const persistError = (err) => new Error(
+    `could not persist the kickback counter for ${slugValue}: ${err && err.message ? err.message : String(err)}`,
+    { cause: err }
+  );
+  const heldError = () => new Error(`the kickback counter for ${slugValue} is being written by another call at this moment`);
+  try {
+    safeFs.mkdirSync(dir, { recursive: true });
+  } catch (err) {
+    throw persistError(err);
+  }
+  // true: ours. false: held (EEXIST, or a Windows lock that is being deleted).
+  const create = () => {
+    try {
+      safeFs.writeFileSync(lockPath, mark, { flag: 'wx' });
+      return true;
+    } catch (err) {
+      if (err && err.code === 'EEXIST') return false;
+      if (process.platform === 'win32' && err && ['EPERM', 'EACCES', 'EBUSY'].includes(err.code)) return false;
+      throw persistError(err);
+    }
+  };
+  if (!create()) {
+    // Gone or unreadable: no age to judge, so the second create below decides (not a verdict).
+    let st = null;
+    try { st = safeFs.lstatSync(lockPath); } catch { st = null; }
+    if (st) {
+      if (!st.isFile()) {
+        throw new Error(`the kickback counter's lock for ${slugValue} is not a plain file, so it was left as it is`);
+      }
+      // A clock set back or forward leaves a lock dated in the future: its age counts both ways.
+      if (Math.abs(Date.now() - st.mtimeMs) <= COUNT_LOCK_STALE_MS) throw heldError();
+      // ENOENT: another call deleted it first, so the second create below decides. Any other
+      // failure leaves the lock in place, and that is said, not turned into "held by another call".
+      try {
+        safeFs.unlinkSync(lockPath);
+      } catch (err) {
+        if (!err || err.code !== 'ENOENT') {
+          const code = err && err.code ? err.code : 'unknown error';
+          throw new Error(`the kickback counter's lock for ${slugValue} is older than 60 seconds and could not be removed (${code}), so it was left as it is`, { cause: err });
+        }
+      }
+    }
+    if (!create()) throw heldError();
+  }
+  try {
+    return fn();
+  } finally {
+    // Gone, taken over, replaced by a link or by a file too long to be our mark: not ours to
+    // read or delete, so a failed lstat or read is not an error.
+    let ours = false;
+    try {
+      const now = safeFs.lstatSync(lockPath);
+      ours = now.isFile() && now.size <= 64 && safeFs.readFileSync(lockPath, 'utf8') === mark;
+    } catch { ours = false; }
+    if (ours) {
+      try {
+        safeFs.unlinkSync(lockPath);
+      } catch {
+        recordBreakerFailure(projectPath, {
+          plan: slugValue,
+          error: "the kickback counter's lock could not be removed; send-backs of this plan are reported as not counted until a call finds it older than 60 seconds and can remove it"
+        });
+      }
+    }
+  }
 }
 
 /**
@@ -384,69 +511,74 @@ function planSlug(planPath) {
  * @param {string} projectPath - project root (holds the sidecar + escalations log)
  * @returns {{ recorded: true, byStep: number, total: number, escalation: Object|null }}
  * @throws {Error} `step required` on a falsy or prototype-polluting step
- * @throws {Error} when the plan cannot be read or the sidecar cannot be persisted
+ * @throws {Error} when the plan cannot be read, the sidecar cannot be persisted, or the plan's
+ *   count lock is held by another call or is not a plain file (see withCountLock)
  */
 function recordKickback(planPath, step, projectPath) {
   const stepKey = normalizeStep(step); // throws before any file read/write
   const slug = planSlug(planPath);
 
-  const state = readKickbackState(projectPath, slug);
+  // Everything below is one read-modify-write of this plan's count: the lock covers it all,
+  // and every way out (a ghost plan's throw included) releases it.
+  return withCountLock(projectPath, slug, () => {
+    const state = readKickbackState(projectPath, slug);
 
-  // The plan read is UNGUARDED and happens on every call, deliberately: a plan
-  // file that does not exist must throw and hard-escalate through
-  // actions.recordStepKickback. Dropping this read would turn a ghost plan into a
-  // silent, permanently-quiet success.
-  const raw = safeFs.readFileSync(planPath, 'utf8');
-  // The MIGRATION read: an existing frontmatter counter is honoured, in whichever
-  // leading block it now sits (a human-gate crossing PREPENDS a counter-less block,
-  // which would otherwise orphan the real count and reset the per-plan escalation).
-  const counts = maxCounts(state.counts, maxCountsAcrossBlocks(raw));
+    // The plan read is UNGUARDED and happens on every call, deliberately: a plan
+    // file that does not exist must throw and hard-escalate through
+    // actions.recordStepKickback. Dropping this read would turn a ghost plan into a
+    // silent, permanently-quiet success.
+    const raw = safeFs.readFileSync(planPath, 'utf8');
+    // The MIGRATION read: an existing frontmatter counter is honoured, in whichever
+    // leading block it now sits (a human-gate crossing PREPENDS a counter-less block,
+    // which would otherwise orphan the real count and reset the per-plan escalation).
+    const counts = maxCounts(state.counts, maxCountsAcrossBlocks(raw));
 
-  const nextByStep = (counts.by_step[stepKey] || 0) + 1;
-  counts.by_step[stepKey] = nextByStep;
-  counts.total += 1;
+    const nextByStep = (counts.by_step[stepKey] || 0) + 1;
+    counts.by_step[stepKey] = nextByStep;
+    counts.total += 1;
 
-  // Throws on failure — a breaker that cannot persist must not report success.
-  writeKickbackState(projectPath, slug, counts);
+    // Throws on failure — a breaker that cannot persist must not report success.
+    writeKickbackState(projectPath, slug, counts);
 
-  if (state.status === 'unreadable') {
-    // The breaker keeps counting AND says it was degraded. Returning zeros quietly
-    // would suppress every future escalation for this plan; counting silently from
-    // the frontmatter floor would hide that the real count may be low.
-    recordBreakerFailure(projectPath, {
-      plan: slug,
-      step: stepKey,
-      error: 'kickback state unreadable — the count was rebuilt from the plan file and may be low'
-    });
-  }
+    if (state.status === 'unreadable') {
+      // The breaker keeps counting AND says it was degraded. Returning zeros quietly
+      // would suppress every future escalation for this plan; counting silently from
+      // the frontmatter floor would hide that the real count may be low.
+      recordBreakerFailure(projectPath, {
+        plan: slug,
+        step: stepKey,
+        error: 'kickback state unreadable — the count was rebuilt from the plan file and may be low'
+      });
+    }
 
-  let escalation = null;
-  if (nextByStep > SAME_STEP_MAX) {
-    // Same-step takes precedence when both thresholds trip on one call.
-    escalation = {
-      type: 'same-step',
-      plan: slug,
-      step: stepKey,
-      count: nextByStep
+    let escalation = null;
+    if (nextByStep > SAME_STEP_MAX) {
+      // Same-step takes precedence when both thresholds trip on one call.
+      escalation = {
+        type: 'same-step',
+        plan: slug,
+        step: stepKey,
+        count: nextByStep
+      };
+    } else if (counts.total > PER_PLAN_MAX) {
+      escalation = {
+        type: 'per-plan',
+        plan: slug,
+        total: counts.total
+      };
+    }
+
+    if (escalation) {
+      appendEscalation(projectPath, Object.assign({}, escalation, { at: new Date().toISOString() }));
+    }
+
+    return {
+      recorded: true,
+      byStep: nextByStep,
+      total: counts.total,
+      escalation
     };
-  } else if (counts.total > PER_PLAN_MAX) {
-    escalation = {
-      type: 'per-plan',
-      plan: slug,
-      total: counts.total
-    };
-  }
-
-  if (escalation) {
-    appendEscalation(projectPath, Object.assign({}, escalation, { at: new Date().toISOString() }));
-  }
-
-  return {
-    recorded: true,
-    byStep: nextByStep,
-    total: counts.total,
-    escalation
-  };
+  });
 }
 
 /**

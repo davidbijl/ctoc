@@ -2271,6 +2271,9 @@ function decodeB64(v) {
  * Parse `menu task <sub>` args into positionals + flags. Whitespace-free tokens
  * only (argv is split on whitespace by start.js); `--touches`/`--blocked` split on
  * a LITERAL comma (no dynamic RegExp). No `new RegExp` anywhere.
+ *
+ * `--send-back <n>`: the session's completion of a review, security or quality round sends its
+ * plan back to Step n. The value is kept as text (`''` when nothing follows) for `checkSendBack`.
  * @param {string[]} subArgs
  * @returns {object}
  */
@@ -2300,6 +2303,7 @@ function parseTaskArgs(subArgs) {
       // The SESSION's completion only: after settling the task, keep the work moving
       // (`continueAfterCrossing`). The build agent's own call carries no flag.
       case '--continue': out.continue = true; break;
+      case '--send-back': out.sendBack = String(args[++i] == null ? '' : args[i]); break;
       default: out.positional.push(a);
     }
   }
@@ -2654,6 +2658,73 @@ function taskTransition(root, rest, kind) {
   }));
 }
 
+/** The task kinds whose completion may record a send-back (the owner's answer of 2026-10-20). */
+const ROUND_KINDS = new Set(['review', 'security', 'quality']);
+/** A send-back names a step as plain digits, 1 to 16: no sign, padding, fraction, exponent or key name. */
+const SEND_BACK_STEP_RE = /^(?:[1-9]|1[0-6])$/;
+/** A round's plan name must be a plain file name (same shape as task-view.js and streaming-gate.js). */
+const SEND_BACK_PLAN_RE = /^[A-Za-z0-9_][A-Za-z0-9._-]*$/;
+
+/**
+ * A refusal echoes a caller's words only when every character is printable ASCII; anything else
+ * (control, format, bidirectional or line-separator characters) reads "(not shown)".
+ * @param {*} v
+ * @param {number} max the longest text echoed
+ * @returns {string}
+ */
+function shown(v, max) {
+  const text = String(v);
+  return /^[\x20-\x7e]*$/.test(text) ? text.slice(0, max) : '(not shown)';
+}
+
+/**
+ * Check a round's `--send-back` before anything is written. Reads two or three folders with
+ * `existsSync`; writes nothing. The plan is found only when its name is a plain file name.
+ * @param {string} root
+ * @param {{kind: string, plan: (string|null)}} task
+ * @param {object} p parsed args
+ * @returns {{step: number, planPath: string, refusal?: undefined} | {refusal: string, step?: undefined, planPath?: undefined}}
+ */
+function checkSendBack(root, task, p) {
+  if (p.continue !== true) {
+    return { refusal: "a send-back is recorded only on the session's own completion, the call with --continue" };
+  }
+  if (!ROUND_KINDS.has(task.kind)) {
+    return { refusal: `only a review, security or quality round sends a plan back; this is a ${shown(task.kind, 40)} task` };
+  }
+  if (!SEND_BACK_STEP_RE.test(p.sendBack)) {
+    return { refusal: `a send-back names the step the plan goes back to, a whole number from 1 to 16 ("${shown(p.sendBack, 40)}" is not one)` };
+  }
+  const slug = typeof task.plan === 'string' ? task.plan.replace(/\.md$/i, '') : '';
+  const file = `${slug}.md`;
+  if (slug !== '' && SEND_BACK_PLAN_RE.test(slug) && !isUnsafePlanFile(file)) {
+    // done: a built plan whose checks passed has finished before its rounds complete.
+    for (const stage of ['in-progress', 'review', 'done']) {
+      const planPath = path.join(getPlansDir(root), stage, file);
+      if (safeFs.existsSync(planPath)) return { step: Number(p.sendBack), planPath };
+    }
+  }
+  const named = task.plan == null ? '(no plan)' : shown(task.plan, 80);
+  return { refusal: `"${named}" names no plan that is being built, is in review or is done, so its send-back cannot be counted; complete this round without --send-back` };
+}
+
+/**
+ * The clause a completion appends after its send-back was counted (or could not be).
+ * @param {number} step
+ * @param {string} plan the plan's bare name
+ * @param {{recorded: boolean, byStep?: number, total?: number, escalation?: object|null, error?: string}} res what `actions.recordStepKickback` returned
+ * @returns {string}
+ */
+function sendBackText(step, plan, res) {
+  if (res.recorded !== true) {
+    return ` · the send-back to Step ${step} was NOT counted: ${stripCtl(String(res.error))}`;
+  }
+  const { SAME_STEP_MAX, PER_PLAN_MAX } = require('./circuit-breaker');
+  let text = ` · the send-back to Step ${step} was counted: ${res.byStep} of a limit of ${SAME_STEP_MAX} for Step ${step}, ${res.total} of a limit of ${PER_PLAN_MAX} for the plan`;
+  if (res.escalation) text += ` — over the limit, so ${stripCtl(plan)} needs you · view: inbox escalations`;
+  return text;
+}
+
 /**
  * `menu task complete` — running → done, storing an optional result payload.
  *
@@ -2683,6 +2754,17 @@ function taskTransition(root, rest, kind) {
  * `--next` and `--b64` are ignored, so the agent's verify-derived result stands. A
  * `done` task WITHOUT `--continue`, and every other settled status, is refused as before
  * (`invalid transition <status> → done`).
+ *
+ * A ROUND'S SEND-BACK. The session's `menu task complete <id> --continue --send-back <n>` on a
+ * `review`, `security` or `quality` round counts the send-back to Step n in the plan's circuit-breaker
+ * count (`actions.recordStepKickback`, the call a failed verify makes), so it shares the limits of three
+ * per step and five per plan and escalates the same way. `checkSendBack` runs first and refuses the whole
+ * completion, recording nothing and leaving the task as it is, unless the call carries `--continue`, the
+ * task is a round, n is a whole number from 1 to 16, and the round's plan is in `plans/in-progress/`,
+ * `plans/review/` or `plans/done/` (a built plan whose checks passed has usually finished already). The
+ * order is: settle the task, count, then continue. A refusal above that point (an illegal transition, a bad
+ * `--next`) counts nothing. `recordStepKickback` reports a count it could not save instead of throwing, so
+ * the completion goes ahead and its text says the send-back was NOT counted. No plan file moves.
  */
 function taskComplete(root, rest) {
   const p = parseTaskArgs(rest);
@@ -2690,11 +2772,28 @@ function taskComplete(root, rest) {
   const reg = taskRegistry.load(root);
   const task = reg.tasks.find((t) => t.id === id);
   if (!task) throw new Error('task-registry: unknown task id ' + String(id));
+  let sendBack = null;
+  if (p.sendBack !== undefined) {
+    sendBack = checkSendBack(root, task, p);
+    if (sendBack.refusal) {
+      return {
+        ok: false,
+        taskId: id,
+        error: 'send-back refused',
+        text: `Task ${id}: the completion is refused — ${sendBack.refusal}. Nothing was recorded, and the task is unchanged.`,
+      };
+    }
+  }
+  const countSendBack = () => (sendBack
+    ? sendBackText(sendBack.step, path.basename(sendBack.planPath, '.md'),
+      require('./actions').recordStepKickback(sendBack.planPath, sendBack.step, root))
+    : '');
   // A task its own agent already completed (a build agent runs `menu task complete <id>`
   // itself): the session's `--continue` call runs ONLY the continuation and writes nothing
   // to the task, so the agent's verify-derived result stands. Without `--continue` a done
   // task is still refused below. The hook refuses `--continue` to background agents.
   if (p.continue === true && task.status === 'done') {
+    const counted = countSendBack();
     const cont = continueAfterCrossing(root);
     const res = {
       ok: true,
@@ -2702,7 +2801,7 @@ function taskComplete(root, rest) {
       status: 'done',
       alreadyCompleted: true,
       completion: null,
-      text: `Task ${id} was already completed by its agent` + continuationText(cont),
+      text: `Task ${id} was already completed by its agent` + counted + continuationText(cont),
       promote: cont.promote,
     };
     if (cont.quarantined.length > 0) res.quarantined = cont.quarantined;
@@ -2844,6 +2943,7 @@ function taskComplete(root, rest) {
     }
     return fresh;
   });
+  const counted = countSendBack();
 
   let text = `Task ${id} → done`;
   if (completion && completion.ran && completion.newPath) {
@@ -2857,6 +2957,7 @@ function taskComplete(root, rest) {
   } else if (completion && completion.ran === false) {
     text += ` · ${stripCtl(String(completion.reason))}`;
   }
+  text += counted;
 
   // NB3: a completion frees a slot → surface the scheduler's newly-runnable set for
   // the COMPLETION turn to promote (scheduler-consulted every completion, Decision 4),
