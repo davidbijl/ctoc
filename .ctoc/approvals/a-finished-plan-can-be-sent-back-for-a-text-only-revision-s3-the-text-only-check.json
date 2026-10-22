@@ -1,0 +1,10 @@
+{
+  "content_sha256": "0e1f9547ad33e85a6642e3723f33717a385b69002c33db7e0a19fa5c6d09203c",
+  "hash_scope": "specification",
+  "stage_from": "implementation",
+  "stage_to": "todo",
+  "approved_at": "2026-10-22T09:29:12.227Z",
+  "advanced_by": "sufficiency",
+  "evidence": "sufficiency: implementation/a-finished-plan-can-be-sent-back-for-a-text-only-revision-s3-the-text-only-check.md — 2 question(s) computed, 2 answered (q10-missing-send-back-record-r1792659774099, q11-protected-list-entry-r1792659774099); 0 unanswered, 0 blocking; attested by: not recorded; enough (no unanswered fork)",
+  "plan_basename": "a-finished-plan-can-be-sent-back-for-a-text-only-revision-s3-the-text-only-check"
+}
