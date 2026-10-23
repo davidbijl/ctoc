@@ -41,9 +41,9 @@
 
 const path = require('path');
 const safeFs = require('./safe-fs');
-const { readPlans, getPlansDir } = require('./state');
+const { readPlans, getPlansDir, parseMetadata } = require('./state');
 const { validateTransition } = require('./plan-validator');
-const { approvePlan, movePlan } = require('./actions');
+const { approvePlan, movePlan, isSentBackUnrevised, sendBackFromBuildQueue } = require('./actions');
 const gateOrder = require('./gate-order');
 const gateWords = require('./gate-words');
 
@@ -84,6 +84,9 @@ const GATE_META = Object.freeze({
   implementation: { toStage: 'todo' },
   review: { toStage: 'done' },
 });
+
+/** The one send-back a plan waiting in the build queue is offered: "wrong way", back to be re-planned. */
+const BUILD_QUEUE_SEND_BACK = gateWords.SEND_BACK.find((sb) => sb.toStage === 'implementation');
 
 /**
  * The ONLY plan file names this module passes on. A plan's reference reaches a command
@@ -164,12 +167,45 @@ function isCritical(metadata) {
     || flag === 'yes';
 }
 
-/** Best-effort one-line title: the `# Heading`, else frontmatter title, else slug. */
+/**
+ * The plan's own one-line title: the ONE title reader every screen and status line uses.
+ *
+ * It reads only the body after the leading frontmatter blocks, so a YAML comment line is never a
+ * title, and takes the first level-1 heading (`#`, a space or tab, then text) that is not inside a
+ * send-back block. A send-back (actions.rejectPlan) writes `# REVISION <n>`, `## Rejection Feedback`
+ * with the reason, then a line `---`, above the plan's own title. Each such block, from a heading
+ * that reads exactly `REVISION <digits>` up to and including the next line that is exactly `---`, is
+ * skipped, so neither "REVISION 1" nor a `#` line inside a reason is taken for the title. A real title
+ * that begins with "Revision" is kept. With no such heading it falls back to the frontmatter `title`
+ * (a number or a boolean read as text), then to `fallback`. Control characters are stripped. Never throws.
+ *
+ * @param {string} content raw plan file content
+ * @param {string} fallback the plan's file name without `.md`
+ * @param {object} [metadata] the frontmatter already parsed (state.parseMetadata); parsed here when absent
+ * @returns {string}
+ */
+function planOwnTitle(content, fallback, metadata) {
+  let inSendBack = false;
+  for (const line of stripLeadingFrontmatter(content).split('\n')) {
+    if (inSendBack) {
+      if (line.trim() === '---') inSendBack = false;
+      continue;
+    }
+    const m = /^#[ \t]+(\S.*)$/.exec(line);
+    if (!m) continue;
+    const heading = stripCtl(m[1].trim());
+    if (/^REVISION [0-9]+$/.test(heading)) inSendBack = true;
+    else if (heading) return heading;
+  }
+  const md = metadata !== null && typeof metadata === 'object' ? metadata : parseMetadata(typeof content === 'string' ? content : '');
+  const t = md.title;
+  const own = t == null || typeof t === 'object' ? '' : stripCtl(String(t).trim());
+  return own || stripCtl(String(fallback == null ? '' : fallback));
+}
+
+/** The title of a plan state.readPlans returned (see planOwnTitle). */
 function planTitle(plan) {
-  const m = typeof plan.content === 'string' ? plan.content.match(/^#\s+(.+)$/m) : null;
-  if (m) return stripCtl(m[1].trim());
-  if (plan.metadata && plan.metadata.title) return stripCtl(String(plan.metadata.title).trim());
-  return stripCtl(plan.name);
+  return planOwnTitle(plan.content, plan.name, plan.metadata);
 }
 
 // ── Opening a plan ───────────────────────────────────────────────────────────
@@ -1044,6 +1080,11 @@ function regimeHold(root, stage) {
  * reason as `regimeHold` (null when none); `enough`, `sufficiencyReason` and every other
  * field are unchanged.
  *
+ * ── A PLAN SENT BACK FROM THE BUILD QUEUE (`sentBackUnrevised`) ──────────────────
+ * waits in technical planning until its text changes (the owner's answer of 2026-10-20): it
+ * never crosses on its evidence and no screen calls it ready, while his approve still crosses
+ * it. Nothing else about its descriptor changes.
+ *
  * @param {string} projectRoot
  * @param {{crossed?: Array<{ref:string, toStage:string, name:string}>}} [opts]
  * @returns {Array<{ref:string, slug:string, title:string, summary:string,
@@ -1052,7 +1093,8 @@ function regimeHold(root, stage) {
  *   critical:boolean, enough:boolean, sufficiencyReason:string,
  *   unansweredQuestionIds:string[], blockingQuestionIds:string[],
  *   questionsClassified:(boolean|null), questionsRevisionMs:(number|null),
- *   regimeHold:(null|'compliance-review'|'independent-verification'|'review-sign-off'|'regime-unreadable')}>}
+ *   regimeHold:(null|'compliance-review'|'independent-verification'|'review-sign-off'|'regime-unreadable'),
+ *   sentBackUnrevised:boolean}>}
  */
 function pendingGateDecisions(projectRoot, opts = {}) {
   const crossed = opts && Array.isArray(opts.crossed) ? opts.crossed : null;
@@ -1082,6 +1124,9 @@ function pendingGateDecisions(projectRoot, opts = {}) {
         passesValidation = false; // an exploding validator → honestly "does not pass"
       }
       const ref = `${stage}/${plan.name}.md`;
+      // The owner's answer of 2026-10-20: a plan sent back from the build queue waits in technical
+      // planning until it is changed (actions.isSentBackUnrevised); his approve still crosses it.
+      const sentBackUnrevised = stage === 'implementation' && isSentBackUnrevised(plan.content);
       // Decision 5: the predicate is called ONCE per decision; the SAME verdict both
       // ACTS (the cross below) and, if the plan stays, DISPLAYS (pushed into `out`).
       const sufficiency = sufficiencyFor(projectRoot, ref);
@@ -1096,7 +1141,7 @@ function pendingGateDecisions(projectRoot, opts = {}) {
       // side effect (ledger entry + move) from running on a bare read. This closes "a read
       // crosses a gate"; it does NOT close the explicit write routes a launcher can still
       // reach (see the plan's residual risk). Fail-closed conditions follow, unchanged.
-      if (crossed && sufficiency.enough === true && passesValidation && !regime
+      if (crossed && sufficiency.enough === true && passesValidation && !regime && !sentBackUnrevised
           && PRE_BUILD_DESTINATIONS.has(meta.toStage)
           && crossBySufficiency(projectRoot, plan.path, ref, stage, meta.toStage, sufficiency)) {
         // Every crossing writes its decided-by-default questions into the plan; every crossing
@@ -1149,6 +1194,8 @@ function pendingGateDecisions(projectRoot, opts = {}) {
         questionsRevisionMs: sufficiency.questionsRevisionMs,
         // Why the regime keeps it from crossing on evidence (null: it does not).
         regimeHold: regime,
+        // Sent back from the build queue and not changed since: it waits for a change or his approve.
+        sentBackUnrevised,
       });
     }
   }
@@ -1593,8 +1640,7 @@ function planDecisionScreen(ref, projectRoot) {
   if (unreadable) return brokenPlanScreen(stage, file, projectRoot, 'unreadable');
   if (isEmptyPlan(content)) return brokenPlanScreen(stage, file, projectRoot, 'empty');
 
-  const titleMatch = content.match(/^#\s+(.+)$/m);
-  const title = titleMatch ? stripCtl(titleMatch[1].trim()) : slug;
+  const title = planOwnTitle(content, slug);
 
   const gate = GATE_META[stage];
   // The plan's HUMAN name, then what the moment IS. Neither the slug (which names a
@@ -1673,23 +1719,23 @@ function planDecisionScreen(ref, projectRoot) {
     // its refusal is the exact defect this slice removes. The `stream approve` ACTION
     // string is preserved below regardless, because it is a machine identifier no
     // human reads and the send-back/validate actions must stay byte-identical.
-    const approve = {
-      label: approveLabel,
-      description: readyPlan
-        ? 'Approve it now yourself; it is recorded as your approval.'
-        : 'Recommended — everything checks out. Your answer is recorded as yours.',
-    };
+    // The owner's hold (2026-10-20): a plan sent back from the build queue and not changed since
+    // is offered Approve but never recommends it; the crossing on evidence waits for a change.
+    const heldUntilChanged = stage === 'implementation' && isSentBackUnrevised(content);
+    let approveDescription = 'Recommended — everything checks out. Your answer is recorded as yours.';
+    if (readyPlan) approveDescription = 'Approve it now yourself; it is recorded as your approval.';
+    else if (heldUntilChanged) approveDescription = HELD_APPROVE_DESCRIPTION;
+    const approve = { label: approveLabel, description: approveDescription };
     // `validate <ref>` is the ONLY route to the validation detail screen and to the
     // deliberate `claude:approve --override` force-crossing — the human's own
     // escape hatch when they choose to cross past a failed check. It leads when the
     // plan fails, because then it is the only thing that can move the plan forward.
-    const check = {
-      label: 'Check validation',
-      description: passes
-        ? 'Show the pre-transition validation detail before crossing.'
-        : 'Recommended — show exactly which checks fail, with the option to override.',
-    };
-    const options = passes ? [approve, check] : [check];
+    let checkDescription = 'Show the pre-transition validation detail before crossing.';
+    if (!passes) checkDescription = 'Recommended — show exactly which checks fail, with the option to override.';
+    else if (heldUntilChanged) checkDescription = HELD_CHECK_DESCRIPTION;
+    const check = { label: 'Check validation', description: checkDescription };
+    let options = passes ? [approve, check] : [check];
+    if (passes && heldUntilChanged) options = [check, approve];
     if (stage === 'review') {
       // The human chooses between WHAT IS WRONG — the thing, or the way. The stage
       // identifier survives only in the action string, which no human reads, so the
@@ -1713,7 +1759,7 @@ function planDecisionScreen(ref, projectRoot) {
       const state = checkState(projectRoot, ref, st.questionsRevisionMs);
       // The same lines as the default screen: the regime's reason, and no promise that a
       // plan the regime keeps waiting moves on by itself.
-      text += uncheckedLines(state, { regimeHold: regimeHold(projectRoot, stage) });
+      text += uncheckedLines(state, { regimeHold: regimeHold(projectRoot, stage), sentBackUnrevised: heldUntilChanged });
       if (state === 'none') {
         options.push({ label: CHECK_LABEL, description: 'Ask the gate critic to check the questions its author wrote, in the background. Nothing else changes.' });
         actions[CHECK_LABEL] = `stream check ${ref}`;
@@ -1726,18 +1772,19 @@ function planDecisionScreen(ref, projectRoot) {
     });
   } else {
     // 3. Not at a gate and nothing precomputed: the plan-lifecycle decision.
-    questions.push({
-      question: `What should happen to ${name}?`,
-      header: name,
-      options: [
-        { label: 'Discuss', description: 'EXTREME adversarial critique — nothing held back. The most important step.' },
-        { label: 'View/Edit', description: 'Show the plan, then edit it' },
-        { label: 'Delete', description: 'Remove this plan permanently' },
-      ],
-    });
+    //    A plan waiting in the build queue can also be sent back to be re-planned
+    //    (sendBackCommand runs the action).
+    const options = [
+      { label: 'Discuss', description: 'EXTREME adversarial critique — nothing held back. The most important step.' },
+      { label: 'View/Edit', description: 'Show the plan, then edit it' },
+      { label: 'Delete', description: 'Remove this plan permanently' },
+    ];
+    if (stage === 'todo') options.push({ label: BUILD_QUEUE_SEND_BACK.label, description: BUILD_QUEUE_SEND_BACK.description });
+    questions.push({ question: `What should happen to ${name}?`, header: name, options });
     actions['Discuss'] = 'claude:discuss';
     actions['View/Edit'] = `claude:view-edit ${stage}/${file}`;
     actions['Delete'] = `claude:delete ${stage}/${file}`;
+    if (stage === 'todo') actions[BUILD_QUEUE_SEND_BACK.label] = `claude:reject ${stage}/${file} ${BUILD_QUEUE_SEND_BACK.toStage}`;
   }
 
   // The plan's remaining lifecycle decisions ride along, so that opening a plan to
@@ -1808,15 +1855,26 @@ const REGIME_LINES = Object.freeze({
   'regime-unreadable': "It waits for your approval: CTOC could not read this project's regulatory settings, so it does not move on by itself.",
 });
 
+/** The sentence for a plan sent back from the build queue and not changed since (`sentBackUnrevised`). */
+const SENT_BACK_UNREVISED_LINE = 'It waits for a change or your approval: it was sent back to be re-planned and has not been changed since, so it does not move on by itself.';
+/** The Approve option's words for a plan the hold keeps waiting: offered, never recommended. */
+const HELD_APPROVE_DESCRIPTION = 'Approve it now yourself: it was sent back to be re-planned and has not been changed since. Your answer is recorded as yours.';
+/** The recommended option of the opening screen's question for a held plan: read why it came back. */
+const HELD_OPEN_DESCRIPTION = 'Recommended — it was sent back to be re-planned and has not been changed since; open it to read why.';
+/** The recommended option of the plan screen's question for a held plan, whose body shows the reason above. */
+const HELD_CHECK_DESCRIPTION = 'Recommended — it was sent back to be re-planned and has not been changed since; its reason is at the top of the plan above. Show the validation detail before deciding.';
+
 /**
- * The screen line saying why the regime keeps this plan waiting: `''` when it does not,
- * otherwise one of the four fixed {@link REGIME_LINES}, indented and newline-terminated.
+ * The screen lines saying why this plan waits for the owner instead of moving on by itself: `''`
+ * when nothing keeps it, otherwise the regime's fixed {@link REGIME_LINES} sentence, then the
+ * unrevised send-back's {@link SENT_BACK_UNREVISED_LINE}, each indented and newline-terminated.
  * @param {object} d a pendingGateDecisions descriptor
  * @returns {string}
  */
 function regimeLine(d) {
   const line = d && d.regimeHold ? REGIME_LINES[d.regimeHold] : '';
-  return line ? `  ${line}\n` : '';
+  const back = d && d.sentBackUnrevised === true ? `  ${SENT_BACK_UNREVISED_LINE}\n` : '';
+  return (line ? `  ${line}\n` : '') + back;
 }
 
 /** The option label that asks for one plan's questions to be generated. */
@@ -1865,7 +1923,7 @@ const CHECKING_REGIME_HELD_LINE = '  Its questions are being checked by the gate
  * @returns {string}
  */
 function uncheckedLines(state, d) {
-  const line = state === 'checking' && d.regimeHold ? CHECKING_REGIME_HELD_LINE : CHECK_LINES[state];
+  const line = state === 'checking' && (d.regimeHold || d.sentBackUnrevised === true) ? CHECKING_REGIME_HELD_LINE : CHECK_LINES[state];
   return `${line}${regimeLine(d)}`;
 }
 
@@ -1908,6 +1966,10 @@ function buildOptions(d, canGenerate) {
     description: 'Run the question critique for this plan in the background. Its questions appear the next time this decision is shown; nothing else changes.',
   }] : [];
   if (!d.passesValidation) return [open, skip, ...generate];
+  // The owner's hold: Approve is offered, never recommended; reading why it came back leads.
+  if (d.sentBackUnrevised === true) {
+    return [{ label: 'Open the plan', description: HELD_OPEN_DESCRIPTION }, { label: d.approveLabel, description: HELD_APPROVE_DESCRIPTION }, skip, ...generate];
+  }
   const approve = {
     label: d.approveLabel,
     description: 'Recommended — everything checks out. Your answer is recorded as yours.',
@@ -1960,7 +2022,7 @@ function nothingPendingScreen(statusLine) {
  * one read of the plan and one existence check on the render path.
  */
 function movesOnItsOwn(d, root) {
-  if (d.enough !== true || !d.passesValidation || d.regimeHold || !PRE_BUILD_DESTINATIONS.has(d.toStage)) return false;
+  if (d.enough !== true || !d.passesValidation || d.regimeHold || d.sentBackUnrevised === true || !PRE_BUILD_DESTINATIONS.has(d.toStage)) return false;
   try {
     // d.slug is a SAFE_PLAN_FILE name: pendingGateDecisions skips every other
     const planPath = path.join(getPlansDir(root), d.fromStage, `${d.slug}.md`);
@@ -2327,11 +2389,130 @@ function streamApprove(ref, projectRoot) {
 function nameOfPlanAt(root, stage, file) {
   const slug = file.replace(/\.md$/, '');
   try {
-    const m = safeFs.readFileSync(path.join(getPlansDir(root), stage, file), 'utf8').match(/^#\s+(.+)$/m);
-    return humanPlanName(m ? m[1].trim() : '', slug);
+    return humanPlanName(planOwnTitle(safeFs.readFileSync(path.join(getPlansDir(root), stage, file), 'utf8'), slug), slug);
   } catch {
     return stripCtl(slug);
   }
+}
+
+/** A reason that could not be taken from standard input, by inbox.decodeAnswer's reason: [code, sentence]. */
+const SEND_BACK_REASON_REFUSALS = Object.freeze({
+  'no-answer': ['no-reason', 'a reason is required — say why the plan goes back to be re-planned.'],
+  'blank-answer': ['no-reason', 'a reason is required — say why the plan goes back to be re-planned.'],
+  'answer-too-long': ['reason-too-long', 'the reason is too long.'],
+  'answer-not-utf8': ['reason-not-text', 'the reason is not UTF-8 text.'],
+  'answer-holds-marker': ['reason-holds-marker', 'a line of the reason begins with CTOC_ANSWER_, so the command may not have ended where it should.'],
+  'answer-unreadable': ['reason-unreadable', 'the reason could not be read from standard input.'],
+});
+
+/**
+ * `claude:reject <stage>/<file>.md <destination> --stdin`: the menu command behind "Send it back —
+ * wrong way" on the screen of a plan waiting in the build queue. The reason arrives on standard
+ * input. Under the owner's answer of 2026-10-20 it sends back build-queue plans only; any other plan
+ * is refused with a sentence and left byte for byte as it was (a plan in review is sent back in the
+ * conversation, as before). Refuses, in order: a reference parseAnyRef refuses; a stage other than
+ * the build queue; a destination other than technical planning; a reason that is missing (no
+ * `--stdin` as the third word, or nothing on standard input), blank, made of invisible or control
+ * characters only, too long, not UTF-8, unreadable, or holding a line that begins with the heredoc marker
+ * prefix or a line that is only `---` (refused, never escaped: it would end the reason early inside the
+ * plan). Then actions.sendBackFromBuildQueue does the work, and its refusals and its result are put in
+ * one line. The line names the plan by
+ * its title, never by a stage directory, a path or a task id.
+ *
+ * @param {string[]} words the route words after `claude:reject`
+ * @param {string} projectRoot
+ * @param {(Buffer|symbol|undefined)} stdinBytes standard input as start.js read it for exactly
+ *   `claude:reject <ref> <dest> --stdin` (inbox.readStandardInput)
+ * @returns {{ ok: true, text: string } | { ok: false, refused: true, reason: string, text: string }}
+ */
+function sendBackCommand(words, projectRoot, stdinBytes) {
+  const w = Array.isArray(words) ? words : [];
+  const refuse = (reason, why) => /** @type {{ ok: false, refused: true, reason: string, text: string }} */ ({
+    ok: false, refused: true, reason, text: `Nothing was sent back: ${why}`,
+  });
+  const parsed = parseAnyRef(w[0]);
+  if (!parsed) return refuse('invalid-reference', 'that is not a plan the menu can name.');
+  if (parsed.stage !== 'todo') {
+    return refuse('not-in-build-queue', 'this command sends back plans waiting in the build queue only; any other plan is sent back in the conversation.');
+  }
+  if (w[1] !== BUILD_QUEUE_SEND_BACK.toStage) {
+    return refuse('wrong-destination', 'a plan waiting in the build queue can only be sent back to be re-planned.');
+  }
+  const decoded = w.length === 3 && w[2] === '--stdin' ? require('./inbox').decodeAnswer(stdinBytes) : { reason: 'no-answer' };
+  if (!('answer' in decoded)) {
+    const [code, why] = SEND_BACK_REASON_REFUSALS[decoded.reason] || SEND_BACK_REASON_REFUSALS['no-answer'];
+    return refuse(code, why);
+  }
+  // A reason that would mislead is refused, never escaped (the owner decides what a reason may hold).
+  // Nothing but invisible or control characters says nothing to the planner who reads it.
+  if (decoded.answer.replace(/[\s\p{Cc}\p{Cf}\p{Default_Ignorable_Code_Point}]/gu, '') === '') {
+    const [code, why] = SEND_BACK_REASON_REFUSALS['blank-answer'];
+    return refuse(code, why);
+  }
+  // A line that is only --- would end the reason early inside the plan (planOwnTitle ends a send-back
+  // block at such a line), after rejectPlan's own removal of control characters.
+  if (decoded.answer.replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, '').split('\n').some((line) => line.trim() === '---')) {
+    return refuse('reason-holds-separator', 'a line of the reason is only "---", which would end the reason early inside the plan; write that line another way.');
+  }
+  const name = nameOfPlanAt(projectRoot, 'todo', parsed.file);
+  const res = sendBackFromBuildQueue(projectRoot, parsed.file, decoded.answer);
+  if (res.ok === false) return sendBackRefusal(res, name, projectRoot, parsed.file, refuse);
+  return { ok: true, text: [`Sent back to be re-planned: “${name}”. Its reason is in the plan; it moves on again once it has been changed, or when you approve it.`, ...queuedBuildSentences(res, projectRoot)].join(' ') };
+}
+
+/**
+ * The sentences about the plan's queued builds, for a send-back that finished and for one that stopped
+ * part-way: those cancelled, those that could not be (fixed words, never the error: the cause is in the
+ * warn log), and the queued builds of other plans that waited on a cancelled one. They name no task id.
+ * @param {{ cancelled: string[], cancelFailed: string[], stranded: string[] }} res
+ * @param {string} projectRoot
+ * @returns {string[]}
+ */
+function queuedBuildSentences(res, projectRoot) {
+  const parts = [];
+  if (res.cancelled.length > 0) parts.push(res.cancelled.length === 1 ? 'Its queued build was cancelled.' : 'Its queued builds were cancelled.');
+  if (res.cancelFailed.length > 0) {
+    parts.push(res.cancelFailed.length === 1
+      ? 'Its queued build could not be cancelled; cancel it on the task board.'
+      : 'Its queued builds could not be cancelled; cancel them on the task board.');
+  }
+  if (res.stranded.length > 0) {
+    const names = res.stranded.map((p) => `“${isUnsafePlanFile(`${p}.md`) ? stripCtl(p) : nameOfPlanAt(projectRoot, 'todo', `${p}.md`)}”`).join(', ');
+    parts.push(res.stranded.length === 1
+      ? `The queued build of ${names} waited on it and can now never run; cancel it, or send its plan back too.`
+      : `The queued builds of ${names} waited on it and can now never run; cancel them, or send their plans back too.`);
+  }
+  return parts;
+}
+
+/**
+ * The one sentence for a send-back actions.sendBackFromBuildQueue refused or stopped. A failure that left
+ * the plan's bytes as they were says nothing was sent back; one that changed them says it stopped
+ * part-way and what became of its queued builds. No error text, path, stage directory or task id reaches it.
+ * @param {Exclude<import('./actions').SendBackResult, { ok: true }>} res
+ * @param {string} name the plan's title
+ * @param {string} projectRoot
+ * @param {string} file the plan's bare file name
+ * @param {(reason: string, why: string) => { ok: false, refused: true, reason: string, text: string }} refuse
+ * @returns {{ ok: false, refused: true, reason: string, text: string }}
+ */
+function sendBackRefusal(res, name, projectRoot, file, refuse) {
+  if (res.reason === 'busy') return refuse('busy', 'a build is being started at this moment; run the send-back again.');
+  if (res.reason === 'lock-unusable') return refuse('lock-unusable', `${stripCtl(res.lockPath)} is not a plain file; remove it and run the send-back again.`);
+  if (res.reason === 'being-built') {
+    const building = safeFs.existsSync(path.join(getPlansDir(projectRoot), 'in-progress', file)) ? nameOfPlanAt(projectRoot, 'in-progress', file) : name;
+    return refuse('being-built', `“${building}” is being built.`);
+  }
+  if (res.reason === 'name-taken') return refuse('name-taken', 'a plan file of the same name is already waiting to be re-planned; rename one of the two first.');
+  if (res.reason === 'not-a-plain-file') {
+    return refuse('not-a-plain-file', 'the plan file in the build queue is a link or not a plain file, so it was left as it is.');
+  }
+  if (res.reason === 'send-back-failed') {
+    if (!res.changed) return refuse('send-back-failed', 'the plan could not be changed; it is still waiting in the build queue as it was.');
+    const text = [`The send-back of “${name}” stopped part-way; open the plan before anyone builds it.`, ...queuedBuildSentences(res, projectRoot)].join(' ');
+    return { ok: false, refused: true, reason: 'send-back-failed', text };
+  }
+  return refuse('not-found', 'no plan of that name is waiting in the build queue.');
 }
 
 /**
@@ -2530,6 +2711,12 @@ module.exports = {
   planDecisionScreen,
   renderDeclaredScope,
   humanPlanName,
+  // The one title reader (callers: menu-screens.planNameAt, increment-feed, loop-b-driver) and
+  // the build-queue send-back command (caller: menu-screens.route, case 'claude:reject').
+  planOwnTitle,
+  sendBackCommand,
+  // The held plan's Approve words: read by menu-screens.validateScreen for the same plan's validation screen.
+  HELD_APPROVE_DESCRIPTION,
   // Exported as the testable seam for the sufficiency audit record. Both are live
   // internally: `composeSufficiencyEvidence` is called by `crossBySufficiency`, which
   // is called by `pendingGateDecisions` only on the continuation's pass (`opts.crossed`);

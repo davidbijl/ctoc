@@ -234,12 +234,16 @@ describe('the menu reports what initialization actually did', () => {
   });
 
   it('9 — skipped is no longer discarded', () => {
+    // Re-pointed from IRON_LOOP.md to CLAUDE.md: setup no longer writes or names a
+    // project-root IRON_LOOP.md (the owner's answer "Stop writing IRON_LOOP.md"), so
+    // it can no longer skip one. CLAUDE.md is the file setup still skips when it is
+    // already there. Every assertion is kept.
     const dir = freshDir();
-    fs.writeFileSync(path.join(dir, 'IRON_LOOP.md'), '# pre-existing\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'CLAUDE.md'), '# pre-existing\n', 'utf8');
     const setup = menu.ensureInitialized(dir);
     assert.ok(Array.isArray(setup.skipped));
     assert.ok(setup.skipped.length > 0, 'the skipped report must survive');
-    assert.ok(setup.skipped.some((s) => s.includes('IRON_LOOP.md')),
+    assert.ok(setup.skipped.some((s) => s.includes('CLAUDE.md')),
       `skipped must name the pre-existing artifact, got ${JSON.stringify(setup.skipped)}`);
   });
 

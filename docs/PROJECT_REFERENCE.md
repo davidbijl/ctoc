@@ -254,7 +254,7 @@ Example — creating 5 skill files: launch 5 agents in parallel (each writes a d
 
 ## Project Init Procedure
 
-Initialization is automatic. There is no init command — when `/ctoc:start` runs in a project that has no `.ctoc/` directory, `src/commands/start.js` calls `initProject()` before rendering the dashboard. The procedure (`src/lib/init-project.js`):
+Initialization is automatic. There is no init command — when `/ctoc:start` runs in a project that has no `.ctoc/settings.yaml`, `src/commands/start.js` calls `initProject()` before rendering the dashboard. A project that already has `.ctoc/settings.yaml` but lacks a plan stage folder or `.ctoc/state/iron-loop.yaml` (a fresh git worktree lacks the state file, because git ignores `.ctoc/state/`) gets `repairRequiredArtifacts()` instead, which makes only the missing folders and the state file and writes no other file. Both runs refuse to write through a symbolic link below the project root and report the refused item as failed. The procedure (`src/lib/init-project.js`):
 
 1. **Detect**: Scan for languages, frameworks, tools (via `src/lib/stack-detector.js`)
 2. **Generate**: Create tailored `CLAUDE.md` from `.ctoc/templates/CLAUDE.md.template`

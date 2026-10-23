@@ -18,6 +18,17 @@
  * the reliable create-signal at the Gate-2 crossing, where "the plan is being
  * built" is about to become true.
  *
+ * THE GATE'S PREDECESSOR PASS. This function still reports a path that an earlier
+ * slice will bring into being, because it reads one plan's declared files and no
+ * other plan. `plan-validator.validateForQueue` therefore decides each reported path
+ * once more: it withholds the refusal when a not-yet-finished plan (technical
+ * planning, build queue, build or review) reached through the slice's `depends_on`
+ * chain declares the same path together with CLAUDE.md. When that plan declares the
+ * path without CLAUDE.md, the refusal names that plan instead. A dependency list
+ * holding an unsafe token, a finished plan and an unknown name give no pass. The
+ * static audit in tests/plan-declares-count-moving-ratchets.test.js calls this
+ * function directly and keeps today's view. No code of this file is involved.
+ *
  * COUNTED CLASSES mirror doc-counts.js `computeDocCounts` (plan 00215, the ONE
  * source of the counted-class definitions). `computeDocCounts` walks directories to
  * COUNT; this needs a per-PATH predicate to MATCH, which it does not expose — so the

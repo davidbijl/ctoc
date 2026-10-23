@@ -1,0 +1,10 @@
+{
+  "content_sha256": "5340df06d1782e239aebeddbf307fa8c60c43a436fe7d1abe7672cfff0607969",
+  "hash_scope": "specification",
+  "stage_from": "implementation",
+  "stage_to": "todo",
+  "approved_at": "2026-10-22T09:11:25.157Z",
+  "advanced_by": "sufficiency",
+  "evidence": "sufficiency: implementation/a-finished-plan-can-be-sent-back-for-a-text-only-revision-s4-the-finished-plans-screen-offers-it.md — no questions were computed (0 question(s) computed), 0 answered; 0 unanswered, 0 blocking; attested by: not recorded; enough (no unanswered fork)",
+  "plan_basename": "a-finished-plan-can-be-sent-back-for-a-text-only-revision-s4-the-finished-plans-screen-offers-it"
+}

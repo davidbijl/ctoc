@@ -647,6 +647,100 @@ function record(state, label, write) {
 }
 
 /**
+ * Refuse to write through a symbolic link below the project root.
+ *
+ * Walks the forward-slash names of `rel` one at a time, starting strictly BELOW
+ * `projectDir` (the root and anything above it are never checked: users and fixtures
+ * reach the root through links, for example macOS `/var` to `/private/var`). A link met
+ * at any name, a middle folder or the file itself, throws `refused: <names so far> is a
+ * symbolic link`, so a link planted at `.ctoc`, `.ctoc/state`, `plans` or below can never
+ * make setup write at its target. The walk stops, without a verdict, at the first name
+ * that is absent (nothing below it can be a link) or is not a folder (the write itself
+ * reports that fault). A link whose target already holds everything never reaches this
+ * check, because nothing is written then.
+ *
+ * Called inside the `record` callback of each write, so the refusal lands in `failed`
+ * with no absolute path in it. Deliberately not `escapesRoot` of
+ * `real-path-confinement.js`: that reports a plain file at `.ctoc/state` as its own
+ * not-a-folder fault, which would give a plain file a false "refused" reason.
+ *
+ * @param {string} projectDir - Project root directory
+ * @param {string} rel - forward-slash path relative to the root
+ * @throws {Error} when a name on the way is a symbolic link
+ */
+function refuseLinkedPath(projectDir, rel) {
+  let at = projectDir;
+  const names = [];
+  for (const name of rel.split('/')) {
+    names.push(name);
+    at = path.join(at, name);
+    const stat = safeFs.lstatSync(at, { throwIfNoEntry: false });
+    if (!stat) return;
+    if (stat.isSymbolicLink()) throw new Error(`refused: ${names.join('/')} is a symbolic link`);
+    if (!stat.isDirectory()) return;
+  }
+}
+
+/**
+ * Make every plan stage folder and `.ctoc/` folder that is absent. Shared by the
+ * full setup and the narrow repair. A folder below a symbolic link is refused and
+ * recorded in `failed`, never made at the link target.
+ *
+ * @param {{dryRun: boolean, created: string[], wouldCreate: string[], skipped: string[], failed: string[], projectDir: string}} state
+ * @param {string} projectDir
+ */
+function ensureDirectories(state, projectDir) {
+  const allDirs = [...PLAN_DIRS, ...CTOC_DIRS];
+  for (const dir of allDirs) {
+    const dirPath = path.join(projectDir, dir);
+    if (!safeFs.existsSync(dirPath)) {
+      record(state, dir + '/', () => {
+        refuseLinkedPath(projectDir, dir);
+        ensureDir(dirPath);
+      });
+    }
+  }
+}
+
+/**
+ * Write `.ctoc/state/iron-loop.yaml` when it is absent (or `force` is set); otherwise
+ * report it as skipped. Shared by the full setup and the narrow repair. The path,
+ * file name included, is checked for a symbolic link first (`refuseLinkedPath`), and
+ * without `force` the file is created exclusively (`wx`), so it is never written
+ * through a link planted between the check and the write.
+ *
+ * @param {{dryRun: boolean, created: string[], wouldCreate: string[], skipped: string[], failed: string[], projectDir: string}} state
+ * @param {string} projectDir
+ * @param {boolean} force
+ */
+function ensureStateFile(state, projectDir, force) {
+  const statePath = path.join(projectDir, '.ctoc', 'state', 'iron-loop.yaml');
+  if (!safeFs.existsSync(statePath) || force) {
+    const stateContent = generateInitialState();
+    record(state, '.ctoc/state/iron-loop.yaml', () => {
+      refuseLinkedPath(projectDir, '.ctoc/state/iron-loop.yaml');
+      ensureDir(path.dirname(statePath));
+      safeFs.writeFileSync(statePath, stateContent, { encoding: 'utf8', flag: force ? 'w' : 'wx' });
+    });
+  } else {
+    state.skipped.push('.ctoc/state/iron-loop.yaml (already exists)');
+  }
+}
+
+/**
+ * The display paths of `REQUIRED_ARTIFACTS` that are absent on disk. The verdict of
+ * both setup runs is READ BACK from the world with this, never asserted.
+ *
+ * @param {string} projectDir
+ * @returns {string[]}
+ */
+function missingRequired(projectDir) {
+  return REQUIRED_ARTIFACTS.filter(
+    (rel) => !safeFs.existsSync(path.join(projectDir, ...rel.split('/')))
+  );
+}
+
+/**
  * Initialize a project with CTOC.
  *
  * TWO RULES this function is required to keep:
@@ -705,7 +799,6 @@ function initProject(projectDir, options = {}) {
 
   // 2. Find template
   const templatePath = path.join(__dirname, '..', '..', '.ctoc', 'templates', 'CLAUDE.md.template');
-  const ironLoopTemplatePath = path.join(__dirname, '..', '..', '.ctoc', 'templates', 'IRON_LOOP.md.template');
 
   // 3. Generate CLAUDE.md
   const claudeMdPath = path.join(projectDir, 'CLAUDE.md');
@@ -792,25 +885,8 @@ function initProject(projectDir, options = {}) {
     }
   }
 
-  // 4. Generate IRON_LOOP.md
-  const ironLoopPath = path.join(projectDir, 'IRON_LOOP.md');
-  if (!safeFs.existsSync(ironLoopPath) || force) {
-    if (safeFs.existsSync(ironLoopTemplatePath)) {
-      const content = safeFs.readFileSync(ironLoopTemplatePath, 'utf8');
-      record(state, 'IRON_LOOP.md', () => safeFs.writeFileSync(ironLoopPath, content, 'utf8'));
-    }
-  } else {
-    skipped.push('IRON_LOOP.md (already exists)');
-  }
-
   // 5. Create directory structure
-  const allDirs = [...PLAN_DIRS, ...CTOC_DIRS];
-  for (const dir of allDirs) {
-    const dirPath = path.join(projectDir, dir);
-    if (!safeFs.existsSync(dirPath)) {
-      record(state, dir + '/', () => ensureDir(dirPath));
-    }
-  }
+  ensureDirectories(state, projectDir);
 
   // 6. Generate .ctoc/settings.yaml
   const settingsPath = path.join(projectDir, '.ctoc', 'settings.yaml');
@@ -825,16 +901,7 @@ function initProject(projectDir, options = {}) {
   }
 
   // 7. Generate .ctoc/state/iron-loop.yaml
-  const statePath = path.join(projectDir, '.ctoc', 'state', 'iron-loop.yaml');
-  if (!safeFs.existsSync(statePath) || force) {
-    const stateContent = generateInitialState();
-    record(state, '.ctoc/state/iron-loop.yaml', () => {
-      ensureDir(path.dirname(statePath));
-      safeFs.writeFileSync(statePath, stateContent, 'utf8');
-    });
-  } else {
-    skipped.push('.ctoc/state/iron-loop.yaml (already exists)');
-  }
+  ensureStateFile(state, projectDir, force);
 
   // 8. Add .ctoc/logs/ to .gitignore if not already there
   const gitignorePath = path.join(projectDir, '.gitignore');
@@ -884,9 +951,7 @@ function initProject(projectDir, options = {}) {
   //     when every write was skipped, true in a preview that wrote nothing, and
   //     true when a required artifact failed. A field whose value never depends
   //     on anything is not a result.
-  const missing = REQUIRED_ARTIFACTS.filter(
-    (rel) => !safeFs.existsSync(path.join(projectDir, ...rel.split('/')))
-  );
+  const missing = missingRequired(projectDir);
 
   return {
     // A preview has NO success. `true` would repeat the old lie in a new field;
@@ -900,6 +965,51 @@ function initProject(projectDir, options = {}) {
     failed: state.failed,
     missing,
     detected
+  };
+}
+
+/**
+ * The narrow repair for a project that is already set up: make only the missing
+ * setup folders and `.ctoc/state/iron-loop.yaml`, and write nothing else.
+ *
+ * WHY it exists: a fresh git worktree of a set-up project lacks exactly the
+ * git-ignored local state (`.ctoc/state/`), so the menu's read-back reports the
+ * state file missing. The full `initProject` would then write every absent file and
+ * refresh the managed blocks of a tracked `CLAUDE.md` and append to a tracked
+ * `.gitignore`, all of which `git status` shows. Every folder this repair makes is
+ * empty, which git never shows, and the state file is git-ignored, so the worktree
+ * stays exactly as git checked it out.
+ *
+ * Writes no `CLAUDE.md`, no managed block, no settings file, no `.gitignore` line
+ * and no hook notice. A failed write is recorded in `failed` (project path already
+ * scrubbed); the function never throws for one failed item. A folder or the state file
+ * below a symbolic link is refused (`refuseLinkedPath`) and recorded in `failed`, never
+ * written at the link target.
+ *
+ * @param {string} projectDir - Project root directory
+ * @returns {{ success: boolean, dryRun: boolean, created: string[],
+ *   wouldCreate: string[], skipped: string[], failed: string[], missing: string[] }}
+ */
+function repairRequiredArtifacts(projectDir) {
+  const state = {
+    dryRun: false,
+    projectDir,
+    created: [],
+    wouldCreate: [],
+    skipped: [],
+    failed: []
+  };
+  ensureDirectories(state, projectDir);
+  ensureStateFile(state, projectDir, false);
+  const missing = missingRequired(projectDir);
+  return {
+    success: state.failed.length === 0 && missing.length === 0,
+    dryRun: false,
+    created: state.created,
+    wouldCreate: state.wouldCreate,
+    skipped: state.skipped,
+    failed: state.failed,
+    missing
   };
 }
 
@@ -971,6 +1081,7 @@ function formatInitResult(result) {
 
 module.exports = {
   initProject,
+  repairRequiredArtifacts,
   detectProjectName,
   detectLanguages,
   detectFrameworks,

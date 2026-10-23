@@ -64,13 +64,13 @@ Only the narrow gap is filed. The by-hand relaying is answered by the existing `
 3. Count those send-backs and escalate at the limit, if he approves.
 
 ### Stories
-- [ ] `[MVP]` Spike: As the owner, I want it shown where a send-back from a review or security round goes today and that it never reaches `recordStepKickback` (two callers, `src/lib/actions.js:1340` and `:1460`, both inside `completeExecution`), so that the gap is stated on evidence.
+- [x] `[MVP]` Spike: As the owner, I want it shown where a send-back from a review or security round goes today and that it never reaches `recordStepKickback` (two callers, `src/lib/actions.js:1340` and `:1460`, both inside `completeExecution`), so that the gap is stated on evidence. — met: measured before the first source change and recorded in the Execution Record
   - Acceptance: the plan records the path a review or security send-back takes and the counts before and after one such send-back.
   - INVEST: passes as a time-boxed investigation.
-- [ ] `[MVP]` As the owner, I want the circuit-breaker change put to me as one decision, so that gate logic changes only on my explicit approval.
+- [x] `[MVP]` As the owner, I want the circuit-breaker change put to me as one decision, so that gate logic changes only on my explicit approval. — met: the owner's questions were answered 2026-10-20 (plan text)
   - Acceptance: one question with exactly one Recommended option; nothing is built before the answer. Changing gate logic needs the owner's explicit approval.
   - INVEST: passes all six criteria.
-- [ ] As the owner, I want a fourth send-back of one step from review or security rounds to stop the loop and escalate to me, so that those rounds have the same limit as the others.
+- [x] As the owner, I want a fourth send-back of one step from review or security rounds to stop the loop and escalate to me, so that those rounds have the same limit as the others. — met: the fourth send-back escalates, proved by case 3
   - Acceptance: driving three review or security send-backs of one step counts three; the fourth escalates to the owner, as a failed verify does today. Built only after his approval.
   - INVEST: passes all six criteria.
 
@@ -106,31 +106,31 @@ The decomposer's third story was split into "Counted and escalated" and "Never s
 
 ### The gap, measured
 
-- [ ] **Scenario: Today four send-backs to one step reach no limit**
+- [x] **Scenario: Today four send-backs to one step reach no limit** — proved by case 1, plus the measured texts in the Execution Record
   Given a plan in `plans/in-progress/` with no send-backs counted, on the source as it is before this plan changes anything
   When two review rounds and two security rounds for that plan each complete with a summary that sends it back to Step 10 with a reason
   Then the `inbox escalations` screen shows "No circuit-breaker escalations."
   And the implementation plan records the four completion texts and that screen's text before its first source change
 
-- [ ] **Scenario: The measurement contradicts the reading**
+- [x] **Scenario: The measurement contradicts the reading** — does not apply: case 1 passed on the unchanged source; the measurement agreed with the reading
   Given that run shows an escalation for the plan, or a send-back count that moved
   When the build reaches its first source change
   Then no source change is made, and the plan goes back to the owner with the run's output and the sentence "the gap is not as filed"
 
 ### The owner's decision
 
-- [ ] **Scenario: The change is put to the owner as one decision**
+- [x] **Scenario: The change is put to the owner as one decision** — proved by the owner's question answered 2026-10-20 (plan text)
   Given this refined plan
   When the owner reads its "Questions for the owner" section
   Then he finds exactly one question about counting these send-backs, with exactly one option marked Recommended, the evidence it rests on and how strong that evidence is
 
-- [ ] **Scenario: Nothing changes the counting before his answer**
+- [x] **Scenario: Nothing changes the counting before his answer** — proved by Step 10 quoting all three answers with their dates
   Given the owner has not answered that question
   When an implementation plan is written from this plan
   Then it has no build step that changes how send-backs are counted
   And once he answers, its first such step quotes his answer and its date
 
-- [ ] **Scenario: The owner keeps the limit as it is**
+- [x] **Scenario: The owner keeps the limit as it is** — does not apply: the owner chose option 1, count the send-backs
   Given the owner chooses to keep the circuit breaker as it is
   When the plan is built
   Then four rounds that each send a plan back to Step 10 still put no escalation on the `inbox escalations` screen
@@ -138,19 +138,19 @@ The decomposer's third story was split into "Counted and escalated" and "Never s
 
 ### Counted and escalated
 
-- [ ] **Scenario: Three send-backs to one step are counted without an escalation**
+- [x] **Scenario: Three send-backs to one step are counted without an escalation** — proved by case 2 (also case 13)
   Given the owner approved counting, and a plan in `plans/in-progress/` with no send-backs counted
   When three rounds each complete through the menu sending the plan back to Step 10 with a reason
   Then each completion text says the send-back to Step 10 was counted and gives the count for Step 10: 1, then 2, then 3, of a limit of 3
   And the `inbox escalations` screen shows no escalation for that plan
 
-- [ ] **Scenario: The fourth send-back to one step escalates**
+- [x] **Scenario: The fourth send-back to one step escalates** — proved by cases 3, 12, 13
   Given the same plan with three send-backs to Step 10 counted
   When a fourth round sends it back to Step 10
   Then the `inbox escalations` screen lists the plan with "Step 10 kicked back 4× (max 3)", the same line a fourth failed verify produces for Step 14 today
   And the completion text says the plan needs the owner
 
-- [ ] **Scenario: Round send-backs and failed verifies share the limit of five per plan**
+- [x] **Scenario: Round send-backs and failed verifies share the limit of five per plan** — proved by case 4
   Given a plan with two failed verifies counted against Step 14
   When rounds send it back once each to Steps 8, 10, 12 and 13
   Then the fourth of those, the plan's sixth send-back, puts the plan on the `inbox escalations` screen with "6 kickbacks total (max 5)"
@@ -158,19 +158,19 @@ The decomposer's third story was split into "Counted and escalated" and "Never s
 
 ### Never silently wrong
 
-- [ ] **Scenario: A send-back that names no valid step is refused**
+- [x] **Scenario: A send-back that names no valid step is refused** — proved by case 5
   Given a round for a plan in `plans/in-progress/` with no send-backs counted
   When its completion reports a send-back with no step, or with a step outside 1 to 16
   Then the completion is refused with a message that names the allowed steps, 1 to 16, and the task stays running
   And the next valid send-back of that plan to Step 10 reports a count of 1
 
-- [ ] **Scenario: A send-back that cannot be saved is reported, not dropped**
+- [x] **Scenario: A send-back that cannot be saved is reported, not dropped** — proved by case 6 (and cases 14, 16, 20)
   Given a plan whose send-back count cannot be saved, because the folder that holds it refuses writes
   When a round's completion reports a send-back of that plan to Step 10
   Then the completion text says the send-back was NOT counted, and why
   And the dashboard's escalation count rises by one, as it does today when a failed verify's count cannot be saved
 
-- [ ] **Scenario: A round that sends nothing back counts nothing**
+- [x] **Scenario: A round that sends nothing back counts nothing** — proved by case 7
   Given a plan with one send-back to Step 10 counted
   When a security round completes through the menu without a send-back
   Then its completion text is the text such a completion shows today
@@ -708,18 +708,18 @@ Under the locked answer the counter's code changes, so the five circuit breaker 
 ## Execution Plan
 
 ### Step 8: TEST
-- [ ] Before any case is written, read the owner's answer to the lock question in `.ctoc/streaming/answers.jsonl`: the latest line whose `questionId` is `q10-round-count-write-lock-r1792514438287`, or, if the question was issued again under another id, whose question asks "Should the count's write be locked?", for this plan's `implementation/` ref. Under every wording the question has had, option 1 is the locked design and option 2 the unlocked design. With no such answer, stop: the build waits for the owner. Write the option, its label and the answer's date into the build record.
-- [ ] Write case 1 ("today: a send-back written only in a round's summary counts nothing") in `tests/circuit-breaker-wiring.test.js` and run `node --test tests/circuit-breaker-wiring.test.js` on the unchanged source. Insert a section `## Measured before the first source change` directly above `## Execution Plan`, holding the date, the four completion texts and the screen text the case printed. If the case fails (an escalation is shown, or a count moved), make no source change: send the plan back to the owner with the run's output and the sentence "the gap is not as filed".
-- [ ] Write cases 2 to 13 as the Test plan specifies them, and cases 14 to 16 only under the locked answer. Run the file and record that each of them fails, and why: the flag is unknown, so the round settles with no count clause, and no refusal happens. `finishedPlan`'s own precondition (the plan reaches `plans/done/`) must hold already, because it uses only today's code. Case 1 and the two existing cases must pass.
+- [x] Before any case is written, read the owner's answer to the lock question in `.ctoc/streaming/answers.jsonl`: the latest line whose `questionId` is `q10-round-count-write-lock-r1792514438287`, or, if the question was issued again under another id, whose question asks "Should the count's write be locked?", for this plan's `implementation/` ref. Under every wording the question has had, option 1 is the locked design and option 2 the unlocked design. With no such answer, stop: the build waits for the owner. Write the option, its label and the answer's date into the build record.
+- [x] Write case 1 ("today: a send-back written only in a round's summary counts nothing") in `tests/circuit-breaker-wiring.test.js` and run `node --test tests/circuit-breaker-wiring.test.js` on the unchanged source. Insert a section `## Measured before the first source change` directly above `## Execution Plan`, holding the date, the four completion texts and the screen text the case printed. If the case fails (an escalation is shown, or a count moved), make no source change: send the plan back to the owner with the run's output and the sentence "the gap is not as filed".
+- [x] Write cases 2 to 13 as the Test plan specifies them, and cases 14 to 16 only under the locked answer. Run the file and record that each of them fails, and why: the flag is unknown, so the round settles with no count clause, and no refusal happens. `finishedPlan`'s own precondition (the plan reaches `plans/done/`) must hold already, because it uses only today's code. Case 1 and the two existing cases must pass.
 
 ### Step 9: PREPARE
-- [ ] Re-read every line cited under File specifications in the then-current files. Re-locate a line that moved; a behaviour that changed stops the build for a re-plan.
-- [ ] Read the exports of `src/lib/circuit-breaker.js`. If `recordFixRound` is there, the fix-rounds plan has been built: stop and go back to the owner, because a review round's send-back and the fix round it starts would count one repair twice.
-- [ ] Confirm that `RECORD_REFUSALS_OFF` and `TASK_GRAMMAR.complete` in `src/hooks/protect-records.js` are as read (`:1053`, `:669`). The session-only rule's second half rests on `continue` staying out of that grammar.
-- [ ] Search `tests/` for text pinned from COMPLETION step 1 of `src/commands/start.md`, from the Circuit Breaker section of `docs/IRON_LOOP.md` and from the `circuit-breaker.js` header, and for tests that pin the shape or the flags of a `menu task complete` response (among them `tests/menu-protocol.test.js` and `tests/menu-task-wiring.test.js`): the refusal is the only new response shape. List each hit with its file and line before editing.
+- [x] Re-read every line cited under File specifications in the then-current files. Re-locate a line that moved; a behaviour that changed stops the build for a re-plan.
+- [x] Read the exports of `src/lib/circuit-breaker.js`. If `recordFixRound` is there, the fix-rounds plan has been built: stop and go back to the owner, because a review round's send-back and the fix round it starts would count one repair twice.
+- [x] Confirm that `RECORD_REFUSALS_OFF` and `TASK_GRAMMAR.complete` in `src/hooks/protect-records.js` are as read (`:1053`, `:669`). The session-only rule's second half rests on `continue` staying out of that grammar.
+- [x] Search `tests/` for text pinned from COMPLETION step 1 of `src/commands/start.md`, from the Circuit Breaker section of `docs/IRON_LOOP.md` and from the `circuit-breaker.js` header, and for tests that pin the shape or the flags of a `menu task complete` response (among them `tests/menu-protocol.test.js` and `tests/menu-task-wiring.test.js`): the refusal is the only new response shape. List each hit with its file and line before editing.
 
 ### Step 10: IMPLEMENT
-- [ ] This item builds on the owner's answers, quoted here:
+- [x] This item builds on the owner's answers, quoted here:
   - Asked "Should a send-back from a review or security round count toward the limit of three send-backs per step and five per plan, and escalate to you the way a failed verify does?", he answered "Count review, security and quality round send-backs" on 2026-10-20 (recorded at 16:00:56Z).
   - Asked "who may write a send-back into the count that decides when you are told", he answered "Only the coordinator session records it" on 2026-10-20 (recorded at 16:02:32Z).
   - Asked "Should the count's write be locked?", his answer as Step 8 recorded it: the option's label, quoted, and its date.
@@ -729,31 +729,31 @@ Under the locked answer the counter's code changes, so the five circuit breaker 
   - `ROUND_KINDS`, `SEND_BACK_STEP_RE`, `checkSendBack` (searching `in-progress`, `review` and `done`) and `sendBackText`;
   - in `taskComplete`, the check, the helper and the two places that count;
   - both JSDoc paragraphs.
-- [ ] `src/lib/circuit-breaker.js`, under the locked answer: `COUNT_LOCK_STALE_MS`, `withCountLock` and its use in `recordKickback`, as "Locked design" specifies. Under either answer: the "LIVE CALL SITE" paragraph, and the "Concurrency" paragraph in the chosen design's wording, with its `ponytail:` note.
-- [ ] `src/commands/start.md`: the brief sentence, the completion sentences (the rerun sentence only under the locked answer) and the registry-only bullet.
-- [ ] `docs/IRON_LOOP.md`: the paragraph under the Circuit Breaker table.
-- [ ] Run `node --test tests/circuit-breaker-wiring.test.js`: cases 2 to 13 pass, and cases 14 to 16 under the locked answer.
+- [x] `src/lib/circuit-breaker.js`, under the locked answer: `COUNT_LOCK_STALE_MS`, `withCountLock` and its use in `recordKickback`, as "Locked design" specifies. Under either answer: the "LIVE CALL SITE" paragraph, and the "Concurrency" paragraph in the chosen design's wording, with its `ponytail:` note.
+- [x] `src/commands/start.md`: the brief sentence, the completion sentences (the rerun sentence only under the locked answer) and the registry-only bullet.
+- [x] `docs/IRON_LOOP.md`: the paragraph under the Circuit Breaker table.
+- [x] Run `node --test tests/circuit-breaker-wiring.test.js`: cases 2 to 13 pass, and cases 14 to 16 under the locked answer.
 
 ### Step 11: REVIEW
-- [ ] The critic tries to get a count written:
+- [x] The critic tries to get a count written:
   - without `--continue`;
   - on an `implement` or a `plan` task;
   - with the steps `__proto__`, `1e1`, ` 10`, `10 `, `010`, `16.0` and `-1`;
   - for the plans `../x`, `in-progress/x.md` and `x.md.md`, and for a plan name holding a newline.
 
   Each attempt must be refused with nothing written. The critic also reads every new sentence as the owner would see it relayed: no gate number and no internal code. It checks that each refusal tells the session what to fix.
-- [ ] Mutation check for the finished plan: remove `'done'` from the folders `checkSendBack` searches and run case 13. It must fail, its first round refused with `names no plan that is being built`. Restore the line and run it green again. Record both runs.
-- [ ] Under the locked answer: the critic checks that every path out of `recordKickback` releases the lock, a ghost plan's throw included, and that a lock which is not ours (another mark, a link, a folder) is never deleted.
+- [x] Mutation check for the finished plan: remove `'done'` from the folders `checkSendBack` searches and run case 13. It must fail, its first round refused with `names no plan that is being built`. Restore the line and run it green again. Record both runs.
+- [x] Under the locked answer: the critic checks that every path out of `recordKickback` releases the lock, a ghost plan's throw included, and that a lock which is not ours (another mark, a link, a folder) is never deleted.
 
 ### Step 12: OPTIMIZE
-- [ ] Confirm by reading three things:
+- [x] Confirm by reading three things:
   - `src/lib/menu-screens.js` gained no top-level `require`;
   - a completion without `--send-back` runs no new code beyond one `undefined` test;
   - a counted send-back costs the counter's existing reads and one write, and under the locked answer one exclusive create and one delete of the lock;
   - `checkSendBack` stops at the first folder that holds the plan, so a finished plan costs at most three `existsSync` calls.
 
 ### Step 13: SECURE
-- [ ] The security scanner attacks the flag and the plan name with:
+- [x] The security scanner attacks the flag and the plan name with:
   - the inputs of Step 11;
   - a `--send-back` value of 100,000 characters;
   - a task registry edited to hold a plan name with control characters or a `..`;
@@ -764,17 +764,17 @@ Under the locked answer the counter's code changes, so the five circuit breaker 
   None may write outside `.ctoc/state/kickbacks/`, `.ctoc/logs/` and the task registry, count anything on a refused call, or print an unstripped control character.
 
 ### Step 14: VERIFY
-- [ ] Run `npm test`: lint, type check, all tests, coverage at or above `.ctoc/coverage-baseline.json` `minPct`, 0 skipped, 0 flaky. The run must include:
+- [x] Run `npm test`: lint, type check, all tests, coverage at or above `.ctoc/coverage-baseline.json` `minPct`, 0 skipped, 0 flaky. The run must include:
   - the five circuit breaker test files;
   - `tests/menu-task-wiring.test.js`, `tests/plans-keep-moving-without-the-human.test.js` and `tests/protect-records.test.js`;
   - `tests/menu-screens-coverage.test.js` and `tests/false-green-fence.test.js`;
   - `tests/reachability.test.js`, `tests/export-reachability.test.js` and `tests/gate-numbers-fence.test.js`.
 
 ### Step 15: DOCUMENT
-- [ ] The documentation is written in Step 10: `src/commands/start.md` (the session's recipe), `docs/IRON_LOOP.md` (what is counted), the `circuit-breaker.js` header and the JSDoc. The build record lists each changed sentence with its file.
+- [x] The documentation is written in Step 10: `src/commands/start.md` (the session's recipe), `docs/IRON_LOOP.md` (what is counted), the `circuit-breaker.js` header and the JSDoc. The build record lists each changed sentence with its file.
 
 ### Step 16: FINAL-REVIEW
-- [ ] Check every acceptance box against its evidence:
+- [x] Check every acceptance box against its evidence:
   - the first scenario, against the measured texts;
   - "Nothing changes the counting before his answer", against Step 10's quotation;
   - "The owner keeps the limit as it is" and "The measurement contradicts the reading", checked as not applying, with the reason written beside each;
@@ -782,3 +782,115 @@ Under the locked answer the counter's code changes, so the five circuit breaker 
   - that the design built is the one the owner chose for the count's write, against Step 8's record.
 
   Quote the first failing run of cases 2 to 13 (and 14 to 16 under the locked answer), and Step 11's run of case 13 without `done`.
+
+## Execution Record (Steps 8–16)
+
+Build run by the iron-loop executor in the worktree on branch `build/send-backs-count` (cut from main 6bcf0718), build task t1, 2026-10-22. Nothing under this heading is part of the approved text.
+
+### Measured before the first source change
+
+Date: 2026-10-22. Source: unchanged (no file under `src/` edited). Command: `node --test tests/circuit-breaker-wiring.test.js`. Case 1 ("today: a send-back written only in a round's summary counts nothing") passed; the two existing cases passed. The case printed with `t.diagnostic`:
+
+- Completion texts of the four rounds (two review, two security, each completed with `--continue --summary 'send back to Step 10: the reason'`, no `--send-back`): `Task t1 → done`, `Task t2 → done`, `Task t3 → done`, `Task t4 → done`.
+- The `inbox escalations` screen text: `Inbox ▸ Escalations & deploy-ready (0)`, a rule line, then `  No circuit-breaker escalations.`
+- The count on disk for the plan: `{ by_step: {}, total: 0 }`.
+
+The measurement agrees with the reading: no escalation and no count moved. "The measurement contradicts the reading" does not apply; the build proceeds.
+
+### Step 8: the owner's answer to the lock question
+
+The answer log in this worktree is the committed copy and does not hold the answer. It was read from the menu's answer store in the main checkout, as relayed by the CTO Chief (not read by this agent), where it is recorded at 2026-10-20T20:16:55.747Z for ref `implementation/ctoc-is-built-with-ctoc-send-backs-from-review-and-security-rounds-count-toward-the-.md`, question `q10-round-count-write-lock-r1792514438287` ("Should the count's write be locked?"): option 1, "Lock the count; a send-back that meets a held lock is reported as not counted" (the recommended option). This build is the locked design, so cases 14 to 16 and the lock items are built.
+
+### Step 8: the first run of cases 2 to 16 (on the unchanged source)
+
+`node --test tests/circuit-breaker-wiring.test.js`: 18 tests, 3 passed (the two existing cases and case 1), 15 failed (cases 2 to 16). Every failure is the expected one: the flag `--send-back` is unknown, so the round settles with the plain text and no count clause, and no refusal happens.
+
+- Cases 2, 3, 4, 13, 14, 15, 16: the completion text is `Task tN → done`, with no `was counted` or `NOT counted` clause.
+- Case 5, 8, 9, 10: the call that must be refused returns `ok: true` and settles the task (`"text":"Task t1 → done"`), where `ok: false` is expected.
+- Case 6: the text is `Task t1 → done`, with no `NOT counted` clause.
+- Case 7: its setup send-back counted nothing (`0 == 1`), because nothing counts yet.
+- Case 11: the text is `Task t1 was already completed by its agent`, with no count clause.
+- Case 12: the first child process prints `Task t2 → done`, with no `1 of a limit of 3 for Step 10`.
+- The fixture `finishedPlan` reached its own precondition on today's code in cases 12 and 13 (the plan finished in `plans/done/` before any round ran).
+
+### Step 9: PREPARE
+
+No stop condition hit. Checks, each against the files in this worktree:
+
+- Cited lines re-read. Moved lines, re-located (the behaviour is unchanged): `recordStepKickback` is now defined at `src/lib/actions.js:1955` (plan: `:1803`) and called at `:1492` and `:1612` (plan: `:1340`, `:1460`), still only inside `completeExecution`; `parseTaskArgs` at `src/lib/menu-screens.js:2277` (plan: `:2251`); `taskComplete` at `:2687` (plan: `:2661`); `isUnsafePlanFile` at `:112` (as cited); `withBuildStartLock` in `src/lib/actions.js` from `:1031` (as cited, its create/lstat/release logic read and matches the plan's description). `src/commands/start.md` lines `:127`, `:133` and `:196` are as cited. `docs/IRON_LOOP.md` Circuit Breaker table at `:287-290` as cited. `src/lib/circuit-breaker.js` header paragraphs, `recordKickback`, `kickbackStatePath`, `writeKickbackState` as cited.
+- Exports of `src/lib/circuit-breaker.js`: `readKickbackCounts`, `recordKickback`, `recordBreakerFailure`, `getEscalations`, `SAME_STEP_MAX`, `PER_PLAN_MAX`. `recordFixRound` is not there (searched `src/lib/circuit-breaker.js` for `recordFixRound|fix-round`: no match). The fix-rounds plan is not built, so no stop.
+- `src/hooks/protect-records.js`: `const RECORD_REFUSALS_OFF = true;` at `:1170` (plan: `:1053`) and `TASK_GRAMMAR.complete` at `:717` with fields `summary`, `gate`, `next`, `b64` (plan: `:669`): `continue` stays out of the grammar, as read.
+- Tests that pin text or shapes this build touches (searched `tests/*.js`): none pins the COMPLETION step 1 sentences this build adds after; `tests/menu-protocol.test.js:165-177` asserts only that the COMPLETION section names `menu task complete`, `nextRunnable`, `promote`, `pull`, `hijack|current screen`, `menu task fail` and `inbox`; `tests/the-session-claims-a-build-before-launching-it.test.js:92-110` pins fixed sentences of the COMPLETION section (the build recipe, the claim, the stamp), none of which is edited. `tests/protect-records.test.js:585-601` (case 89) reads `parseTaskArgs` for `continue`, `force` and `fail` only. No test pins the Circuit Breaker section of `docs/IRON_LOOP.md` or the `circuit-breaker.js` header text (searched `Circuit Breaker|Same-step kickbacks|sole writer|no locking is required|LIVE CALL SITE`: only an unrelated header comment in `tests/dispatch-seat-liveness-coverage-holes.test.js`). The refusal is the only new response shape of `menu task complete`.
+
+### Step 10: IMPLEMENT
+
+Built on the owner's three answers as the plan quotes them: count review, security and quality round send-backs (2026-10-20, recorded at 16:00:56Z); only the coordinator session records it (2026-10-20, recorded at 16:02:32Z); lock the count, "Lock the count; a send-back that meets a held lock is reported as not counted" (recorded 2026-10-20T20:16:55.747Z, read from the main checkout's answer store as relayed by the CTO Chief). Files changed (the plan's `files:` list, nothing else, apart from this plan file): `src/lib/menu-screens.js`, `src/lib/circuit-breaker.js`, `src/commands/start.md`, `docs/IRON_LOOP.md`, `tests/circuit-breaker-wiring.test.js`.
+
+- `src/lib/menu-screens.js`: the `--send-back` case and its JSDoc line in `parseTaskArgs`; `ROUND_KINDS`, `SEND_BACK_STEP_RE`, `checkSendBack` (folders `in-progress`, `review`, `done`, in that order) and `sendBackText`, all above `taskComplete` and not exported; in `taskComplete`, the check right after the unknown-id throw, the `countSendBack` helper, the count in the already-completed branch (before `continueAfterCrossing`) and in the settling path (right after `settled`, its clause appended after the completion clause and before the continuation); a JSDoc paragraph on the round's send-back. No top-level `require` was added.
+- `src/lib/circuit-breaker.js`: `COUNT_LOCK_STALE_MS`, `withCountLock` (mirrors `actions.withBuildStartLock`; a held lock throws), and `recordKickback` body wrapped in it (`normalizeStep` and `planSlug` stay first); the header's Concurrency paragraph (locked wording with its `ponytail:` note) and the call-site paragraph (three routes); the `@throws` line of `recordKickback`.
+- `src/commands/start.md`: the brief sentence (line 127), the completion sentences after "Never put `--continue` in an agent's brief." (line 133, with the rerun sentence), and the registry-only bullet.
+- `docs/IRON_LOOP.md`: the paragraph under the Circuit Breaker table.
+
+Run after the change, `node --test tests/circuit-breaker-wiring.test.js`: 18 tests, 18 passed (cases 1 to 16 and the two existing cases), 0 failed, 0 skipped. The other four circuit breaker files (`tests/circuit-breaker-coverage.test.js`, `tests/circuit-breaker-block-prepend.test.js`, `tests/circuit-breaker-malformed-frontmatter.test.js`, `tests/ctoc-audit-w05-circuit-breaker.test.js`) pass with the lock in place (54 tests in the five files, 0 failed).
+
+Beyond the plan's list, checks run in this step (not Step 14, which the completion runs): the whole `tests/*.test.js` set in four groups: 13,898 tests, 0 failed, 0 skipped. `npx eslint` on the three JavaScript files: no output, `npx tsc --noEmit`: no output. One finding on the way: `tests/false-green-fence.test.js` flagged an empty `catch` in the first draft of `withCountLock` (the delete of a stale lock); it is now written through an `attempt()` helper as `actions.withBuildStartLock` does, and the fence is green with no baseline change. Coverage of the new code was not measured in this step.
+
+### Decisions Taken Under Ambiguity — build (Steps 8 to 10)
+
+1. **The measurement section sits under the Execution Record, not above the Execution Plan.** Step 8 says to insert `## Measured before the first source change` directly above `## Execution Plan`. A new section there would change the text the approval digest covers and break the approval record. It is the first sub-section of `## Execution Record (Steps 8–16)` instead, titled `### Measured before the first source change`. The content the plan asks for is all there.
+2. **A stale-lock delete is written through an `attempt()` helper.** The false-green fence rejects an empty `catch`. The helper is the one `actions.withBuildStartLock` uses; behaviour is the plan's (a delete that fails leaves the lock, and the second create decides).
+3. **A round with no plan reads `"(no plan)"` in its refusal** instead of `"null"` (the plan's wording would print `null`); the sentence still contains `names no plan that is being built`, which case 10 checks.
+4. **`checkSendBack`'s JSDoc return type is a union with optional `undefined` members** so that `npx tsc --noEmit` passes on `sendBack.refusal`, `sendBack.step` and `sendBack.planPath`; the runtime shape is the plan's.
+5. **The new test cases keep their sandboxes in the file's own `describe`**, one temporary project per case, removed in `after`, so no case depends on another case's state. Case 12 completes each round with a child process one at a time (round set up in-process, then its completion run by the command), because the plan allows setting rounds up in-process and this keeps one round running at a time.
+6. **Echoed text is printable ASCII or "(not shown)".** The plan's Security review said the kind, step and plan name pass through `stripCtl` and are cut. That left format characters (a right-to-left override, a line separator) in a refusal. A local `shown(v, max)` in `src/lib/menu-screens.js` now echoes a value only when every character is a printable ASCII character (cut to `max`), and otherwise prints `(not shown)`. It is used for the three echoes of a refusal: the kind, the step and the plan. The count clause still uses `stripCtl` on the error text and the plan name, which come from the counter and from a name that has already passed the plain-file-name check.
+7. **The round's plan name must also be a plain file name.** The plan found a plan file when `isUnsafePlanFile` accepted the name. That accepted a name holding a C1 control character. `checkSendBack` now finds a plan only when the name also matches `^[A-Za-z0-9_][A-Za-z0-9._-]*$`, the shape `src/lib/task-view.js` and `src/lib/streaming-gate.js` use, as a local constant in `src/lib/menu-screens.js` (no new export).
+8. **A temp file `escalations.json.tmp-<pid>-<time>-<random>` appears briefly in `.ctoc/logs`.** The plan's Security review lists the writes as the counter, the escalations log and the lock. The escalations log is now written through a temp file (created with `wx`) and a rename, so a link at the log path is replaced and never written through. On a failed write or rename the temp file is deleted; a failed delete other than ENOENT is named in the rethrown message (ENOENT means the temp file was never created, so nothing is left over and nothing is added to the message). The read side's `catch { existing = []; }` and the comment-only catch around the folder creation are kept as they were, because the false-green baseline counts them.
+9. **A stale lock that cannot be deleted says so.** The plan (Decision 2 of the build, `attempt()`) treated a failed delete of a stale lock as no verdict and let the second create answer "being written by another call". That wording is false when the lock is old. A delete that fails with ENOENT still falls through to the second create; any other failure throws `the kickback counter's lock for <slug> is older than 60 seconds and could not be removed (<code>), so it was left as it is`. The `attempt()` helper has no caller left and is deleted.
+10. **The release-failure wording is replaced.** The entry recorded when our own lock cannot be removed now reads: "the kickback counter's lock could not be removed; send-backs of this plan are reported as not counted until a call finds it older than 60 seconds and can remove it". The plan's wording said "until it is 60 seconds old", which is not what removes it.
+11. **The Concurrency note names both takeover causes.** A takeover can leave two holders for two reasons: a holder suspended for more than a minute, or two calls that find the same dead lock at once, where the second deletes the first one's new lock. The header's `ponytail:` note says both.
+12. **Three sentences of `src/commands/start.md` changed.** The registry-only bullet now says the clause that begins `the send-back to Step` says what was counted (the plan said "the clause after the last `·`", which is wrong when the summary holds a `·`). The brief paragraph says a round names its plan by the plan's file name without `.md` and without a folder. The refusal sentence gains what to do when the round's plan is the cause: complete the round without `--send-back` and say in the status line that its send-back was not counted. The code's refusal "names no plan" now ends with "; complete this round without --send-back".
+13. **Tests: cases 17 to 22 are new; cases 5 and 10 are extended.** Case 17 (the escalations log is a link to a file elsewhere: the file is unchanged, the path becomes a plain file holding a breaker-failure entry) uses a symbolic-link probe copied from `tests/the-owner-answers-an-inbox-question.test.js` that fails loudly where links cannot be made. Case 18 (a folder at the log path) is a guard. Case 19 (a plan file whose name holds a C1 character) is refused with nothing hostile echoed. Cases 20 to 22 force a failed delete by wrapping `safe-fs`'s `unlinkSync` for one call, in-process, restored in `finally`: a stale lock that cannot be deleted (20), one whose delete finds it already gone (21, a guard), and our own lock that cannot be removed after the count (22). Case 5 gains a step made of U+202E followed by `01` (refused, no U+202E, "(not shown)"). Case 10 gains a plan name holding U+2028 planted through the task registry, and now asserts the refusal tells the session to complete the round without `--send-back`. Nothing races and nothing waits.
+14. **The "(no plan)" wording is kept.** The approved change list drops a change to it; a round with no plan still reads `"(no plan)"` in its refusal (Decision 3).
+
+### The fix round after Step 11 REVIEW and Step 13 SECURE (security blocked the first build)
+
+Each change: the test was written first and run red, then the code, then run green. Run in this worktree with `node --test tests/circuit-breaker-wiring.test.js`; the first run on the unchanged code, with cases 5, 10 and 17 to 22 added or extended, had 6 failures (cases 5, 10, 17, 19, 20, 22; cases 18 and 21 are guards and passed, as the change list says).
+
+1. **The escalations log through a temp file and a rename.** Red: case 17 ("the file behind the link is unchanged": the outside file held the log's JSON where `untouched` was expected). Green after `appendEscalation` writes `escalations.json.tmp-<pid>-<time>-<random>` with `wx` and renames it over the log path. Case 18 (a folder at the log path) passed before and after: completion ok, NOT counted, no `escalations.json.tmp-*` left, the folder still a folder. The read-side `catch` and the comment-only catch around the folder creation are byte for byte as they were; `tests/false-green-fence.test.js` passes at its baseline (`maxFindings` 205 = 204 baselined findings + 1 whitelisted; the file is unchanged).
+2. **The plan name must be a plain file name; refusals echo printable ASCII only.** Red: case 19 (the plan `bad` + U+009B + `name` was found and counted: `ok: true`, "was counted: 1 of a limit of 3") and case 5's extended step (U+202E in the refusal). Green after `shown()` and `SEND_BACK_PLAN_RE` in `checkSendBack`. Case 10's U+2028 plan was refused before and after, and is now asserted free of U+2028.
+3. **A stale lock that cannot be deleted says so.** Red: case 20 (text was "being written by another call at this moment") and case 22 (the release wording). Green after `withCountLock` throws `the kickback counter's lock for <slug> is older than 60 seconds and could not be removed (<code>), so it was left as it is` for any delete failure but ENOENT, and the release wording was replaced. Case 21 (the delete finds the lock gone) passed before and after.
+4. **The refusal says what to do.** Red: case 10 (`complete this round without --send-back` absent from the refusal of the round with no plan). Green after `checkSendBack`'s refusal gained it.
+5. and 6. **Documents and comment only.** `src/commands/start.md`: the registry-only bullet, the brief paragraph's plan-name sentence, and the refusal sentence now say what the change list says. `src/lib/circuit-breaker.js` header: the takeover sentence names both causes. No behaviour changed; `tests/menu-protocol.test.js` and `tests/the-session-claims-a-build-before-launching-it.test.js` pass.
+7. **This record.** Decisions 6 to 14 above.
+
+After the fix round: `node --test tests/circuit-breaker-wiring.test.js`: 24 tests, 24 passed (the 2 existing cases, cases 1 to 22).
+
+### Step 11: the mutation check for the finished plan
+
+Mutation: in `checkSendBack`, `for (const stage of ['in-progress', 'review', 'done'])` became `for (const stage of ['in-progress', 'review'])` (only that line; a first attempt with a global replace had also changed an unrelated `execution:` stage list elsewhere in `src/lib/menu-screens.js`, was discarded and the file restored from a copy before the exact one-line mutation was run). Run with the mutation: 24 tests, 22 passed, 2 failed, and only these two failed: case 12 and case 13 (the cases that use a plan that already finished). Case 13's assertion message: `{"ok":false,"taskId":"t2","error":"send-back refused","text":"Task t2: the completion is refused — \"finished\" names no plan that is being built, is in review or is done, so its send-back cannot be counted; complete this round without --send-back. Nothing was recorded, and the task is unchanged."}`. Case 12's: `The input did not match the regular expression /1 of a limit of 3 for Step 10/. Input: 'Task t2: the completion is refused — "shipped" names no plan that is being built, is in review or is done, so its send-back cannot be counted; complete this round without --send-back. Nothing was recorded, and the task is unchanged.'`. Restored byte for byte (the file's SHA-1 equals the one taken before the mutation); run again: 24 tests, 24 passed.
+
+### Step 12: OPTIMIZE (read, not measured)
+
+- `src/lib/menu-screens.js` gained no top-level `require`: the two new `require` calls (`./circuit-breaker` in `sendBackText`, `./actions` in `taskComplete`'s helper) are inside functions.
+- A completion without `--send-back` runs `p.sendBack !== undefined` once and nothing else of the new code (`countSendBack` returns the empty string when there is no send-back).
+- A counted send-back costs the counter's existing reads and one write, one exclusive create and one delete of the lock; the fix round adds nothing to the counted path. The escalations log write (only when an escalation or a failure is appended) is now one create and one rename instead of one in-place write.
+- `checkSendBack` stops at the first folder that holds the plan: at most three `existsSync` calls for a finished plan.
+- Nothing else was simplified: `shown()` is one regular-expression test; the unused `attempt()` helper was deleted in change 3.
+
+### Step 15: DOCUMENT
+
+The documentation items landed in Step 10 and are checked against the change list after the fix round. `src/commands/start.md`: the brief sentence (round summary ends with `send back to Step <n>: <reason>` or `nothing to send back`); the completion sentences, including the refusal sentence with what to do and the rerun sentence; the registry-only bullet naming the clause that begins `the send-back to Step`; the sentence that a round names its plan by the file name without `.md` and without a folder. `docs/IRON_LOOP.md`: the paragraph under the Circuit Breaker table (unchanged by the fix round, it matches the code). `src/lib/circuit-breaker.js`: the header paragraphs, and JSDoc for `appendEscalation` (temp file and rename, what it throws) and `withCountLock` (a stale lock that cannot be deleted). `src/lib/menu-screens.js`: JSDoc for `shown`, `checkSendBack` and the constants.
+
+### Step 14: VERIFY
+
+- `npm run lint` (`eslint . --max-warnings 0`): no output, exit 0. `npm run typecheck`: 1 test, 1 passed.
+- `npm test` (foreground, `uptime` before it: load averages 50.83 51.02 58.45): 13,904 tests, 13,904 passed, 0 failed, 0 cancelled, 0 skipped; `[CTOC test-gate] coverage 99.72% (threshold 99%), skipped 0, failed 0`; `[CTOC test-gate] corpus claims: verified 3 refuted 0 unverifiable 0`; `[CTOC test-gate] PASS`. No timing test failed, so no rerun was needed.
+- The named files run together (reachability, export reachability, gate numbers, menu task wiring, plans-keep-moving, protect-records, menu-screens coverage, the five circuit breaker files): 632 tests, 0 failed, 0 skipped. `tests/false-green-fence.test.js`: 17 tests, 0 failed; the finding count equals its baseline (205, `.ctoc/false-green-baseline.json` unchanged).
+
+Step 11 REVIEW. The reviewer returned changes required with four medium findings. They were combined with the security findings into one change list that the CTO Chief approved. Its correctness and documentation items were: a stale lock that cannot be deleted now says so, where before it read "being written by another call"; the "names no plan" refusal now tells the session to complete the round without --send-back; start.md names the clause that begins "the send-back to Step" and says how a round names its plan; the header comment names both ways a takeover can leave two holders. Each change was tested first and seen failing, then fixed. Cases 20 and 22 failed before the fix, and case 21 is a guard that passed before and after. The mutation check took the finished-plan folder out of the search: cases 12 and 13 failed and nothing else did, with case 13 refused as "names no plan that is being built". The file was restored byte for byte, and all 24 cases passed again.
+
+Step 13 SECURE. The security review blocked the first build on two findings. First, the escalations log was written through a symbolic link at its path into a file outside the project. Second, a plan name holding a C1 control character was accepted, counted and printed raw. The fix writes the log through a temp file that is created exclusively and then renamed, so a link at the log path is replaced and never written through; case 17 covers the link and case 18 a folder at the log path. A round's plan must now be a plain file name, and a refusal echoes a value only when every character is printable ASCII, otherwise "(not shown)"; cases 19, 5 and 10 cover this. Counting a send-back again when a call is repeated was accepted under technical Decision 7. The two-holder takeover was documented in the module header instead of changed in code.
+
+Step 16 FINAL-REVIEW. Every acceptance scenario that applies has a case proving it by behaviour, from case 1 for the measured gap to cases 2 to 22 for counting, escalation, refusals and the lock. The two scenarios that do not apply are recorded with their reasons: the measurement agreed with the reading, and the owner chose to count. All seven change-list items are in the code and covered by tests. start.md and IRON_LOOP.md say what the code does. The coordinator confirmed that only the five declared files and the plan changed, and that the owner's lock answer (option 1, "Lock the count; a send-back that meets a held lock is reported as not counted", recorded 2026-10-20) is in the menu's answer store. Two low test gaps were closed in a final round: the release leaves alone a lock whose mark is no longer ours, and the lock is released when the counting throws. Verdict: pass.
+
+Final round. Two test gaps the final review found were closed, both in `tests/circuit-breaker-wiring.test.js`, with no product change. Case 23 wraps `safe-fs.renameSync` once, in-process, so that when the counter renames its file another call rewrites the lock with a different mark; it asserts the count stands and the lock still holds that other mark after the call. Mutant: the mark comparison dropped from the release in `withCountLock`; run: 26 tests, 25 passed, only case 23 failed. Case 24 calls `recordKickback` on a plan that does not exist and asserts it throws `ENOENT`, that no `.lock` remains in `.ctoc/state/kickbacks/` and that no counter file was written. Mutant: the release skipped in the `finally`; run: 13 of 26 failed, case 24 among them. After each mutant `src/lib/circuit-breaker.js` was restored from a copy taken before the first mutation and compared byte for byte (`cmp`, no difference); restored runs: 26 tests, 26 passed, 0 skipped.

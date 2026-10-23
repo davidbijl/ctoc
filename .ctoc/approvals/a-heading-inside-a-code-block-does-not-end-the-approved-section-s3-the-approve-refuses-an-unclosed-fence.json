@@ -1,0 +1,10 @@
+{
+  "content_sha256": "9e301ed9381c2c706258849069d9598a25dde40b534d590f74173b7be58c236e",
+  "hash_scope": "specification",
+  "stage_from": "implementation",
+  "stage_to": "todo",
+  "approved_at": "2026-10-22T08:33:52.397Z",
+  "advanced_by": "sufficiency",
+  "evidence": "sufficiency: implementation/a-heading-inside-a-code-block-does-not-end-the-approved-section-s3-the-approve-refuses-an-unclosed-fence.md — no questions were computed (0 question(s) computed), 0 answered; 0 unanswered, 0 blocking; attested by: not recorded; enough (no unanswered fork)",
+  "plan_basename": "a-heading-inside-a-code-block-does-not-end-the-approved-section-s3-the-approve-refuses-an-unclosed-fence"
+}

@@ -1,0 +1,10 @@
+{
+  "content_sha256": "5e7d6872a9224c37ba947c228ecd646878a50a5cadb0a0cd119e96d90cb1c0e1",
+  "hash_scope": "specification",
+  "stage_from": "functional",
+  "stage_to": "implementation",
+  "approved_at": "2026-10-22T09:29:14.233Z",
+  "advanced_by": "sufficiency",
+  "evidence": "sufficiency: functional/the-gate-critic-sends-the-owner-only-stack-algorithm-cost-and-risk-questions.md — 2 question(s) computed, 2 answered (q10-narrow-what-reaches-the-owner-r1792654332161, q11-question-topic-vocabulary-r1792654332161); 0 unanswered, 0 blocking; attested by: not recorded; enough (no unanswered fork)",
+  "plan_basename": "the-gate-critic-sends-the-owner-only-stack-algorithm-cost-and-risk-questions"
+}

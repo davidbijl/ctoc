@@ -31,6 +31,62 @@ const menu = require('../src/lib/menu-screens.js');
 const staleDetector = require('../src/lib/stale-detector.js');
 const safeFs = require('../src/lib/safe-fs.js');
 const { MAX_CONCURRENT } = require('../src/lib/task-registry.js');
+const { spawnSync } = require('child_process');
+const decomposer = require('../src/lib/vision-decomposer.js');
+
+const MENU_ENTRY = path.join(__dirname, '..', 'src', 'commands', 'start.js');
+const VISION = 'ctoc-is-built-with-ctoc'; // 23 characters, the slug of the 2026-10-20 run
+const ESC = String.fromCharCode(0x1b);
+
+/** The vision file path the decomposer names stubs from (the file itself need not exist). */
+const visionPathIn = (root) => path.join(root, 'plans', 'vision', `${VISION}.md`);
+
+/** Stubs written by the real decomposer for VISION; goals are { title, scope }. */
+function decompose(root, goals) {
+  return decomposer.decomposeVision(visionPathIn(root), goals, root);
+}
+
+/** A stub written by hand, for frontmatter the decomposer never writes. */
+function writeRawStub(root, file, frontmatterLines, body = '## Problem Statement\nA scope line.\n') {
+  const fm = [...frontmatterLines, `parent_vision: "vision/${VISION}.md"`].join('\n');
+  fs.writeFileSync(path.join(root, 'plans', 'functional', `${file}.md`), `---\n${fm}\n---\n\n${body}`);
+}
+
+/**
+ * Split a screen line on its column breaks. A backslash escapes the character after it, so a `|`
+ * is a column break only when an even run of backslashes (none included) comes before it.
+ * Reason this replaced the lookbehind (?<!\\)\|: that rule read `\\|` (an escaped backslash, then a
+ * real column break) as an escaped pipe, so a test written on it passed on code that let a
+ * backslash undo the pipe's escape. Pieces are returned with their backslashes intact.
+ */
+function splitCells(line) {
+  const pieces = [];
+  let cur = '';
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] === '\\') { cur += line[i] + (line[i + 1] ?? ''); i++; }
+    else if (line[i] === '|') { pieces.push(cur); cur = ''; }
+    else cur += line[i];
+  }
+  pieces.push(cur);
+  return pieces;
+}
+
+/** The stub rows of the stubs screen, split on the column breaks no backslash escapes. */
+function stubRows(text) {
+  return text.split('\n').filter((l) => /^ {2}\| \d+ \| /.test(l)).map((l) => {
+    const pieces = splitCells(l);
+    const cells = pieces.slice(1, -1).map((c) => c.trim());
+    return { stub: cells[1], scope: cells[2], deps: cells[3], pipes: pieces.length - 1 };
+  });
+}
+/** A cell as the reader sees it: every backslash escape is undone. */
+const unescapeCell = (s) => s.replace(/\\(.)/g, '$1');
+const headerPipes = (text) => splitCells(text.split('\n').find((l) => l.includes('| # |'))).length - 1;
+
+/** No two rows name the same stub. */
+function assertDistinct(rows) {
+  assert.equal(new Set(rows.map((r) => r.stub)).size, rows.length, JSON.stringify(rows.map((r) => r.stub)));
+}
 
 // ── fixtures ─────────────────────────────────────────────────────────────────
 const STAGES = ['canvas', 'functional', 'implementation', 'todo', 'in-progress', 'review', 'done', 'vision'];
@@ -783,7 +839,11 @@ describe('vision stubs browse', () => {
     const r = menu.route(['stubs', 'myvision'], root);
     assert.match(r.text, /\[Vision Decomposition\] myvision/);
     assert.match(r.text, /decomposed into 1 functional plans/);
-    assert.match(r.text, /stub-one/);
+    // The old assertion (/stub-one/) pinned the file name on the screen, which is the defect this
+    // plan fixes. The screen now names the stub by its own title, so the file name `stub-one`
+    // (no `myvision-` prefix to hide) must not appear.
+    assert.equal(stubRows(r.text)[0].stub, 'One');
+    assert.ok(!r.text.includes('stub-one'));
     assert.equal(r.actions['Looks good -- refine all'], 'claude:approve-stubs myvision');
   });
 
@@ -791,6 +851,316 @@ describe('vision stubs browse', () => {
     const root = mkProject();
     const r = menu.route(['stubs', 'emptyvision'], root);
     assert.match(r.text, /No stubs created yet\./);
+  });
+
+  const TITLE_A = 'Opening the menu in a fresh worktree writes no stray half-filled IRON_LOOP.md';
+  const TITLE_B = 'The vision stubs screen names each stub by its title, not by the shared vision prefix';
+  const cellsOf = (r) => stubRows(r.text).map((x) => x.stub);
+
+  test('scenario_1_a_23_character_vision_slug_no_longer_hides_the_stubs', () => {
+    const root = mkProject();
+    decompose(root, [{ title: TITLE_A, scope: 'Scope one.' }, { title: TITLE_B, scope: 'Scope two.' }]);
+    const r = menu.route(['stubs', VISION], root);
+    const cells = cellsOf(r);
+    assert.deepEqual([...cells].sort(), [TITLE_A, TITLE_B].sort());
+    for (const t of [TITLE_A, TITLE_B]) assert.equal(r.text.split(t).length - 1, 1, t);
+    for (const c of cells) assert.ok(c !== VISION && !c.startsWith(`${VISION}-`), c);
+    assertDistinct(stubRows(r.text));
+  });
+
+  test('scenario_1_through_start_js_the_live_entry_point', () => {
+    const root = mkProject();
+    decompose(root, [{ title: TITLE_A, scope: 'Scope one.' }, { title: TITLE_B, scope: 'Scope two.' }]);
+    const env = { ...process.env };
+    delete env.CLAUDE_PROJECT_DIR;
+    const res = spawnSync(process.execPath, [MENU_ENTRY, 'stubs', VISION], {
+      cwd: fs.realpathSync(root), encoding: 'utf8', env, timeout: 30000
+    });
+    assert.equal(res.status, 0, res.stderr);
+    const rows = stubRows(JSON.parse(res.stdout).text);
+    assert.deepEqual(rows.map((x) => x.stub).sort(), [TITLE_A, TITLE_B].sort());
+    assertDistinct(rows);
+  });
+
+  test('scenario_2_titles_sharing_51_opening_characters_stay_apart', () => {
+    const root = mkProject();
+    const a = 'The menu prints the exact answer command for every option';
+    const b = 'The menu prints the exact answer command for every question';
+    assert.equal(a.slice(0, 51), b.slice(0, 51));
+    decompose(root, [{ title: a, scope: 'A.' }, { title: b, scope: 'B.' }]);
+    const r = menu.route(['stubs', VISION], root);
+    assert.deepEqual(cellsOf(r).sort(), [a, b].sort());
+    assert.ok(cellsOf(r).some((c) => c.endsWith('option')) && cellsOf(r).some((c) => c.endsWith('question')));
+    assertDistinct(stubRows(r.text));
+  });
+
+  test('scenario_3_a_title_made_of_digits_is_shown_as_text', () => {
+    const root = mkProject();
+    writeRawStub(root, `${VISION}-year`, ['title: 2026']);
+    decompose(root, [{ title: 'Alpha plan', scope: 'A.' }, { title: 'Beta plan', scope: 'B.' }]);
+    const r = menu.route(['stubs', VISION], root);
+    assert.equal(stubRows(r.text).length, 3);
+    assert.deepEqual(cellsOf(r).sort(), ['2026', 'Alpha plan', 'Beta plan']);
+    assertDistinct(stubRows(r.text));
+  });
+
+  test('titles_read_as_zero_or_false_are_shown_as_text', () => {
+    const root = mkProject();
+    writeRawStub(root, `${VISION}-zero`, ['title: 0']);
+    writeRawStub(root, `${VISION}-no`, ['title: "false"']);
+    const r = menu.route(['stubs', VISION], root);
+    assert.deepEqual(cellsOf(r).sort(), ['0', 'false']);
+    assertDistinct(stubRows(r.text));
+  });
+
+  test('scenario_4_a_title_with_a_pipe_keeps_its_row_whole', () => {
+    const root = mkProject();
+    decompose(root, [
+      { title: 'Export | import of plans', scope: 'Move plans in | out' },
+      { title: 'Second plan', scope: 'Other.' }
+    ]);
+    const r = menu.route(['stubs', VISION], root);
+    const rows = stubRows(r.text);
+    assert.equal(rows.length, 2);
+    for (const row of rows) assert.equal(row.pipes, headerPipes(r.text));
+    const pipeRow = rows.find((x) => unescapeCell(x.stub) === 'Export | import of plans');
+    assert.ok(pipeRow, JSON.stringify(rows));
+    assert.equal(unescapeCell(pipeRow.scope), 'Move plans in | out');
+    assert.equal(pipeRow.deps, 'none');
+    assertDistinct(rows);
+  });
+
+  test('scenario_5_a_200_character_scope_line_is_shown_whole', () => {
+    const root = mkProject();
+    const scope = Array.from({ length: 200 }, (_, i) => String.fromCharCode(97 + (i % 26))).join('');
+    assert.equal(scope.length, 200);
+    decompose(root, [{ title: 'Long scope', scope }]);
+    const r = menu.route(['stubs', VISION], root);
+    assert.equal(stubRows(r.text)[0].scope, scope);
+    assertDistinct(stubRows(r.text));
+  });
+
+  test('scenario_6_a_stub_without_a_problem_statement_has_an_empty_scope', () => {
+    const root = mkProject();
+    writeRawStub(root, `${VISION}-bare`, ['title: "No statement"'], '# No statement\n\nJust text.\n');
+    decompose(root, [{ title: 'With statement', scope: 'The whole scope line stays.' }]);
+    const r = menu.route(['stubs', VISION], root);
+    const rows = stubRows(r.text);
+    assert.equal(rows.find((x) => x.stub === 'No statement').scope, '');
+    assert.equal(rows.find((x) => x.stub === 'With statement').scope, 'The whole scope line stays.');
+    assertDistinct(rows);
+  });
+
+  test('scenario_7_a_stub_without_a_title_is_named_by_its_file_name_without_the_vision_prefix', () => {
+    const root = mkProject();
+    writeRawStub(root, `${VISION}-export-data`, ['type: stub']);
+    const r = menu.route(['stubs', VISION], root);
+    assert.deepEqual(cellsOf(r), ['export-data']);
+    assertDistinct(stubRows(r.text));
+  });
+
+  test('scenario_8_an_empty_or_blank_title_falls_back_the_same_way', () => {
+    for (const titleLine of ['title: ""', 'title: "   "']) {
+      const root = mkProject();
+      writeRawStub(root, `${VISION}-export-data`, [titleLine]);
+      const r = menu.route(['stubs', VISION], root);
+      assert.deepEqual(cellsOf(r), ['export-data'], titleLine);
+      assertDistinct(stubRows(r.text));
+    }
+  });
+
+  test('scenario_9_a_title_less_stub_without_the_prefix_is_named_by_its_whole_file_name', () => {
+    const root = mkProject();
+    writeRawStub(root, 'export-and-import', ['type: stub']);
+    const r = menu.route(['stubs', VISION], root);
+    assert.deepEqual(cellsOf(r), ['export-and-import']);
+    assertDistinct(stubRows(r.text));
+  });
+
+  test('scenario_10_two_stubs_with_one_title_also_show_their_file_names', () => {
+    const root = mkProject();
+    decomposer.createStub(VISION, { title: 'Export data', scope: 'A.' }, visionPathIn(root), root);
+    decomposer.createStub(VISION, { title: 'Export data', scope: 'A.' }, visionPathIn(root), root);
+    const r = menu.route(['stubs', VISION], root);
+    assert.deepEqual(cellsOf(r).sort(), ['Export data (file: export-data)', 'Export data (file: export-data-2)']);
+    assertDistinct(stubRows(r.text));
+  });
+
+  test('a_shared_title_whose_prefix_free_file_names_match_shows_the_whole_file_names', () => {
+    const root = mkProject();
+    writeRawStub(root, 'export-data', ['title: "Export data"']);
+    writeRawStub(root, `${VISION}-export-data`, ['title: "Export data"']);
+    const r = menu.route(['stubs', VISION], root);
+    assert.deepEqual(cellsOf(r).sort(), [`Export data (file: ${VISION}-export-data)`, 'Export data (file: export-data)'].sort());
+    assertDistinct(stubRows(r.text));
+  });
+
+  test('a_title_equal_to_another_stubs_fallback_name_still_differs', () => {
+    const root = mkProject();
+    writeRawStub(root, `${VISION}-something`, ['title: export-data']);
+    writeRawStub(root, `${VISION}-export-data`, ['type: stub']);
+    const r = menu.route(['stubs', VISION], root);
+    assert.deepEqual(cellsOf(r).sort(), ['export-data (file: export-data)', 'export-data (file: something)']);
+    assertDistinct(stubRows(r.text));
+  });
+
+  test('a_file_name_that_is_only_the_vision_prefix_is_shown_whole', () => {
+    const root = mkProject();
+    writeRawStub(root, `${VISION}-`, ['type: stub']);
+    const r = menu.route(['stubs', VISION], root);
+    assert.deepEqual(cellsOf(r), [`${VISION}-`]);
+    assertDistinct(stubRows(r.text));
+  });
+
+  test('control_characters_never_reach_the_stubs_screen', () => {
+    const root = mkProject();
+    writeRawStub(root, `${VISION}-clear`, [`title: "Clear ${ESC}[2J screen"`], `## Problem Statement\nScope ${ESC}[2J line\n`);
+    writeRawStub(root, `${VISION}-bell`, [`title: "\x07${ESC}"`]);
+    const r = menu.route(['stubs', VISION], root);
+    assert.ok(!/[\x00-\x09\x0b-\x1f\x7f-\x9f]/.test(r.text), 'a control character reached the screen');
+    const rows = stubRows(r.text);
+    assert.deepEqual(rows.map((x) => x.stub).sort(), ['Clear [2J screen', 'bell']);
+    assert.equal(rows.find((x) => x.stub === 'Clear [2J screen').scope, 'Scope [2J line');
+    assertDistinct(rows);
+  });
+
+  test('titles_named_like_object_properties_are_ordinary_text', () => {
+    const root = mkProject();
+    for (const t of ['constructor', '__proto__', 'toString']) writeRawStub(root, `${VISION}-${t.toLowerCase().replace(/_/g, '')}`, [`title: ${t}`]);
+    const r = menu.route(['stubs', VISION], root);
+    assert.deepEqual(cellsOf(r).sort(), ['__proto__', 'constructor', 'toString']);
+    assertDistinct(stubRows(r.text));
+  });
+
+  // The owner's answer (question q10-invisible-characters-in-stub-titles-r1792507574090, option 1,
+  // recorded 2026-10-20T17:50:20Z): direction-reversing and invisible characters are removed here.
+  const RLO = String.fromCharCode(0x202e); // right-to-left override
+  const ZWSP = String.fromCharCode(0x200b); // zero-width space
+  const LSEP = String.fromCharCode(0x2028); // line separator
+  const BRAILLE_BLANK = String.fromCharCode(0x2800);
+
+  test('direction_reversing_and_invisible_characters_never_reach_the_stubs_screen', () => {
+    const root = mkProject();
+    writeRawStub(root, `${VISION}-tricky`, [`title: "Pay${RLO}ment${ZWSP}s${LSEP}done${BRAILLE_BLANK}!"`],
+      `## Problem Statement\nScope${RLO} with${ZWSP} marks${BRAILLE_BLANK}\n`);
+    const r = menu.route(['stubs', VISION], root);
+    for (const ch of [RLO, ZWSP, LSEP, BRAILLE_BLANK]) {
+      assert.ok(!r.text.includes(ch), `U+${ch.codePointAt(0).toString(16)} reached the screen`);
+    }
+    const [row] = stubRows(r.text);
+    assert.equal(row.stub, 'Paymentsdone!');
+    assert.equal(row.scope, 'Scope with marks');
+  });
+
+  test('two_titles_differing_only_by_an_invisible_character_count_as_the_same_name', () => {
+    const root = mkProject();
+    writeRawStub(root, `${VISION}-first`, ['title: "Same title"']);
+    writeRawStub(root, `${VISION}-second`, [`title: "Same${ZWSP} title"`]);
+    const r = menu.route(['stubs', VISION], root);
+    assert.deepEqual(cellsOf(r).sort(), ['Same title (file: first)', 'Same title (file: second)']);
+    assertDistinct(stubRows(r.text));
+  });
+
+  const NEL = String.fromCharCode(0x85); // next line (a C1 control character)
+  const ZWJ = String.fromCharCode(0x200d); // zero-width joiner
+
+  test('a_depends_on_read_as_a_number_true_or_a_list_does_not_stop_the_screen', () => {
+    const root = mkProject();
+    writeRawStub(root, `${VISION}-num`, ['depends_on: 12']);
+    writeRawStub(root, `${VISION}-yes`, ['depends_on: true']);
+    writeRawStub(root, `${VISION}-list`, ['depends_on:', '  - a', '  - b']);
+    writePlan(root, 'functional', 'other-vision-plan',
+      '---\ntitle: Other\nparent_vision: 2026\n---\n\n## Problem Statement\nElsewhere.\n');
+    const r = menu.route(['stubs', VISION], root);
+    const rows = stubRows(r.text);
+    assert.equal(rows.length, 3);
+    assert.deepEqual(rows.map((x) => x.deps).sort(), ['12', 'a, b', 'true']);
+    assertDistinct(rows);
+  });
+
+  test('a_depends_on_value_cannot_split_its_row_or_carry_hidden_characters', () => {
+    const root = mkProject();
+    writeRawStub(root, `${VISION}-pipe`, ['depends_on: "a|b|c"']);
+    writeRawStub(root, `${VISION}-hidden`, [`depends_on: "x${RLO}y${NEL}"`]);
+    const r = menu.route(['stubs', VISION], root);
+    const rows = stubRows(r.text);
+    assert.equal(rows.length, 2);
+    for (const row of rows) assert.equal(row.pipes, headerPipes(r.text), JSON.stringify(row));
+    assert.equal(unescapeCell(rows.find((x) => x.stub === 'pipe').deps), 'a|b|c');
+    assert.equal(rows.find((x) => x.stub === 'hidden').deps, 'xy');
+    assert.ok(!r.text.includes(RLO) && !r.text.includes(NEL));
+  });
+
+  test('a_backslash_before_a_pipe_cannot_split_the_row', () => {
+    const root = mkProject();
+    writeRawStub(root, `${VISION}-slash`, ['title: a\\|b'], `## Problem Statement\nc\\${ZWSP}|d\n`);
+    const r = menu.route(['stubs', VISION], root);
+    const [row] = stubRows(r.text);
+    assert.equal(row.pipes, headerPipes(r.text), r.text);
+    assert.equal(unescapeCell(row.stub), 'a\\|b');
+    assert.equal(unescapeCell(row.scope), 'c\\|d');
+  });
+
+  test('a_title_that_reads_like_another_rows_suffixed_name_still_differs', () => {
+    const root = mkProject();
+    writeRawStub(root, `${VISION}-alpha`, ['title: "Export data (file: export-data)"']);
+    decomposer.createStub(VISION, { title: 'Export data', scope: 'A.' }, visionPathIn(root), root);
+    decomposer.createStub(VISION, { title: 'Export data', scope: 'A.' }, visionPathIn(root), root);
+    const r = menu.route(['stubs', VISION], root);
+    assert.deepEqual(cellsOf(r).sort(), [
+      `Export data (file: ${VISION}-export-data)`,
+      'Export data (file: export-data) (file: alpha)',
+      'Export data (file: export-data-2)',
+    ].sort());
+    assertDistinct(stubRows(r.text));
+  });
+
+  test('file_names_that_differ_only_by_a_hidden_character_are_shown_apart', () => {
+    const root = mkProject();
+    writeRawStub(root, `${VISION}-a${ZWSP}b`, ['type: stub']);
+    writeRawStub(root, `${VISION}-ab`, ['type: stub']);
+    const r = menu.route(['stubs', VISION], root);
+    assert.deepEqual(cellsOf(r).sort(), [`ab (file: ${VISION}-a<U+200B>b)`, `ab (file: ${VISION}-ab)`].sort());
+    assert.ok(!r.text.includes(ZWSP));
+    assertDistinct(stubRows(r.text));
+
+    // Two files whose names are nothing but invisible characters: the name is all that tells them apart.
+    const root2 = mkProject();
+    writeRawStub(root2, ZWSP, ['type: stub']);
+    writeRawStub(root2, ZWJ, ['type: stub']);
+    const r2 = menu.route(['stubs', VISION], root2);
+    assert.deepEqual(cellsOf(r2).sort(), ['(file: <U+200B>)', '(file: <U+200D>)']);
+    assert.ok(!r2.text.includes(ZWSP) && !r2.text.includes(ZWJ));
+    assertDistinct(stubRows(r2.text));
+  });
+
+  test('titles_written_with_one_accent_two_ways_count_as_the_same_name', () => {
+    const root = mkProject();
+    writeRawStub(root, `${VISION}-one`, [`title: "Cafe${String.fromCharCode(0x301)}"`]);
+    writeRawStub(root, `${VISION}-two`, [`title: "Caf${String.fromCharCode(0xe9)}"`]);
+    const r = menu.route(['stubs', VISION], root);
+    const e = String.fromCharCode(0xe9);
+    assert.deepEqual(cellsOf(r).sort(), [`Caf${e} (file: one)`, `Caf${e} (file: two)`]);
+    assertDistinct(stubRows(r.text));
+  });
+
+  test('a_vision_name_that_is_not_a_plain_file_name_is_refused', () => {
+    const root = mkProject();
+    writeRawStub(root, `${VISION}-real`, ['title: "Real stub"']);
+    const routes = [
+      ['stubs', `${VISION}\n  | 9 | forged | x | none |`],
+      ['stubs'],
+      ['stubs', ''],
+      ['stubs', `a${RLO}b`],
+    ];
+    for (const words of routes) {
+      const r = menu.route(words, root);
+      const label = JSON.stringify(words);
+      assert.equal(stubRows(r.text).length, 0, label);
+      assert.match(r.text, /is not a vision name/, label);
+      assert.deepEqual(Object.keys(r.actions), ['Back'], label);
+      assert.ok(Object.values(r.actions).every((a) => !String(a).startsWith('claude:')), label);
+    }
   });
 });
 

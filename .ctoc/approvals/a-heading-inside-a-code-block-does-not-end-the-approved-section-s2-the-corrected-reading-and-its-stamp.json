@@ -1,0 +1,10 @@
+{
+  "content_sha256": "20f3611f92cf7e6fbe8fa257ef4c5369917a9c551f3ce1978a2be8f2f2192ded",
+  "hash_scope": "specification",
+  "stage_from": "implementation",
+  "stage_to": "todo",
+  "approved_at": "2026-10-22T09:41:25.673Z",
+  "advanced_by": "sufficiency",
+  "evidence": "sufficiency: implementation/a-heading-inside-a-code-block-does-not-end-the-approved-section-s2-the-corrected-reading-and-its-stamp.md — no questions were computed (0 question(s) computed), 0 answered; 0 unanswered, 0 blocking; attested by: not recorded; 2 recorded answer(s) did not bind to this revision; enough (no unanswered fork)",
+  "plan_basename": "a-heading-inside-a-code-block-does-not-end-the-approved-section-s2-the-corrected-reading-and-its-stamp"
+}

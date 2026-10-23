@@ -1,0 +1,10 @@
+{
+  "content_sha256": "2f20d5c003973cccca446d71e18f5f6fb22fa0b4c9fef69f7539074289a6eb4c",
+  "hash_scope": "specification",
+  "stage_from": "functional",
+  "stage_to": "implementation",
+  "approved_at": "2026-10-21T14:04:59.672Z",
+  "advanced_by": "sufficiency",
+  "evidence": "sufficiency: functional/a-heading-inside-a-code-block-does-not-end-the-approved-section.md — 6 question(s) computed, 6 answered (q10-moved-approval-fingerprints, q11-what-counts-as-a-code-fence, q12-unclosed-code-fence, q13-how-left-out-headings-match, q14-level-one-line-ends-left-out-section-r1792577057391, q15-indented-heading-starts-left-out-section-r1792577057391); 0 unanswered, 0 blocking; attested by: not recorded; enough (no unanswered fork)",
+  "plan_basename": "a-heading-inside-a-code-block-does-not-end-the-approved-section"
+}

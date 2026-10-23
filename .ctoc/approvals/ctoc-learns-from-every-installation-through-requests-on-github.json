@@ -1,0 +1,10 @@
+{
+  "content_sha256": "3cee01776da48e6b5168c58173fd4853dfad11f43a69daf5a5e6ccf8e2775a25",
+  "hash_scope": "file",
+  "stage_from": "vision",
+  "stage_to": "done",
+  "approved_at": "2026-10-22T09:24:01.850Z",
+  "advanced_by": "pipeline",
+  "evidence": "vision-decomposed",
+  "plan_basename": "ctoc-learns-from-every-installation-through-requests-on-github"
+}

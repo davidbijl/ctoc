@@ -1,0 +1,10 @@
+{
+  "content_sha256": "98352e955835cbcbe82154be043c0cd43e7d24c535ee943acf8b2ebd2582485e",
+  "hash_scope": "specification",
+  "stage_from": "functional",
+  "stage_to": "implementation",
+  "approved_at": "2026-10-21T14:04:56.992Z",
+  "advanced_by": "sufficiency",
+  "evidence": "sufficiency: functional/a-finished-plan-can-be-sent-back-for-a-text-only-revision.md — 7 question(s) computed, 7 answered (q01-who-may-send-a-finished-plan-back, q02-how-text-only-is-enforced, q03-fresh-check-for-a-revised-plan, q04-who-finishes-a-revised-plan, q10-send-back-record-shell-refusal-r1792578309776, q11-keep-copy-of-deleted-approval-r1792578309776, q12-where-send-back-record-lives-r1792578309776); 0 unanswered, 0 blocking; attested by: not recorded; enough (no unanswered fork)",
+  "plan_basename": "a-finished-plan-can-be-sent-back-for-a-text-only-revision"
+}

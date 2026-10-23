@@ -392,5 +392,5 @@ Operations specify which Claude model tier to use:
 ## Related Documentation
 
 - [CTOC README](/README.md) - Main documentation
-- [Iron Loop](/templates/IRON_LOOP.md.template) - Development methodology
+- [Iron Loop](/docs/IRON_LOOP.md) - Development methodology
 - [Skills System](/skills/README.md) - Language and framework profiles
