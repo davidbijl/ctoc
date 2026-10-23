@@ -26,13 +26,13 @@ CTOC is built with CTOC. Today one coordinator builds one plan at a time, each i
 4. **Shared generated files are written by one step on main after landing, never by a plan branch:** the version sync into the manifests and the counts in `CLAUDE.md` (and the other files the release script keeps). A file every plan edits makes no two plans disjoint.
 5. **Each worktree is isolated:** `npm ci`, never symlinked `node_modules`; tests on port 0; a unique folder under `os.tmpdir()`; a per-worktree `NODE_V8_COVERAGE`; created from local main (not the remote default branch). Time-dependent tests use mock timers.
 6. **One plan lands per full-suite run, with no batching.** The owner's rule is quality first, and this way every commit on main was tested on its own.
+7. **Two to three builders run at once, sharing the one machine-wide full-suite slot of decision 2, once that slot exists.** The owner's decision, given 2026-10-23 in answer to the first open question (option b of the research).
 
 ## Open questions for the owner
 
-The coordinator is putting both to the owner; the answers will be recorded here. The research behind each, with its option table and sources, is in the source file named above (questions 2 and 3).
+The first question, how many builders run at once, is answered: decision 7. The one below is with the owner; its answer will be recorded here. The research behind it, with its option table and sources, is in the source file named above (question 3).
 
-1. **How many builders run at once?** Options from the research: (a) one builder overlapping one verification; (b) two to three builders sharing the one full-suite slot; (c) three to five builders sharing it. With one slot, plans land no faster than one per suite run; extra builders help only while building a plan takes longer than verifying one. Neither time has been measured on this project.
-2. **Where does a finished plan's check evidence live?** Options from the research: (a) committed in the plan's branch, one file per plan (travels with the code, pushed to GitHub, so it must pass the privacy redaction); (b) kept in the common git directory, local only (seen from every worktree, never pushed, lost with the clone); (c) recorded under a shared notes reference on the landed commit (attached to the exact commit; push and rebase behaviour not yet verified).
+1. **Where does a finished plan's check evidence live?** Options from the research: (a) committed in the plan's branch, one file per plan (travels with the code, pushed to GitHub, so it must pass the privacy redaction); (b) kept in the common git directory, local only (seen from every worktree, never pushed, lost with the clone); (c) recorded under a shared notes reference on the landed commit (attached to the exact commit; push and rebase behaviour not yet verified).
 
 ## Related plans
 
