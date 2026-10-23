@@ -211,6 +211,29 @@ test('(f) CRLF non-block region preserved; no leftover temp files; path via path
   } finally { rmTmp(dir); }
 });
 
+// ── (g) the sentence on changing a test reaches a user project ─────────────────
+
+const CHANGE_A_TEST = 'Change a test only when it is plain wrong, and only to tighten it; never weaken an assertion, widen a range, or delete a case or whitelist without a written reason, to turn red green.';
+const OLD_RULE = '- NEVER weaken a test, delete an assertion, mock away a failure, or special-case an input to make a check pass. Fix the cause or report the failure.';
+
+test('(g) a refreshed manual block carries the sentence on changing a test; outside bytes unchanged', () => {
+  const template = fs.readFileSync(SHIPPED_TEMPLATE, 'utf8').replace(/\r\n/g, '\n');
+  assert.ok(template.includes(OLD_RULE + ' ' + CHANGE_A_TEST + '\n'), 'the hard rule ends with the sentence');
+  const dir = mkTmp();
+  try {
+    const before = '# My app\n\nnotes\n\n';
+    const after = '\n\nmore notes\n';
+    fs.writeFileSync(claudeMd(dir), before + BEGIN_MARKER + '\n' + OLD_RULE + '\n' + END_MARKER + after, 'utf8');
+    const res = mergeOperatingManual(dir, { ctocRoot: CTOC_ROOT });
+    assert.equal(res.action, 'updated');
+    const content = fs.readFileSync(claudeMd(dir), 'utf8');
+    assert.ok(content.includes(CHANGE_A_TEST), 'the project receives the sentence');
+    assert.equal(occurrences(content, BEGIN_MARKER), 1, 'still exactly one block');
+    assert.equal(content.slice(0, content.indexOf(BEGIN_MARKER)), before, 'bytes before the block unchanged');
+    assert.equal(content.slice(content.indexOf(END_MARKER) + END_MARKER.length), after, 'bytes after the block unchanged');
+  } finally { rmTmp(dir); }
+});
+
 // ── fail-open: malformed lone marker → no throw, file untouched ──────────────
 
 test('(fail-open) lone BEGIN marker (no END) → unchanged, file untouched, no throw', () => {

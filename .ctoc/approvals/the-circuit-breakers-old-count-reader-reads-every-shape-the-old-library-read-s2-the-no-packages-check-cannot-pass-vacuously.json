@@ -1,0 +1,10 @@
+{
+  "content_sha256": "0ad3f2a13f47d5e04998b7ec3e83032f1fb3cbb5e5110f9d344a05b75626e05c",
+  "hash_scope": "specification",
+  "stage_from": "implementation",
+  "stage_to": "todo",
+  "approved_at": "2026-10-22T18:16:56.711Z",
+  "advanced_by": "sufficiency",
+  "evidence": "sufficiency: implementation/the-circuit-breakers-old-count-reader-reads-every-shape-the-old-library-read-s2-the-no-packages-check-cannot-pass-vacuously.md — no questions were computed (0 question(s) computed), 0 answered; 0 unanswered, 0 blocking; attested by: not recorded; enough (no unanswered fork)",
+  "plan_basename": "the-circuit-breakers-old-count-reader-reads-every-shape-the-old-library-read-s2-the-no-packages-check-cannot-pass-vacuously"
+}

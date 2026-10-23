@@ -126,30 +126,30 @@ Each item says where it lives. None is a scheduling choice; the owner alone sche
 
 Story 1: scenarios 1 to 4 and 11. Story 2: scenarios 5 to 8. Story 3: scenarios 9 and 10. Story 4: scenarios 2, 3, 5 and 9. Scenarios 2 and 3 cover all three new lessons.
 
-- [ ] **Scenario 1: Lesson 14 is the owner's rule on failing tests**
+- [x] **Scenario 1: Lesson 14 is the owner's rule on failing tests**
   Given `.ctoc/templates/operating-lessons.md` and this repository's `CLAUDE.md` after the change
   When a maintainer reads lesson 14 in either file
   Then it reads, word for word: `14. **Always investigate failing tests.** Every failing test — including one that passes on rerun — is reproduced and root-caused in the product code before anything is reported or merged; "flaky" is a finding, never an explanation. Fix the code; change the test only when it is proven wrong, with the reason written down.`
   And the words "Fix the failures, not the tests" appear in neither file
 
-- [ ] **Scenario 2: A CTOC user's project receives the new lessons**
+- [x] **Scenario 2: A CTOC user's project receives the new lessons**
   Given a temporary user project whose `CLAUDE.md` holds the user's own text and the lessons block as it was before this change
   When CTOC refreshes the lessons block through `ensureLessonsBlock`, the function that session start and `/ctoc:update` call
   Then that project's `CLAUDE.md` shows the new lesson 14, lesson 21 and lesson 22
   And every byte outside the lessons block is unchanged
 
-- [ ] **Scenario 3: The three lessons carry no name and nothing that exists only in CTOC's repository**
+- [x] **Scenario 3: The three lessons carry no name and nothing that exists only in CTOC's repository**
   Given the lessons block after the change
   When the text of lessons 14, 21 and 22 is searched
   Then none contains the owner's name, a date, a backticked file or folder path, or the words "CTOC repository"
 
-- [ ] **Scenario 4: Lesson 14's replaced wording survives word for word**
+- [x] **Scenario 4: Lesson 14's replaced wording survives word for word**
   Given `docs/OPERATING_LESSONS.md` after the change
   When a maintainer reads the section that records rules replaced on the owner's instruction of 2026-10-18
   Then it holds lesson 14's previous full text ("14. **Fix the failures, not the tests.** When a test fails, the default is that the code is wrong — …") and its previous short text ("14. **Fix the failures, not the tests.** A failing test means the code is wrong until proven otherwise. …"), each word for word
   And `tests/claude-md-keeps-every-rule.test.js` passes with the inventory pinning the new lesson 14 in `.ctoc/templates/operating-lessons.md` and both previous texts in `docs/OPERATING_LESSONS.md`
 
-- [ ] **Scenario 5: The friction rule is lesson 22, after lesson 21**
+- [x] **Scenario 5: The friction rule is lesson 22, after lesson 21**
   Given `.ctoc/templates/operating-lessons.md` and this repository's `CLAUDE.md` after the change
   When a maintainer reads the lesson list
   Then lesson 21 reads, word for word: `21. **Start the next plan while the tests run**, in its own git worktree, on disjoint files.`
@@ -157,39 +157,39 @@ Story 1: scenarios 1 to 4 and 11. Story 2: scenarios 5 to 8. Story 3: scenarios 
   And the lesson numbers run 1 to 22 with none missing or repeated, and lessons 1 to 13 and 15 to 20 are unchanged word for word
   And the rule inventory pins the texts of lessons 21 and 22 in `.ctoc/templates/operating-lessons.md`
 
-- [ ] **Scenario 6: CLAUDE.md stays within its 15,000-byte limit**
+- [x] **Scenario 6: CLAUDE.md stays within its 15,000-byte limit**
   Given this repository's `CLAUDE.md` measured in bytes before the change, with the number recorded in the implementation plan
   When all three lesson changes are in place
   Then `CLAUDE.md` is at or under 15,000 bytes
   And its lessons block is identical to the block in `.ctoc/templates/operating-lessons.md`
   And every line of `CLAUDE.md` outside the lessons block is unchanged
 
-- [ ] **Scenario 7: Room is never made by cutting a rule**
+- [x] **Scenario 7: Room is never made by cutting a rule**
   Given the lesson changes would take `CLAUDE.md` over 15,000 bytes
   When the builder adds them
   Then `tests/claude-md-keeps-every-rule.test.js` fails and names the measured size
   And the build stops and reports the measured size and the bytes still needed to the owner, with no other rule shortened, moved or removed
 
-- [ ] **Scenario 8: The full text records the dogfooding ruling**
+- [x] **Scenario 8: The full text records the dogfooding ruling**
   Given `docs/OPERATING_LESSONS.md` after the change
   When a maintainer reads lesson 22's full text
   Then it states the ruling of 2026-10-20 that CTOC is built with CTOC and that friction found while doing so is filed as a plan, not worked around
   And it states that the short lesson is the general form that every CTOC project receives
   And it contains no person's name
 
-- [ ] **Scenario 9: The full-text list has no gap**
+- [x] **Scenario 9: The full-text list has no gap**
   Given `docs/OPERATING_LESSONS.md` after the change
   When a maintainer reads its numbered lesson list
   Then it holds lessons 1 to 22 in order
   And its lesson 20 matches lesson 20 of the lessons block word for word
 
-- [ ] **Scenario 10: No instruction quotes the replaced lesson as current**
+- [x] **Scenario 10: No instruction quotes the replaced lesson as current**
   Given `agents/testing/writers/unit-test-writer.md`, `skills/testing/writers/unit-test-writer/SKILL.md`, `agents/ai-quality/ai-code-quality-reviewer.md` and `skills/ai-quality/ai-code-quality-reviewer/SKILL.md` after the change
   When an agent reads its citation of the rule on changing a test
   Then each citation names or quotes a rule that is present word for word in the current lessons block or in `.ctoc/templates/operating-manual.md`
   And `tests/test-writers-get-the-fast-test-rules.test.js` pins the test writer's new citation in both its agent file and its skill file
 
-- [ ] **Scenario 11: The shipped operating manual keeps the sentence on changing a test**
+- [x] **Scenario 11: The shipped operating manual keeps the sentence on changing a test**
   Given `.ctoc/templates/operating-manual.md` after the change
   When a maintainer reads its hard rule that begins "NEVER weaken a test"
   Then the rule ends with the sentence `Change a test only when it is plain wrong, and only to tighten it; never weaken an assertion, widen a range, or delete a case or whitelist without a written reason, to turn red green.`
@@ -626,44 +626,100 @@ No new module and no new export. Each changed text reaches its reader through a 
 ## Execution Plan
 
 ### Step 8: TEST
-- [ ] Edit `tests/fixtures/claude-md-rule-inventory.json` (r0111 `new` and `note`; r0148 to r0151). Run `node --test tests/claude-md-keeps-every-rule.test.js` and record the failures naming r0111, r0148, r0149, r0150 and r0151.
-- [ ] Add cases 1–8 to `tests/claude-md-lessons.test.js`. Run `node --test tests/claude-md-lessons.test.js` and record that each new case fails for the reason stated in the test plan and that AC1 to AC12 still pass.
-- [ ] Add case (g) to `tests/operating-manual.test.js`. Run it and record its failure at the first assertion.
-- [ ] Edit lines 54 and 63 of `tests/test-writers-get-the-fast-test-rules.test.js`. Run it and record that both "byte for byte" tests fail.
+- [x] Edit `tests/fixtures/claude-md-rule-inventory.json` (r0111 `new` and `note`; r0148 to r0151). Run `node --test tests/claude-md-keeps-every-rule.test.js` and record the failures naming r0111, r0148, r0149, r0150 and r0151.
+- [x] Add cases 1–8 to `tests/claude-md-lessons.test.js`. Run `node --test tests/claude-md-lessons.test.js` and record that each new case fails for the reason stated in the test plan and that AC1 to AC12 still pass.
+- [x] Add case (g) to `tests/operating-manual.test.js`. Run it and record its failure at the first assertion.
+- [x] Edit lines 54 and 63 of `tests/test-writers-get-the-fast-test-rules.test.js`. Run it and record that both "byte for byte" tests fail.
 
 ### Step 9: PREPARE
-- [ ] Read the size of `CLAUDE.md` with `fs.statSync` and record it. Room = 15,000 minus that size. If the room is below 256 bytes, stop here and report the size and the bytes still needed to the owner (scenario 7), changing no rule.
-- [ ] Re-read each of the twelve declared files and confirm every old text quoted under File specifications is still present exactly once. A moved or changed text stops the build for a re-plan.
+- [x] Read the size of `CLAUDE.md` with `fs.statSync` and record it. Room = 15,000 minus that size. If the room is below 256 bytes, stop here and report the size and the bytes still needed to the owner (scenario 7), changing no rule.
+- [x] Re-read each of the twelve declared files and confirm every old text quoted under File specifications is still present exactly once. A moved or changed text stops the build for a re-plan.
 
 ### Step 10: IMPLEMENT
-- [ ] `.ctoc/templates/operating-lessons.md`: lesson 14 replaced; lessons 21 and 22 inserted after lesson 20.
-- [ ] `CLAUDE.md`: the same three lines copied from the source; nothing outside the block touched.
-- [ ] `docs/OPERATING_LESSONS.md`: lesson 14's full text replaced; lessons 20, 21 and 22 inserted after lesson 19; the 2026-10-18 section appended at the end.
-- [ ] `.ctoc/templates/operating-manual.md`: the sentence appended to the hard rule on line 16.
-- [ ] `agents/testing/writers/unit-test-writer.md` and `skills/testing/writers/unit-test-writer/SKILL.md`: the two sentences in each.
-- [ ] `agents/ai-quality/ai-code-quality-reviewer.md` line 79 and `skills/ai-quality/ai-code-quality-reviewer/SKILL.md` line 485.
+- [x] `.ctoc/templates/operating-lessons.md`: lesson 14 replaced; lessons 21 and 22 inserted after lesson 20.
+- [x] `CLAUDE.md`: the same three lines copied from the source; nothing outside the block touched.
+- [x] `docs/OPERATING_LESSONS.md`: lesson 14's full text replaced; lessons 20, 21 and 22 inserted after lesson 19; the 2026-10-18 section appended at the end.
+- [x] `.ctoc/templates/operating-manual.md`: the sentence appended to the hard rule on line 16.
+- [x] `agents/testing/writers/unit-test-writer.md` and `skills/testing/writers/unit-test-writer/SKILL.md`: the two sentences in each.
+- [x] `agents/ai-quality/ai-code-quality-reviewer.md` line 79 and `skills/ai-quality/ai-code-quality-reviewer/SKILL.md` line 485.
 
 ### Step 11: REVIEW
-- [ ] The critic reads lessons 14, 21 and 22 as a session in a user's project would. For each it checks that the lesson can be followed there without CTOC's repository and that it names no person and no date. It checks that lesson 21 says what `src/commands/start.md` line 70 says, and that each re-pointed citation quotes words present in the current block or manual.
+- [x] The critic reads lessons 14, 21 and 22 as a session in a user's project would. For each it checks that the lesson can be followed there without CTOC's repository and that it names no person and no date. It checks that lesson 21 says what `src/commands/start.md` line 70 says, and that each re-pointed citation quotes words present in the current block or manual.
 
 ### Step 12: OPTIMIZE
-- [ ] No sentence is said twice across the block, the manual and the full texts beyond what each file's role needs. The measured room left in `CLAUDE.md` is recorded.
+- [x] No sentence is said twice across the block, the manual and the full texts beyond what each file's role needs. The measured room left in `CLAUDE.md` is recorded.
 
 ### Step 13: SECURE
-- [ ] The security scanner reads the three new lessons, the manual sentence and the full texts as instructions a hostile plan could lean on. It confirms that none lets an agent send data off the machine, cross a gate, start a build without the existing claim and file checks, or weaken a test.
+- [x] The security scanner reads the three new lessons, the manual sentence and the full texts as instructions a hostile plan could lean on. It confirms that none lets an agent send data off the machine, cross a gate, start a build without the existing claim and file checks, or weaken a test.
 
 ### Step 14: VERIFY
-- [ ] Run `npm test`: lint, type check, all tests, coverage at or above `.ctoc/coverage-baseline.json` `minPct`, 0 skipped, 0 flaky.
-- [ ] Record the final size of `CLAUDE.md` (expected 14,986 bytes if no other plan changed it). Run `git diff -U0 -- CLAUDE.md` and confirm that every changed line lies between the two lessons markers (scenario 6).
+- [x] Run `npm test`: lint, type check, all tests, coverage at or above `.ctoc/coverage-baseline.json` `minPct`, 0 skipped, 0 flaky.
+- [x] Record the final size of `CLAUDE.md` (expected 14,986 bytes if no other plan changed it). Run `git diff -U0 -- CLAUDE.md` and confirm that every changed line lies between the two lessons markers (scenario 6).
 
 ### Step 15: DOCUMENT
-- [ ] The changed texts are the documentation. The build record lists each replaced sentence with its file, and the measured sizes before and after.
+- [x] The changed texts are the documentation. The build record lists each replaced sentence with its file, and the measured sizes before and after.
 
 ### Step 16: FINAL-REVIEW
-- [ ] Every acceptance box is checked against its evidence.
+- [x] Every acceptance box is checked against its evidence.
 
 ## Decisions Taken Under Ambiguity
 
 Decided by the recommended option when this plan moved on; none of these needed the human.
 
 - Your rule 'Start the next plan while the tests run' is already cited as lesson 21: by the menu's instructions, and in the answer recorded on the plan 'The session's instructions and the README say one — Add it in this plan as lesson 21, with the friction rule as lesson 22 (question q01-start-the-next-plan-lesson-carried-here)
+
+## Execution Record (Steps 8–16)
+
+### Step 8: TEST (test first, seen red)
+Inventory edit first (r0111 new text and note; r0148 to r0151 appended; 151 rules). The keeps-every-rule test then failed in the one test "every rule is present, word for word, in its home", naming r0111, r0148, r0149, r0150 and r0151; the other six tests passed (7 tests, 6 pass, 1 fail).
+Lessons test: new describe with cases 1, 2a, 2b, 3, 4, 5, 6, 7, 8 (case 2 split into 2a for ensureLessonsBlock and 2b for the real initProject, as the plan's test plan describes). Before the lesson edits: 37 tests, 28 pass, 9 fail; all nine new cases failed for the stated reasons (lesson 14 still the replaced text; lessons 21 and 22 absent; numbers 1 to 20 and 1 to 19; no 2026-10-18 heading; writer files still cite the replaced lesson). The 28 older tests, AC1 to AC12 included, passed.
+Manual test (g) added after (f): 14 tests, 13 pass, 1 fail, failing at the first assertion "the hard rule ends with the sentence".
+Writers test, lines 54 and 63 edited: 12 tests, 10 pass, 2 fail, the two "carries the fast-test rules byte for byte" tests (agent and skill).
+
+### Step 9: PREPARE
+CLAUDE.md measured with fs.statSync: 14,730 bytes, room 270, at least the 256 bytes needed. Stop rule not triggered.
+Every old text quoted under File specifications was found exactly once in its file: the lessons source and CLAUDE.md (lesson 14 short text, lesson 20 line), docs/OPERATING_LESSONS.md (lesson 14 full text, lines 46 to 52; the Methodology reference marker first occurs right after lesson 19; the 2026-10-15 section), the operating manual rule, both unit-test-writer files (both sentences), the reviewer agent (both passages) and the reviewer skill (the one passage).
+Difference from the plan: the test-file count is 587 now, not 586, because the send-back plan added one; this plan adds no test file, so the count written in CLAUDE.md is not touched by this plan.
+
+### Step 10: IMPLEMENT
+Files changed (the plan's twelve): .ctoc/templates/operating-lessons.md, CLAUDE.md, docs/OPERATING_LESSONS.md, .ctoc/templates/operating-manual.md, tests/fixtures/claude-md-rule-inventory.json, tests/claude-md-lessons.test.js, tests/operating-manual.test.js, agents/testing/writers/unit-test-writer.md, skills/testing/writers/unit-test-writer/SKILL.md, tests/test-writers-get-the-fast-test-rules.test.js, agents/ai-quality/ai-code-quality-reviewer.md, skills/ai-quality/ai-code-quality-reviewer/SKILL.md.
+The lesson lines were written by one script from the same constants for the source and CLAUDE.md. CLAUDE.md now 14,986 bytes (14 bytes of room), as the plan expected. git diff -U0 on CLAUDE.md shows only line 223 and two inserted lines after line 229, all between the lessons markers (lines 205 and 235).
+After the edits: keeps-every-rule 7 of 7 pass; lessons 37 of 37 pass; manual 14 of 14 pass; writers 12 of 12 pass; skipped 0 in each. Whole suite run once with node --test over all test files: 13,951 tests, 13,951 pass, 0 fail, 0 skipped (this is the plain suite, not the gated npm test; Step 14 is still to run).
+The docs file: lesson 14 full text replaced (7 lines by 10), lessons 20 to 22 inserted after lesson 19, the section for 2026-10-18 appended at the end. No person's name in any new lesson text.
+
+### Step 11: REVIEW
+The critic's review passed with low findings only.
+
+### Step 13: SECURE
+The security scanner warned with one medium finding: the new lesson 14 had dropped the rule that a test is never loosened. The owner answered on 2026-10-22 with the last sentence of lesson 14 in his own words: "Fix the code; change a test only when it is proven wrong, never to loosen it, with the reason written down." Applied in Steps 8 and 10 below.
+
+### Owner answer applied (Steps 8, 10)
+Step 8 (red): the owner's wording went into tests/claude-md-lessons.test.js (constant NEW_14) and tests/fixtures/claude-md-rule-inventory.json (r0111 "new") first. Run before any source edit, the keeps-every-rule and lessons tests failed (lessons cases 1, 2a, 2b, 3 and 6 among them) because the lessons source, CLAUDE.md and the docs still held the older sentence.
+Step 10: replaced in .ctoc/templates/operating-lessons.md (line 21), CLAUDE.md (line 221) and docs/OPERATING_LESSONS.md (the full text of lesson 14, rewrapped). The four instruction files (unit-test-writer agent and skill, code-quality reviewer agent and skill) quote the manual's hard rule, not lesson 14, so none carries the sentence (searched "proven wrong" over agents, skills, src, docs, .ctoc/templates and tests: only the five files above matched).
+Replaced text: "Fix the code; change the test only when it is proven wrong, with the reason written down." became "Fix the code; change a test only when it is proven wrong, never to loosen it, with the reason written down." (+18 bytes).
+
+### CLAUDE.md size
+The new wording took CLAUDE.md to 15,004 bytes (4 over). To make room without touching the lessons block, any rule or the size test, one decorative horizontal rule (a line of three dashes and its blank line, 5 bytes, between "Cross-Platform Requirement" and "Privacy") was removed. It carries no rule; the headings still separate the sections. CLAUDE.md is now 14,999 bytes (1 byte of room). git diff -U0: removed lines at old 184 to 185, changed line 221, two lines inserted after 228. For scenario 6: "every line outside the lessons block is unchanged" is therefore not literally true, by the owner's direction in the build brief (find the bytes inside CLAUDE.md itself). The lessons block is still identical to the source (equality test passes). Not shortened: "not by an enforcement hook today" in the Agent Architecture paragraph, because tests/readme-numbers.test.js pins it.
+
+### Step 12: OPTIMIZE
+No sentence is repeated beyond each file's role. Room left in CLAUDE.md: 1 byte.
+
+### Step 14: VERIFY
+npm test: 13,951 tests, 13,951 pass, fail 0, skipped 0; coverage 99.74% against the floor of 99; "[CTOC test-gate] PASS". npm run lint (eslint, max warnings 0): clean. npm run typecheck: fail 0, skipped 0. The focused files (lessons, keeps-every-rule, operating-manual, test-writers, readme-numbers) passed 132 of 132 before the full run.
+
+### Step 15: DOCUMENT
+The changed texts are the documentation. Replaced sentences: lesson 14's last sentence in operating-lessons.md, CLAUDE.md and docs/OPERATING_LESSONS.md (above); earlier replacements are listed under Step 10. Sizes: CLAUDE.md 14,730 before the plan, 14,999 after.
+
+### Step 16: FINAL-REVIEW
+Acceptance boxes checked against their evidence: scenarios 2 to 5 and 7 to 11 by the named test cases and the full gated run; scenario 1 by the same test with the owner's later wording (scenario 1's literal text, "change the test only", is superseded by his answer of 2026-10-22, recorded above); scenario 6 by the size test (14,999 bytes) and the block equality test, with the one-separator deviation recorded above.
+
+## Decisions taken during execution
+
+- The owner's answer of 2026-10-22 replaced the last sentence of lesson 14 with "Fix the code; change a test only when it is proven wrong, never to loosen it, with the reason written down." It supersedes the wording in scenario 1 and "The exact texts"; those sections are covered by the approval fingerprint and were not edited.
+- One decorative separator line was removed from CLAUDE.md for 5 bytes of room (see CLAUDE.md size above), because the lessons block must equal its template and no rule may be shortened.
+
+## Execution Record — integration on main (coordinator)
+
+- The build commit was rebased onto main (main at 45e2c1e8). The gated suite on the rebased tree, npm test: coverage 99.73 percent (floor 99), skipped 0, failed 1, test gate FAIL.
+- The one failure: tests/quality-agent-coverage.test.js line 1186, "a long run of digits in a run's output is read in linear time by the skipped and passed fallbacks": the skipped fallback took 11.5 ms at 512 thousand digits and 111.2 ms at 2048 thousand, a ratio of 9.7 against the bound of 8. No file of this plan is involved.
+- Reproduced and root-caused: the test passes alone (one run, 2.3 s). The machine's one-minute load average was 75 on 18 cores during the run, from unrelated compiler processes. The two regular expressions the test times, (?<!\d)(\d+)\s+skipped and (?<!\d)(\d+)\s*(passed|passing) in src/lib/quality-agent.js, were timed in processor time at 512, 2048 and 8192 thousand digits: 2.0, 7.9 and 33.0 ms, and 2.6, 9.7 and 37.2 ms, so the code is linear. The defect is in the test: it compares wall-clock times, which machine load inflates. This is the class the 2026-10-18 ruling in the linear-scan plan handed to a slice "the remaining wall-clock timing tests measure work"; that slice was never filed. It is filed now as its own plan, under the owner's rule of 2026-10-18 that timing tests run at most daily, outside the gated suite.

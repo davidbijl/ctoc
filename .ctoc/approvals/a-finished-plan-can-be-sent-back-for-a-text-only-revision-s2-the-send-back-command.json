@@ -1,0 +1,10 @@
+{
+  "content_sha256": "5e90604a63507ad9bab8ac6e8cdf715ea289487ddfad4c44324fea5f11442eec",
+  "hash_scope": "specification",
+  "stage_from": "implementation",
+  "stage_to": "todo",
+  "approved_at": "2026-10-22T11:12:40.319Z",
+  "advanced_by": "sufficiency",
+  "evidence": "sufficiency: implementation/a-finished-plan-can-be-sent-back-for-a-text-only-revision-s2-the-send-back-command.md — 3 question(s) computed, 3 answered (q10-background-agent-send-back-window-r1792659873661, q11-send-back-record-shape-r1792659873661, q12-declared-pattern-expansion-r1792659873661); 0 unanswered, 0 blocking; attested by: not recorded; enough (no unanswered fork)",
+  "plan_basename": "a-finished-plan-can-be-sent-back-for-a-text-only-revision-s2-the-send-back-command"
+}

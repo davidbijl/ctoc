@@ -148,7 +148,7 @@ function parseRef(ref) {
   if (slash === -1) return null;
   const stage = ref.substring(0, slash);
   const file = ref.substring(slash + 1);
-  if (!GATE_META[stage]) return null;
+  if (!Object.hasOwn(GATE_META, stage)) return null; // not `constructor`, `__proto__`, … from Object.prototype
   if (isUnsafePlanFile(file)) return null;
   return { stage, file };
 }
@@ -229,7 +229,7 @@ function parseAnyRef(ref) {
   if (slash === -1) return null;
   const stage = ref.substring(0, slash);
   const file = ref.substring(slash + 1);
-  if (!ALL_STAGES[stage]) return null;
+  if (!Object.hasOwn(ALL_STAGES, stage)) return null; // not `constructor`, `__proto__`, … from Object.prototype
   if (isUnsafePlanFile(file)) return null;
   return { stage, file };
 }
@@ -446,10 +446,34 @@ function nextUnansweredQuestion(root, ref) {
     require('./streaming-questions-sweeper').sweepPendingQuestions(root);
   } catch { /* fail-soft: the human still gets the plain Approve screen */ }
 
-  let questions;
-  let answered;
-  let classified;
+  const found = openQuestions(root, ref);
+  if (found.open.length === 0) return null;
+  const { question, index } = found.open[0];
+  return { question, index, total: found.total, held: found.status === 'held' };
+}
+
+/**
+ * Every open question of `ref`, in the order the question screens ask them, by the gate's own
+ * rules: a held plan has only CTOC's keep-or-release question; an author's file the gate critic
+ * has not classified has none; an answer counts only when it binds to the current revision
+ * (`readAnsweredQuestionIds` with the questions); the questions that go to the human
+ * (`goesToHuman`) come first, each group in file order. The ONE encoding the question screens
+ * (`nextUnansweredQuestion`, which asks the first) and the answers view (`streamAnswersScreen`,
+ * which lists them all) share. Takes in no waiting file: each caller sweeps first. A read;
+ * never throws.
+ * @param {string} root
+ * @param {string} ref
+ * @returns {{status: string, open: Array<{question: object, index: number, toHuman: boolean}>, total: number}}
+ *   `status` is 'open' or 'held' when `open` is not empty; otherwise one of 'not-computed',
+ *   'stale', 'invalid', 'unknown-plan' (the store's own status), 'unchecked', 'none-open' or
+ *   'unreadable' — the keys of NO_ANSWER_LINES.
+ */
+function openQuestions(root, ref) {
+  const none = (status) => ({ status, open: [], total: 0 });
+  const held = (precompute) => ({ status: 'held', open: [{ question: holdQuestion(precompute.HOLD), index: 0, toHuman: true }], total: 1 });
   let precompute;
+  let st;
+  let answered;
   try {
     // Lazy require avoids a load-time circular dependency (streaming-precompute
     // requires this module at call time for plansNeedingQuestions).
@@ -457,30 +481,29 @@ function nextUnansweredQuestion(root, ref) {
     // ONE status call, not two: it yields the questions AND the revision in a
     // single read (`loadPlanQuestions` would call the same status internally and
     // then throw the revision away).
-    const st = precompute.planQuestionsStatus(root, ref);
+    st = precompute.planQuestionsStatus(root, ref);
     // A held plan is asked keep-or-release first even when it has no readable question file.
-    if (st.status !== 'ready') return heldWithoutQuestions(precompute, root, ref) ? { question: holdQuestion(precompute.HOLD), index: 0, total: 1, held: true } : null;
-    questions = st.questions;
-    classified = st.classified;
+    if (st.status !== 'ready') return heldWithoutQuestions(precompute, root, ref) ? held(precompute) : none(st.status);
     answered = precompute.readAnsweredQuestionIds(root, ref, {
       questionsRevisionMs: st.questionsRevisionMs,
       planMtimeMs: st.planMtimeMs,
-      questions,
+      questions: st.questions,
     });
   } catch {
-    return null;
+    return none('unreadable');
   }
-  if (answered.held.length > 0) return { question: holdQuestion(precompute.HOLD), index: 0, total: 1, held: true };
+  if (answered.held.length > 0) return held(precompute);
   // An author's file the gate critic has not checked is never put to the human as his
   // decision: the screen says it is being checked, or offers to check it.
-  if (classified !== true) return null;
-  if (!Array.isArray(questions) || questions.length === 0) return null;
+  if (st.classified !== true) return none('unchecked');
+  const questions = Array.isArray(st.questions) ? st.questions : [];
   // A question whose only answer belongs to an OLDER revision is offered again —
   // that is the point, not a regression: the human never saw this question.
-  const open = questions.map((q, i) => [q, i]).filter(([q]) => !answered.ids.has(q.id));
-  if (open.length === 0) return null;
-  const [question, index] = open.find(([q]) => precompute.goesToHuman(q, classified)) || open[0];
-  return { question, index, total: questions.length, held: false };
+  const open = questions
+    .map((question, index) => ({ question, index, toHuman: precompute.goesToHuman(question, st.classified) }))
+    .filter((o) => !answered.ids.has(o.question.id));
+  if (open.length === 0) return none('none-open');
+  return { status: 'open', open: [...open.filter((o) => o.toHuman), ...open.filter((o) => !o.toHuman)], total: questions.length };
 }
 
 /**
@@ -533,7 +556,7 @@ function isGateRuling(id) {
  * @param {object} q the Question
  * @param {string} ref the plan it belongs to
  * @param {string} header the question header
- * @returns {{ question: object, matrix: string, actions: object }}
+ * @returns {{ question: object, matrix: string, actions: object, answers: Array<{key: string, label: string, recommended: boolean, command: string}> }}
  */
 function precomputedQuestionParts(q, ref, header) {
   const { HOLD, questionDigest } = require('./streaming-precompute');
@@ -546,6 +569,7 @@ function precomputedQuestionParts(q, ref, header) {
   const entries = ordered.map((o) => ({
     key: o.key,
     label: stripCtl(o.label),
+    recommended: o.recommended === true,
     description: precomputedOptionDescription(o),
   }));
   // An action that can let a plan move carries the digest of the question exactly as this
@@ -553,12 +577,24 @@ function precomputedQuestionParts(q, ref, header) {
   const actions = {};
   const answer = (key, withDigest) => `stream answer ${ref} ${quoteArg(q.id)} ${quoteArg(key)}`
     + (withDigest && digest ? ` ${quoteArg(digest)}` : '');
-  for (const e of entries) actions[e.label] = answer(e.key, !own || e.key === HOLD.release.key);
+  // Every answer line this question offers, in screen order (recommended first, CTOC's Hold
+  // last): the answers view prints exactly these, so its lines and the screens' actions are one
+  // composition, never two. Each command is composed once and read from here by both; reading it
+  // back out of `actions` by label would be wrong for a label that is a name Object.prototype
+  // supplies (`__proto__`, `constructor`), which `actions[label]` answers with a non-string.
+  const answers = [];
+  for (const e of entries) {
+    const command = answer(e.key, !own || e.key === HOLD.release.key);
+    actions[e.label] = command;
+    answers.push({ key: e.key, label: e.label, recommended: e.recommended, command });
+  }
   const options = entries.map((e) => ({ label: e.label, description: e.description }));
   if (!own) {
     // CTOC's own Hold, from `HOLD` alone — never text from the question file.
     options.push({ label: HOLD.hold.label, description: HOLD.hold.description });
-    actions[HOLD.hold.label] = answer(HOLD.hold.key, false);
+    const command = answer(HOLD.hold.key, false);
+    actions[HOLD.hold.label] = command;
+    answers.push({ key: HOLD.hold.key, label: HOLD.hold.label, recommended: false, command });
   }
   return {
     question: {
@@ -572,6 +608,7 @@ function precomputedQuestionParts(q, ref, header) {
     // human actually reads while deciding.
     matrix: precomputedQuestionMatrix(q, ordered),
     actions,
+    answers,
   };
 }
 
@@ -1812,6 +1849,109 @@ function planDecisionScreen(ref, projectRoot) {
   return { text, ask: { questions }, actions };
 }
 
+/** What the answers view says when it prints no answer line, one fixed sentence per reason. */
+const NO_ANSWER_LINES = Object.freeze({
+  'not-computed': 'No questions have been generated for this plan yet, so there is no answer line.',
+  stale: 'The plan changed after its questions were worked out, so there is no answer line until they are worked out again.',
+  invalid: 'The stored questions of this plan are unreadable, so there is no answer line.',
+  'unknown-plan': 'There is no plan file at this reference, so there is no answer line.',
+  unchecked: 'The gate critic has not yet checked the questions its author wrote, so there is no answer line.',
+  'none-open': 'No question of this plan is open, so there is no answer line.',
+  unreadable: 'The questions of this plan could not be read, so there is no answer line.',
+});
+
+/**
+ * The words after "Question N of M · " in the answers view: who decides the question, and how
+ * long its line counts.
+ * @param {string} status 'held' or 'open' (from `openQuestions`)
+ * @param {boolean} toHuman does the question wait for the owner (`goesToHuman`)
+ * @param {boolean} ownerOpen is any question that waits for the owner still open
+ * @returns {string}
+ */
+function answerLinesNote(status, toHuman, ownerOpen) {
+  if (status === 'held') return 'the owner holds this plan; only keeping or releasing the hold can be recorded';
+  if (toHuman) return 'waits for the owner';
+  return ownerOpen
+    ? 'decided by its recommended option unless answered; its line counts only when run before the last answer to a question that waits for the owner, because that answer can move the plan on'
+    : 'decided by its recommended option unless answered; no question that waits for the owner is open, so the plan can move on at the next answer, approval or completed task, and after that this line records nothing';
+}
+
+/**
+ * `stream answers <ref>` — the ANSWER LINES of one plan, for the session that records the owner's
+ * answers through the menu. Every open question (`openQuestions`: the question screens' own rules,
+ * the ones that wait for the owner first), its prompt, each option's label (the recommended one
+ * first and marked) with the exact command the question screens offer for that option directly
+ * under it (`precomputedQuestionParts(...).answers`), and the question's hold line. Every text line
+ * that carries question-file text starts with words the menu wrote ("Question: ", "Option: ", and
+ * "Option (Recommended): " for the stored recommended option), and the text itself is ONE
+ * JSON-quoted value with whitespace and control characters folded to one space, so it can neither
+ * start a line of its own nor pass for the menu's words; only CTOC's own text (the keep-or-release
+ * prompt of a held plan, the labels of its hold and release options) is bare. The plan name in the
+ * header passes `stripInvisible`. The same lines ride in `actions`, keyed `<question id> <option
+ * key>`, so the raw output prints each on a physical line of its own.
+ *
+ * Records nothing and moves nothing. Its one write is the sweep of the gate critic's waiting
+ * question files, done first as the plan screen does; a sweep fault is said on the screen. No
+ * banner, no continuation, no task. A reference outside the plans folder or naming no stage gets
+ * the invalid-reference screen; a plan outside functional, implementation and review gets one
+ * sentence and no line, because `streamAnswer` takes answers only there (`parseRef`).
+ * @param {string} ref plan reference ("stage/file.md")
+ * @param {string} projectRoot
+ * @returns {{text: string, ask: object, actions: object}}
+ */
+function streamAnswersScreen(ref, projectRoot) {
+  const parsed = parseAnyRef(ref);
+  if (!parsed) {
+    const raw = String(ref);
+    const slash = raw.indexOf('/');
+    return invalidPlanRefScreen(slash === -1 ? raw : raw.slice(0, slash), slash === -1 ? '' : raw.slice(slash + 1));
+  }
+  const { stage, file } = parsed;
+  const planRef = `${stage}/${file}`;
+  let text = `Answer lines: ${stripInvisible(nameOfPlanAt(projectRoot, stage, file))}\n${'─'.repeat(40)}\n\n`;
+  const actions = { '◀ Back': '' };
+  if (!GATE_META[stage]) {
+    text += `  The menu records answers only for a plan in plans/functional, plans/implementation or plans/review; this plan is in plans/${stage}, so there is no answer line.\n`;
+  } else {
+    try {
+      require('./streaming-questions-sweeper').sweepPendingQuestions(projectRoot);
+    } catch (err) {
+      // Said on the screen, as the plan screen says it: never a silent fall-through.
+      text += `  New questions could not be taken in (${stripCtl((err && err.message) || String(err))}).\n\n`;
+    }
+    const found = openQuestions(projectRoot, planRef);
+    if (found.open.length === 0) {
+      text += `  ${NO_ANSWER_LINES[found.status]}\n`;
+    } else {
+      text += '  Every open question of this plan, in the order its question screen asks them. Under each option is\n'
+        + "  the menu's own answer command for it, exactly as that screen offers it. Run a line, as the words after\n"
+        + '  start.js, only for an answer the owner gave.\n\n';
+      const ownerOpen = found.open.some((o) => o.toHuman);
+      const { HOLD } = require('./streaming-precompute');
+      // Question-file text is ONE JSON-quoted value after the menu's words, whitespace and control
+      // characters folded to one space first, so it can neither start a line of its own nor pass
+      // for the menu's words; only CTOC's own text (its hold labels, its keep-or-release prompt) is bare.
+      const fileText = (t) => JSON.stringify(String(t).replace(/[\s\x00-\x1f\x7f-\x9f]+/g, ' ').trim());
+      found.open.forEach((o, i) => {
+        const parts = precomputedQuestionParts(o.question, planRef, gateWords.chip(stage));
+        text += `  Question ${i + 1} of ${found.open.length} · ${answerLinesNote(found.status, o.toHuman, ownerOpen)}\n`;
+        text += `  Question: ${found.status === 'held' ? stripCtl(o.question.prompt) : fileText(o.question.prompt)}\n`;
+        for (const a of parts.answers) {
+          const ctocOwn = a.key === HOLD.hold.key || a.key === HOLD.release.key;
+          text += `    Option${a.recommended ? ' (Recommended)' : ''}: ${ctocOwn ? a.label : fileText(a.label)}\n      ${a.command}\n`;
+          actions[`${o.question.id} ${a.key}`] = a.command;
+        }
+        text += '\n';
+      });
+    }
+  }
+  return {
+    text: text.replace(/\n*$/, '\n\n\n'),
+    ask: { questions: [{ question: 'Back to the pending decisions?', header: 'Answer lines', options: [{ label: '◀ Back', description: 'Return to the pending decisions' }] }] },
+    actions,
+  };
+}
+
 /**
  * The one line that tells the human whether this plan has ENOUGH INFORMATION to be
  * built without guessing, and what is still open if not. This is the whole point of
@@ -2709,6 +2849,8 @@ module.exports = {
   streamComment,
   streamAnswer,
   planDecisionScreen,
+  // live caller: `menu-screens.route`, `stream answers <ref>`.
+  streamAnswersScreen,
   renderDeclaredScope,
   humanPlanName,
   // The one title reader (callers: menu-screens.planNameAt, increment-feed, loop-b-driver) and

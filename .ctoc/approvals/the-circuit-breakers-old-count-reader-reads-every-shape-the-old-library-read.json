@@ -1,0 +1,10 @@
+{
+  "content_sha256": "6ac1a74fd0cba3aedbb59c6c452490e2c14569683fae3e213bd742a15cd066c1",
+  "hash_scope": "specification",
+  "stage_from": "functional",
+  "stage_to": "implementation",
+  "approved_at": "2026-10-22T17:42:25.605Z",
+  "advanced_by": "sufficiency",
+  "evidence": "sufficiency: functional/the-circuit-breakers-old-count-reader-reads-every-shape-the-old-library-read.md — no questions were computed (0 question(s) computed), 0 answered; 0 unanswered, 0 blocking; attested by: not recorded; enough (no unanswered fork)",
+  "plan_basename": "the-circuit-breakers-old-count-reader-reads-every-shape-the-old-library-read"
+}
