@@ -30,6 +30,7 @@
 const { describe, it, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const childProcess = require('node:child_process');
 const os = require('node:os');
 const path = require('node:path');
 
@@ -71,6 +72,22 @@ function seedLyingRunner(text) {
 
 /** The error list, joined — for readable assertion messages. */
 const why = (res) => JSON.stringify(res.errors, null, 2);
+
+// Helpers shared by the VENV block (V11) and the TEMP block: the run folder VERIFY makes is
+// `<home>/.cache/ctoc-check-temp/run-XXXXXX`, and the record stores it with `~` for the home folder.
+/** The base folder VERIFY makes its run folders in, for a given home folder. */
+const baseOf = (home) => path.join(home, '.cache', 'ctoc-check-temp');
+/** The stored form of a folder: `~/...` under `home`, `/` separators. A stored form back to a path. */
+const expandShown = (shown, home) => (String(shown).startsWith('~/')
+  ? path.join(home, ...String(shown).slice(2).split('/'))
+  : shown);
+const RUN_FOLDER_RE = /^~\/\.cache\/ctoc-check-temp\/run-[A-Za-z0-9]{6}$/;
+/** The value of the line `KEY=value` a fixture printed in a check's output; fails loudly when absent. */
+function lineValue(check, key) {
+  const line = String(check.output).split('\n').find((l) => l.startsWith(`${key}=`));
+  assert.ok(line !== undefined, `the fixture printed no ${key} line; output: ${check.output}`);
+  return line.slice(key.length + 1);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Cases 1-3 — the three output shapes the parser is blind to. Each is a runner
@@ -324,9 +341,19 @@ describe('X3 — end to end, real node --test, real colour', () => {
       + "test('a real passing test', () => { assert.strictEqual(1, 1); });\n"
       + "test('a real FAILING test', () => { assert.strictEqual(2 + 2, 5); });\n");
     // Cross-platform `|| true`: a node wrapper, not a shell operator.
+    //
+    // The runner names its reporter (plan the-test-suite-passes-on-a-clean-machine). The outside
+    // contract: node picks its default reporter itself, and on Node 22.23.1 with standard output
+    // piped (runVerify pipes `npm test`) it picked TAP, which carries no colour, so the
+    // escape-byte check below failed before anything was tested. package.json
+    // (`engines.node >= 18`) does not fix that default. Why the fixture and not the code: the
+    // parser reads both reporters (cases 1-3); this fixture relied on a default. `spec` is the
+    // reporter that colours, which is the cause this case covers. What newly fails: nothing; the
+    // escape-byte check is unchanged and still fails loudly on a node whose spec reporter does
+    // not colour piped output.
     write('run-tests.js',
       "const { spawnSync } = require('node:child_process');\n"
-      + "spawnSync(process.execPath, ['--test', 'suite.test.js'], { stdio: 'inherit' });\n"
+      + "spawnSync(process.execPath, ['--test', '--test-reporter=spec', 'suite.test.js'], { stdio: 'inherit' });\n"
       + "process.exit(0); // the exit-0 liar: swallow the child's real exit code\n");
     pkg({
       name: 'e2e', version: '1.0.0', private: true, main: 'index.js',
@@ -385,5 +412,825 @@ describe('X3 — end to end, real node --test, real colour', () => {
     assert.equal(res.passed, false,
       `VERIFY must NOT certify a suite with a real failing test under FORCE_COLOR=3; errors: ${why(res)}`);
     assert.equal(res.checks.tests.passed, false, 'the test check itself must be marked failed');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VENV — a Python project's own tools. The ruff, mypy and pytest below are REAL
+// executables on disk, found through a REAL PATH lookup and run as REAL
+// subprocesses by the real runVerify. They stand in for the third-party tools (an
+// outside dependency), never for CTOC logic.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('VENV — VERIFY finds a Python project\'s own tools and puts their folder first on PATH', () => {
+  const binName = process.platform === 'win32' ? 'Scripts' : 'bin';
+  let tools;
+  let emptyBin;
+  let globalBin;
+  let savedPath;
+  let venvBin;
+  let plainVenvBin;
+
+  /**
+   * A folder whose files can be EXECUTED. The fixture tools are real programs, and
+   * some machines mount the system temp folder noexec, where starting any program in
+   * it fails with EACCES. The probe is a real attempt to start a real program; when
+   * the temp folder refuses, the fixtures live beside the repository instead.
+   */
+  function executableBase() {
+    if (process.platform === 'win32') return os.tmpdir();
+    const probeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctoc-exec-probe-'));
+    try {
+      const probe = path.join(probeDir, 'probe');
+      fs.writeFileSync(probe, '#!/bin/sh\nexit 0\n');
+      fs.chmodSync(probe, 0o755);
+      const r = childProcess.spawnSync(probe, [], { stdio: 'ignore' });
+      return r.error ? path.join(__dirname, '..') : os.tmpdir();
+    } finally {
+      fs.rmSync(probeDir, { recursive: true, force: true });
+    }
+  }
+
+  beforeEach(() => {
+    const base = executableBase();
+    if (base !== os.tmpdir()) {
+      // The project folder made by the outer hook is not executable-capable: replace it.
+      fs.rmSync(dir, { recursive: true, force: true });
+      dir = fs.mkdtempSync(path.join(base, '.ctoc-venv-project-'));
+    }
+    tools = fs.mkdtempSync(path.join(base, 'ctoc-venv-tools-'));
+    emptyBin = path.join(tools, 'empty-bin');
+    globalBin = path.join(tools, 'global-bin');
+    fs.mkdirSync(emptyBin);
+    fs.mkdirSync(globalBin);
+    fs.mkdirSync(path.join(tools, 'shims'));
+    savedPath = process.env.PATH;
+    venvBin = path.resolve(dir, '.venv', binName);
+    plainVenvBin = path.resolve(dir, 'venv', binName);
+  });
+  afterEach(() => {
+    if (savedPath === undefined) delete process.env.PATH; else process.env.PATH = savedPath;
+    fs.rmSync(tools, { recursive: true, force: true });
+  });
+
+  /** Write a real executable named `name` into `binDir`. */
+  function writeTool(binDir, name, { origin, exitCode = 0, body = '' }) {
+    const js = path.join(tools, 'shims', `${origin}-${name}.js`);
+    fs.writeFileSync(js, [
+      "'use strict';",
+      "if (process.argv[2] === '--version') {",
+      `  process.stdout.write(${JSON.stringify(`${name} 0.0.0 (fixture)`)} + '\\n');`,
+      '} else {',
+      `  const lines = ${JSON.stringify(`FIXTURE ${name} from=${origin}`)} + '\\n' +`,
+      "    'PATHFULL=' + (process.env.PATH || '') + '\\n' +",
+      // The outside contract is the child's environment: a fixture tool prints what the real
+      // tools (ruff, mypy, pytest) would be given. This helper line is added so that a venv run's
+      // own temp folder can be seen. Why the helper and not the code: VERIFY now gives its checks a
+      // temp folder of their own in TMPDIR, and only the child can report what it was handed. What
+      // newly fails: a venv run whose tools are not given the run's folder now fails V11; no
+      // V1-V10 assertion changes.
+      "    'TMPDIRFULL=' + (process.env.TMPDIR || '') + '\\n' +",
+      `    ${JSON.stringify(body)} + '\\n';`,
+      '  process.stdout.write(lines);',
+      `  if (${exitCode} !== 0) process.stderr.write(${JSON.stringify(body)} + '\\n');`,
+      `  process.exitCode = ${exitCode};`,
+      '}',
+      ''
+    ].join('\n'));
+    fs.mkdirSync(binDir, { recursive: true });
+    if (process.platform === 'win32') {
+      fs.writeFileSync(path.join(binDir, `${name}.cmd`),
+        `@"${process.execPath}" "${js}" %*\r\n`);
+    } else {
+      const launcher = path.join(binDir, name);
+      fs.writeFileSync(launcher, `#!/bin/sh\nexec "${process.execPath}" "${js}" "$@"\n`);
+      fs.chmodSync(launcher, 0o755);
+    }
+  }
+
+  function writePythonTools(binDir, origin, overrides = {}) {
+    writeTool(binDir, 'ruff', { origin, body: 'All checks passed!' });
+    writeTool(binDir, 'mypy', { origin, body: 'Success: no issues found in 1 source file' });
+    writeTool(binDir, 'pytest', { origin, body: '3 passed in 0.01s', ...(overrides.pytest || {}) });
+  }
+
+  function pyproject() { write('pyproject.toml', '[project]\nname = "wicks"\n'); }
+
+  /** The value of the line `PATHFULL=...` a fixture tool printed. */
+  function pathLine(check) {
+    const line = String(check.output).split('\n').find((l) => l.startsWith('PATHFULL='));
+    assert.ok(line !== undefined, `the fixture tool printed no PATHFULL line; output: ${check.output}`);
+    return line.slice('PATHFULL='.length);
+  }
+
+  function assertAllRanFrom(res, origin) {
+    for (const key of ['lint', 'types', 'tests']) {
+      const c = res.checks[key];
+      assert.equal(c.applicable, true, `${key} must be applicable; got ${JSON.stringify(c)}`);
+      assert.equal(c.ran, true, `${key} must have RUN; got ${JSON.stringify(c)}`);
+      assert.equal(c.passed, true, `${key} must pass; got ${JSON.stringify(c)}`);
+      assert.ok(c.output.includes(`from=${origin}`), `${key} must run the ${origin} tool; output: ${c.output}`);
+    }
+    assert.equal(res.checks.lint.command, 'ruff check .');
+    assert.equal(res.checks.types.command, 'mypy .');
+    assert.equal(res.checks.tests.command, 'pytest');
+  }
+
+  it('V1: tools only in .venv are found and run with the folder first on PATH; CTOC\'s own environment is untouched', () => {
+    pyproject();
+    writePythonTools(venvBin, 'dotvenv');
+    process.env.PATH = emptyBin;
+    const before = { ...process.env };
+    const res = verify.runVerify(dir);
+    assert.equal(res.method, 'fallback-direct');
+    assertAllRanFrom(res, 'dotvenv');
+    for (const key of ['lint', 'types', 'tests']) {
+      assert.equal(pathLine(res.checks[key]), `${venvBin}${path.delimiter}${emptyBin}`);
+      assert.equal(res.checks[key].firstOnPath, `.venv/${binName}`);
+    }
+    assert.equal(res.passed, true, `errors: ${why(res)}`);
+    assert.deepEqual(res.errors, []);
+    assert.deepEqual({ ...process.env }, before);
+    assert.equal(process.env.PATH, emptyBin);
+  });
+
+  it('V2: a failing test in a venv project is a test failure, not no-verifiable-toolchain', () => {
+    pyproject();
+    writePythonTools(venvBin, 'dotvenv', {
+      pytest: { exitCode: 1, body: 'FAILED tests/test_wick.py::test_density - assert 2 == 3\n1 failed, 2 passed in 0.03s' }
+    });
+    process.env.PATH = emptyBin;
+    const res = verify.runVerify(dir);
+    assert.equal(res.passed, false);
+    assert.equal(res.checks.tests.ran, true);
+    assert.equal(res.checks.tests.passed, false);
+    assert.ok(res.errors.some((e) => /^Tests failed: /.test(e) && /1 failed/.test(e)), why(res));
+    assert.ok(!res.errors.some((e) => /no-verifiable-toolchain/.test(e)), why(res));
+    assert.equal(res.checks.lint.passed, true);
+    assert.equal(res.checks.types.passed, true);
+  });
+
+  it('V3: no venv and no tools still fails closed, and the message names .venv', () => {
+    pyproject();
+    process.env.PATH = emptyBin;
+    const res = verify.runVerify(dir);
+    for (const key of ['lint', 'types', 'tests']) {
+      assert.equal(res.checks[key].applicable, false, key);
+      assert.equal(res.checks[key].firstOnPath, undefined, key);
+    }
+    assert.equal(res.passed, false);
+    assert.ok(res.errors.some((e) => /no-verifiable-toolchain/.test(e) && /\.venv/.test(e)), why(res));
+  });
+
+  it('V4: tools on PATH and no venv behave as before (nothing put in front)', () => {
+    pyproject();
+    writePythonTools(globalBin, 'global');
+    process.env.PATH = globalBin;
+    const res = verify.runVerify(dir);
+    assertAllRanFrom(res, 'global');
+    for (const key of ['lint', 'types', 'tests']) {
+      assert.equal(pathLine(res.checks[key]), globalBin);
+      assert.equal(res.checks[key].firstOnPath, undefined, key);
+    }
+    assert.equal(res.passed, true, `errors: ${why(res)}`);
+  });
+
+  it('V5: the project\'s own tool is preferred over a global one', () => {
+    pyproject();
+    writePythonTools(globalBin, 'global');
+    writePythonTools(venvBin, 'dotvenv');
+    process.env.PATH = globalBin;
+    const res = verify.runVerify(dir);
+    assertAllRanFrom(res, 'dotvenv');
+    for (const key of ['lint', 'types', 'tests']) {
+      assert.equal(res.checks[key].firstOnPath, `.venv/${binName}`);
+    }
+  });
+
+  it('V6: a venv folder without the dot is found too', () => {
+    pyproject();
+    writePythonTools(plainVenvBin, 'plainvenv');
+    process.env.PATH = emptyBin;
+    const res = verify.runVerify(dir);
+    assertAllRanFrom(res, 'plainvenv');
+    for (const key of ['lint', 'types', 'tests']) {
+      assert.equal(res.checks[key].firstOnPath, `venv/${binName}`);
+    }
+    assert.equal(res.passed, true, `errors: ${why(res)}`);
+  });
+
+  it('V7: .venv wins over venv and only one folder is put first', () => {
+    pyproject();
+    writePythonTools(venvBin, 'dotvenv');
+    writePythonTools(plainVenvBin, 'plainvenv');
+    process.env.PATH = emptyBin;
+    const res = verify.runVerify(dir);
+    assertAllRanFrom(res, 'dotvenv');
+    for (const key of ['lint', 'types', 'tests']) {
+      const entries = pathLine(res.checks[key]).split(path.delimiter);
+      assert.equal(entries[0], venvBin);
+      assert.ok(!entries.includes(plainVenvBin), `venv folder must not be on PATH: ${entries.join(path.delimiter)}`);
+    }
+  });
+
+  it('V8: a .venv tool folder that is not a folder is skipped', () => {
+    pyproject();
+    fs.mkdirSync(path.join(dir, '.venv'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.venv', binName), 'not a folder\n');
+    writePythonTools(plainVenvBin, 'plainvenv');
+    process.env.PATH = emptyBin;
+    const res = verify.runVerify(dir);
+    assertAllRanFrom(res, 'plainvenv');
+    for (const key of ['lint', 'types', 'tests']) {
+      assert.equal(res.checks[key].firstOnPath, `venv/${binName}`);
+    }
+  });
+
+  it('V9: an empty PATH never gains an empty entry', () => {
+    pyproject();
+    writePythonTools(venvBin, 'dotvenv');
+    process.env.PATH = '';
+    const res = verify.runVerify(dir);
+    assertAllRanFrom(res, 'dotvenv');
+    for (const key of ['lint', 'types', 'tests']) {
+      assert.equal(pathLine(res.checks[key]), venvBin);
+    }
+    assert.equal(res.passed, true, `errors: ${why(res)}`);
+  });
+
+  it('V10: a project without pyproject.toml is not affected by a .venv folder', () => {
+    pkg({
+      name: 'nodeproj', version: '1.0.0', private: true, main: 'index.js',
+      scripts: { test: 'node print-path.js' }
+    });
+    write('index.js', 'module.exports = {};\n');
+    write('print-path.js', "process.stdout.write('PATHFULL=' + (process.env.PATH || '') + '\\n');\n");
+    writeTool(venvBin, 'ruff', { origin: 'dotvenv', body: 'All checks passed!' });
+    const res = verify.runVerify(dir);
+    assert.equal(res.checks.tests.ran, true, `tests: ${JSON.stringify(res.checks.tests)}`);
+    const entries = pathLine(res.checks.tests).split(path.delimiter);
+    assert.ok(!entries.includes(venvBin), 'the venv folder must not be on PATH for a non-Python project');
+    assert.equal(res.checks.tests.firstOnPath, undefined);
+    assert.equal(res.passed, true, `errors: ${why(res)}`);
+  });
+
+  it('V11: a venv project gets the venv PATH and its own temp folder in one environment', () => {
+    const savedHome = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+    const home = fs.mkdtempSync(path.join(tools, 'home-'));
+    try {
+      process.env.HOME = home;
+      process.env.USERPROFILE = home;
+      pyproject();
+      writePythonTools(venvBin, 'dotvenv');
+      process.env.PATH = emptyBin;
+      const res = verify.runVerify(dir);
+      assertAllRanFrom(res, 'dotvenv');
+      for (const key of ['lint', 'types', 'tests']) {
+        const c = res.checks[key];
+        assert.equal(pathLine(c), `${venvBin}${path.delimiter}${emptyBin}`, `${key}: venv folder first on PATH`);
+        assert.equal(c.firstOnPath, `.venv/${binName}`, key);
+        assert.match(c.tempFolder, RUN_FOLDER_RE, `${key}: the record names the run folder`);
+        assert.equal(lineValue(c, 'TMPDIRFULL'), expandShown(c.tempFolder, home),
+          `${key}: the tool was handed the run folder as its TMPDIR`);
+      }
+      assert.equal(res.passed, true, `errors: ${why(res)}`);
+      assert.deepEqual(fs.readdirSync(baseOf(home)), [], 'the run folder is removed afterwards');
+    } finally {
+      for (const [k, v] of Object.entries(savedHome)) {
+        if (v === undefined) delete process.env[k]; else process.env[k] = v;
+      }
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TEMP — VERIFY gives its checks a temp folder of its own. Every project is real on
+// disk and every check is a real `npm` subprocess run by the real runVerify /
+// runFallbackChecks / persistVerifyResult. Fault injection replaces only the outside
+// boundary (a safe-fs call or os.homedir) and is always restored in `finally`.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('TEMP — VERIFY gives its checks a temp folder of its own', () => {
+  const safeFs = require('../src/lib/safe-fs');
+  const ENV_KEYS = ['HOME', 'USERPROFILE', 'TMPDIR', 'TMP', 'TEMP', 'Temp', 'CTOC_VERIFY_TIMEOUT_MS'];
+  let scratch;
+  let scratchHome;
+  let savedEnv;
+
+  beforeEach(() => {
+    scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'ctoc-temp-scratch-'));
+    scratchHome = path.join(scratch, 'home');
+    fs.mkdirSync(scratchHome);
+    savedEnv = {};
+    for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
+    // Every run in this block makes its folder under the scratch home, never the real one.
+    process.env.HOME = scratchHome;
+    process.env.USERPROFILE = scratchHome;
+  });
+  afterEach(() => {
+    for (const k of ENV_KEYS) {
+      if (savedEnv[k] === undefined) delete process.env[k]; else process.env[k] = savedEnv[k];
+    }
+    fs.rmSync(scratch, { recursive: true, force: true, maxRetries: 5 });
+  });
+
+  /**
+   * Seed a library-shaped project whose scripts run `probe.js`. The probe prints what its
+   * environment gave it and, in `test` mode, acts on `behaviour`.
+   */
+  function seedTempProbe(behaviour, scripts = ['test']) {
+    write('probe.js', [
+      "'use strict';",
+      "const os = require('os');",
+      "const fs = require('fs');",
+      "const path = require('path');",
+      `const behaviour = ${JSON.stringify(behaviour)};`,
+      "const pairs = Object.keys(process.env).filter((k) => /^(tmpdir|tmp|temp)$/i.test(k))",
+      "  .map((k) => [k, process.env[k]]).sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));",
+      "process.stdout.write('SEEN_TMPDIR=' + os.tmpdir() + '\\n');",
+      "process.stdout.write('ENV_TMPDIR=' + (process.env.TMPDIR || '') + '\\n');",
+      "process.stdout.write('ENV_TMP=' + (process.env.TMP || '') + '\\n');",
+      "process.stdout.write('ENV_TEMP=' + (process.env.TEMP || '') + '\\n');",
+      "process.stdout.write('ENV_KEYS=' + JSON.stringify(pairs) + '\\n');",
+      "if (process.argv[2] === 'test') {",
+      '  if (behaviour.write) {',
+      "    const target = path.join(os.tmpdir(), 'written-by-the-suite.txt');",
+      "    fs.writeFileSync(target, 'written\\n');",
+      "    process.stdout.write('WROTE=' + target + '\\n');",
+      '  }',
+      '  if (behaviour.exitCode) process.exitCode = behaviour.exitCode;',
+      "  if (behaviour.throws) throw new Error('the check threw on purpose');",
+      '  if (behaviour.sleepMs) setTimeout(() => {}, behaviour.sleepMs);',
+      '}',
+      ''
+    ].join('\n'));
+    const table = { test: 'node probe.js test', lint: 'node probe.js lint', typecheck: 'node probe.js typecheck' };
+    const wanted = {};
+    for (const name of scripts) wanted[name] = table[name];
+    pkg({ name: 'tempprobe', version: '1.0.0', private: true, main: 'index.js', scripts: wanted });
+    write('index.js', 'module.exports = {};\n');
+  }
+
+  /** The value of the `KEY=` line in a check's output. */
+  const seen = (check, key) => lineValue(check, key);
+
+  /** The stored form of `p` when `home` is the home folder (what shownTempFolder gives). */
+  function storedForm(p, home) {
+    const rel = path.relative(home, p);
+    if (rel && rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel)) {
+      return `~/${rel.split(path.sep).join('/')}`;
+    }
+    return p.split(path.sep).join('/');
+  }
+
+  /** The pattern `name` of the protection hook, read from its source text. */
+  function hookPattern(name) {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'hooks', 'protect-records.js'), 'utf8');
+    const m = new RegExp(`^const ${name} = /(.+)/([a-z]*);$`, 'm').exec(src);
+    assert.ok(m, `the hook no longer declares "const ${name} = /.../flags;" in the shape this test reads`);
+    return { source: m[1], re: new RegExp(m[1], m[2]) };
+  }
+
+  /** Turn each alternative of a hook pattern into the sample text it matches. */
+  function hookWordsOf(name) {
+    const { source } = hookPattern(name);
+    const words = [];
+    const plain = (alt) => {
+      const left = alt.replace(/\\\./g, '');
+      if (/[\\^$.*+?()[\]{}|]/.test(left)) {
+        assert.fail(`${name} has an alternative this test cannot turn into a word: ${alt}; add the word to `
+          + 'UNSAFE_TEMP_WORDS in src/lib/step-13-verify.js and teach this test the new shape');
+      }
+      return alt.replace(/\\\./g, '.');
+    };
+    for (const alt of source.split('|')) {
+      const group = /\(([^()]*)\)\?/.exec(alt);
+      if (group) {
+        words.push(plain(alt.replace(group[0], '')));
+        words.push(plain(alt.replace(group[0], group[1])));
+      } else {
+        words.push(plain(alt));
+      }
+    }
+    return words;
+  }
+
+  /** True when the hook's fail rule (src/hooks/protect-records.js, the catch block) would refuse `text`. */
+  function hookRefuses(text) {
+    const json = JSON.stringify(text);
+    if (hookPattern('UNCHECKED_SUSPECT_RE').re.test(json)) return true;
+    if (hookPattern('MENU_MENTION_RE').re.test(json)) return true;
+    if (hookPattern('SETTINGS_MENTION_RE').re.test(json.normalize('NFKC'))) return true;
+    const flat = json.replace(/["'\\]/g, '');
+    return (/sweep/i.test(flat) && /--confirm/i.test(flat)) || /applysweep/i.test(flat);
+  }
+
+  it('T1: a run whose default temp location cannot hold the suite still passes', () => {
+    seedTempProbe({ write: true });
+    const blocked = path.join(scratch, 'not-a-folder');
+    fs.writeFileSync(blocked, 'a file, not a folder\n');
+    process.env.TMPDIR = blocked;
+    process.env.TMP = blocked;
+    process.env.TEMP = blocked;
+    const res = verify.runVerify(dir);
+    assert.equal(res.passed, true, `passed: ${res.passed}; errors: ${why(res)}; output: ${res.checks.tests && res.checks.tests.output}`);
+    const tests = res.checks.tests;
+    assert.equal(tests.ran, true);
+    assert.match(tests.tempFolder, RUN_FOLDER_RE);
+    const folder = expandShown(tests.tempFolder, scratchHome);
+    assert.equal(seen(tests, 'SEEN_TMPDIR'), folder);
+    assert.equal(seen(tests, 'WROTE'), path.join(folder, 'written-by-the-suite.txt'));
+    assert.equal(fs.existsSync(folder), false, 'the run folder is removed');
+    assert.equal(process.env.TMPDIR, blocked, "CTOC's own environment is untouched");
+  });
+
+  it('T2: the record names the folder, and the folder is neutral by the hook\'s words', () => {
+    seedTempProbe({}, ['lint', 'typecheck', 'test']);
+    const stored = verify.persistVerifyResult(dir, 'temp-folder-record');
+    const onDisk = JSON.parse(fs.readFileSync(
+      path.join(dir, '.ctoc', 'state', 'verify', 'temp-folder-record.json'), 'utf8'));
+    assert.deepEqual(onDisk.checks.tests.tempFolder, stored.checks.tests.tempFolder);
+    const tests = onDisk.checks.tests;
+    const expected = '~/' + path.relative(scratchHome, seen(tests, 'SEEN_TMPDIR')).split(path.sep).join('/');
+    assert.equal(tests.tempFolder, expected);
+    assert.equal(onDisk.checks.lint.tempFolder, expected);
+    assert.equal(onDisk.checks.types.tempFolder, expected);
+    for (const key of ['lint', 'types', 'tests']) {
+      assert.equal(onDisk.checks[key].tempFolderNote, undefined, `${key} carries no note`);
+    }
+    assert.equal(onDisk.passed, true, `errors: ${JSON.stringify(onDisk.errors)}`);
+    assert.equal(hookRefuses(expandShown(tests.tempFolder, scratchHome)), false,
+      'an ordinary folder trips none of the hook\'s crash-rule patterns');
+    assert.equal(onDisk.summary, 'VERIFY passed — ran: lint, typecheck, tests');
+  });
+
+  it('T3: every temp variable names the folder, whatever the spelling of the inherited key', () => {
+    seedTempProbe({});
+    if (process.platform === 'win32') {
+      delete process.env.TEMP;
+      process.env.Temp = path.join(scratch, 'inherited');
+    } else {
+      process.env.Temp = 'inherited-Temp';
+    }
+    const res = verify.runVerify(dir);
+    assert.equal(res.passed, true, `errors: ${why(res)}`);
+    const tests = res.checks.tests;
+    const folder = expandShown(tests.tempFolder, scratchHome);
+    assert.equal(seen(tests, 'SEEN_TMPDIR'), folder);
+    assert.equal(seen(tests, 'ENV_TMPDIR'), folder);
+    assert.equal(seen(tests, 'ENV_TMP'), folder);
+    assert.equal(seen(tests, 'ENV_TEMP'), folder);
+    const pairs = JSON.parse(seen(tests, 'ENV_KEYS'));
+    if (process.platform === 'win32') {
+      const temps = pairs.filter(([k]) => /^temp$/i.test(k));
+      assert.equal(temps.length, 1, `exactly one TEMP key reaches the child; got ${JSON.stringify(pairs)}`);
+      assert.equal(temps[0][1], folder);
+    } else {
+      // Two variables on Linux and macOS: VERIFY writes only the three upper-case names.
+      assert.ok(pairs.some(([k, v]) => k === 'TEMP' && v === folder), JSON.stringify(pairs));
+      assert.ok(pairs.some(([k, v]) => k === 'Temp' && v === 'inherited-Temp'), JSON.stringify(pairs));
+    }
+  });
+
+  describe('T4 — the folder is removed', () => {
+    const leftovers = () => fs.readdirSync(baseOf(scratchHome));
+
+    it('T4a: the tests pass', () => {
+      seedTempProbe({});
+      const res = verify.runVerify(dir);
+      assert.equal(res.passed, true, `errors: ${why(res)}`);
+      assert.deepEqual(leftovers(), []);
+      assert.equal(fs.existsSync(expandShown(res.checks.tests.tempFolder, scratchHome)), false);
+    });
+
+    it('T4b: the tests fail', () => {
+      seedTempProbe({ exitCode: 1 });
+      const res = verify.runVerify(dir);
+      assert.equal(res.passed, false);
+      assert.ok(res.errors.some((e) => /^Tests failed/.test(e)), why(res));
+      assert.deepEqual(leftovers(), []);
+      assert.equal(fs.existsSync(expandShown(res.checks.tests.tempFolder, scratchHome)), false);
+    });
+
+    it('T4c: the tests time out', () => {
+      process.env.CTOC_VERIFY_TIMEOUT_MS = '1500';
+      seedTempProbe({ sleepMs: 4000 });
+      const res = verify.runVerify(dir);
+      const tests = res.checks.tests;
+      assert.equal(tests.passed, false);
+      assert.ok(res.errors.some((e) => /did not complete within the 1500ms budget/.test(e)), why(res));
+      assert.deepEqual(leftovers(), []);
+      assert.equal(fs.existsSync(expandShown(tests.tempFolder, scratchHome)), false);
+      const printed = String(tests.output).split('\n').find((l) => l.startsWith('SEEN_TMPDIR='));
+      if (printed !== undefined) {
+        assert.equal(fs.existsSync(printed.slice('SEEN_TMPDIR='.length)), false,
+          'the folder the killed check printed is gone');
+      }
+    });
+
+    it('T4d: the check throws', () => {
+      seedTempProbe({ throws: true });
+      const res = verify.runVerify(dir);
+      const tests = res.checks.tests;
+      assert.equal(res.passed, false);
+      assert.ok(`${tests.output}\n${tests.error}`.includes('the check threw on purpose'),
+        `output: ${tests.output}; error: ${tests.error}`);
+      assert.deepEqual(leftovers(), []);
+      assert.equal(fs.existsSync(expandShown(tests.tempFolder, scratchHome)), false);
+    });
+
+    it('T4e: VERIFY\'s own code throws mid-run, the throw propagates, the folder goes', () => {
+      seedTempProbe({});
+      const original = safeFs.existsSync;
+      safeFs.existsSync = (p) => {
+        if (String(p).endsWith('go.mod')) throw new Error('injected: the check runner threw');
+        return original(p);
+      };
+      try {
+        assert.throws(() => verify.runVerify(dir), /injected/);
+      } finally {
+        safeFs.existsSync = original;
+      }
+      assert.equal(fs.existsSync(baseOf(scratchHome)), true, 'the base was made before the throw');
+      assert.deepEqual(leftovers(), []);
+    });
+
+    it('T4f: a removal that fails is named in the record and does not change the verdict', () => {
+      seedTempProbe({});
+      const original = safeFs.rmSync;
+      const base = baseOf(scratchHome);
+      safeFs.rmSync = (p, ...rest) => {
+        if (String(p).startsWith(base + path.sep)) throw Object.assign(new Error('busy'), { code: 'EBUSY' });
+        return original(p, ...rest);
+      };
+      let res;
+      try {
+        res = verify.runVerify(dir);
+      } finally {
+        safeFs.rmSync = original;
+      }
+      const tests = res.checks.tests;
+      assert.equal(res.passed, true, `the verdict is the run's alone; errors: ${why(res)}`);
+      assert.ok(tests.tempFolderNote.includes(tests.tempFolder), tests.tempFolderNote);
+      assert.ok(tests.tempFolderNote.includes('(EBUSY)'), tests.tempFolderNote);
+      assert.ok(tests.tempFolderNote.includes('remove it by hand'), tests.tempFolderNote);
+      assert.equal(fs.existsSync(expandShown(tests.tempFolder, scratchHome)), true, 'the note is honest: it is still there');
+      assert.equal(res.summary, 'VERIFY passed — ran: tests; not applicable: lint, typecheck');
+    });
+  });
+
+  describe('T5 — CTOC\'s own environment does not change', () => {
+    it('a plain project', () => {
+      seedTempProbe({});
+      const before = { ...process.env };
+      const res = verify.runVerify(dir);
+      assert.equal(res.passed, true, `errors: ${why(res)}`);
+      assert.deepEqual({ ...process.env }, before);
+    });
+
+    it('a fallback run (no home folder to make the base in)', () => {
+      seedTempProbe({});
+      const gone = path.join(scratch, 'no-such-home');
+      process.env.HOME = gone;
+      process.env.USERPROFILE = gone;
+      const before = { ...process.env };
+      const res = verify.runVerify(dir);
+      assert.equal(res.passed, true, `errors: ${why(res)}`);
+      assert.deepEqual({ ...process.env }, before);
+    });
+  });
+
+  it('T6: the name is neutral by the hook\'s own words (the drift test)', () => {
+    const hookWords = [];
+    for (const name of ['UNCHECKED_SUSPECT_RE', 'MENU_MENTION_RE', 'SETTINGS_MENTION_RE']) {
+      for (const w of hookWordsOf(name)) {
+        if (!hookWords.some((h) => h.toLowerCase() === w.toLowerCase())) hookWords.push(w);
+      }
+    }
+    assert.ok(hookWords.length >= 10, `the extraction found only ${hookWords.length} words: ${hookWords.join(', ')}`);
+    for (const w of hookWords) {
+      assert.equal(hookRefuses(w), true, `the sample "${w}" is not refused by the hook's rule, so the sample is not real`);
+    }
+    const fixed = [
+      ['VERIFY', '"verify"'],
+      ['ſettings.json', '"settings.json"'],
+      ['verify\u0301', '"verify"'],
+      ['applysweep', '"applysweep"'],
+      ['sweep--confirm', '"sweep" and "--confirm"']
+    ];
+    const samples = [...hookWords.map((w) => [w, null]), ...fixed];
+    seedTempProbe({});
+    const inheritedTmp = process.env.TMPDIR || '';
+    for (const [sample, expectedWord] of samples) {
+      const home = path.join(scratch, `home-${sample}`);
+      fs.mkdirSync(home);
+      process.env.HOME = home;
+      process.env.USERPROFILE = home;
+      const res = verify.runFallbackChecks(dir);
+      const tests = res.checks.tests;
+      assert.equal(tests.ran, true, `${sample}: the tests ran`);
+      assert.ok(String(tests.tempFolderNote).includes('inherited temp folder'), `${sample}: note: ${tests.tempFolderNote}`);
+      if (expectedWord) {
+        assert.ok(tests.tempFolderNote.toLowerCase().includes(expectedWord.toLowerCase()),
+          `${sample}: the note names ${expectedWord}; note: ${tests.tempFolderNote}`);
+      } else {
+        assert.match(tests.tempFolderNote, /contains "[^"]+"/, `${sample}: the note names a word`);
+      }
+      assert.equal(fs.existsSync(baseOf(home)), false, `${sample}: nothing was made there`);
+      assert.equal(seen(tests, 'SEEN_TMPDIR'), os.tmpdir(), `${sample}: inherited temp folder`);
+      assert.equal(seen(tests, 'ENV_TMPDIR'), inheritedTmp, `${sample}: inherited TMPDIR`);
+    }
+  });
+
+  describe('T8 — a home folder that cannot hold the base falls back, and says so', () => {
+    const assertFellBack = (res, home, why2) => {
+      const tests = res.checks.tests;
+      assert.equal(tests.ran, true, why2);
+      assert.equal(res.passed, true, `${why2}; errors: ${why(res)}`);
+      assert.equal(tests.tempFolder, storedForm(os.tmpdir(), home), why2);
+      assert.ok(!String(tests.tempFolderNote).includes(home), `${why2}: the note holds no absolute home path`);
+      return tests;
+    };
+
+    it('T8i: a run folder replaced by a link is removed as a link, and its target is left alone', () => {
+      seedTempProbe({});
+      const target = path.join(scratch, 'link-target');
+      fs.mkdirSync(target);
+      fs.writeFileSync(path.join(target, 'keep.txt'), 'keep\n');
+      const original = safeFs.mkdtempSync;
+      let n = 0;
+      safeFs.mkdtempSync = (prefix) => {
+        n += 1;
+        // A name with a refused word, so VERIFY removes it; it is a link, not a folder.
+        const link = `${prefix}verify-link${n}`;
+        fs.symlinkSync(target, link, 'junction');
+        return link;
+      };
+      let res;
+      try {
+        res = verify.runVerify(dir);
+      } finally {
+        safeFs.mkdtempSync = original;
+      }
+      assert.equal(res.passed, true, `errors: ${why(res)}`);
+      assert.match(res.checks.tests.tempFolderNote, /tried 3 fresh names/);
+      assert.deepEqual(fs.readdirSync(baseOf(scratchHome)), [], 'the links were removed');
+      assert.equal(fs.readFileSync(path.join(target, 'keep.txt'), 'utf8'), 'keep\n', 'the link target was not followed');
+    });
+
+    it('T8a: the home folder does not exist', () => {
+      seedTempProbe({});
+      const gone = path.join(scratch, 'no-such-home');
+      process.env.HOME = gone;
+      process.env.USERPROFILE = gone;
+      const tests = assertFellBack(verify.runVerify(dir), gone, 'T8a');
+      assert.match(tests.tempFolderNote,
+        /could not make its own temp folder ~\/\.cache\/ctoc-check-temp because the home folder does not exist or cannot be read \(ENOENT\)/);
+      assert.equal(fs.existsSync(baseOf(gone)), false);
+    });
+
+    it('T8b: a file where .cache should be', () => {
+      seedTempProbe({});
+      fs.writeFileSync(path.join(scratchHome, '.cache'), 'a file\n');
+      const tests = assertFellBack(verify.runVerify(dir), scratchHome, 'T8b');
+      assert.match(tests.tempFolderNote,
+        /could not make its own temp folder ~\/\.cache\/ctoc-check-temp \(([A-Z0-9_]+|an unknown error)\)/);
+    });
+
+    it('T8e: the home folder is a file, not a folder', () => {
+      seedTempProbe({});
+      const file = path.join(scratch, 'home-is-a-file');
+      fs.writeFileSync(file, 'a file\n');
+      process.env.HOME = file;
+      process.env.USERPROFILE = file;
+      const tests = assertFellBack(verify.runVerify(dir), file, 'T8e');
+      assert.match(tests.tempFolderNote, /because the home folder is not a folder, so the checks ran/);
+    });
+
+    it('T8f: the real path of the base cannot be read', () => {
+      seedTempProbe({});
+      const original = safeFs.realpathSync;
+      safeFs.realpathSync = (p, ...rest) => {
+        if (String(p) === baseOf(scratchHome)) throw Object.assign(new Error('gone'), { code: 'EIO' });
+        return original(p, ...rest);
+      };
+      let res;
+      try {
+        res = verify.runVerify(dir);
+      } finally {
+        safeFs.realpathSync = original;
+      }
+      const tests = assertFellBack(res, scratchHome, 'T8f');
+      assert.match(tests.tempFolderNote, /could not read the real path of ~\/\.cache\/ctoc-check-temp \(EIO\)/);
+      assert.deepEqual(fs.readdirSync(baseOf(scratchHome)), [], 'no run folder was made');
+    });
+
+    it('T8g: a home folder that is a link whose real path holds a refused word', () => {
+      seedTempProbe({});
+      const target = path.join(scratch, 'real-verify-home');
+      const link = path.join(scratch, 'linked-home');
+      fs.mkdirSync(target);
+      fs.symlinkSync(target, link, 'junction');
+      process.env.HOME = link;
+      process.env.USERPROFILE = link;
+      const tests = assertFellBack(verify.runVerify(dir), link, 'T8g');
+      assert.match(tests.tempFolderNote, /did not use ~\/\.cache\/ctoc-check-temp because its real path contains "verify"/);
+      assert.deepEqual(fs.readdirSync(path.join(target, '.cache', 'ctoc-check-temp')), [], 'no run folder was made');
+    });
+
+    it('T8h: the run folder cannot be made', () => {
+      seedTempProbe({});
+      const original = safeFs.mkdtempSync;
+      safeFs.mkdtempSync = () => { throw Object.assign(new Error('full'), { code: 'ENOSPC' }); };
+      let res;
+      try {
+        res = verify.runVerify(dir);
+      } finally {
+        safeFs.mkdtempSync = original;
+      }
+      const tests = assertFellBack(res, scratchHome, 'T8h');
+      assert.match(tests.tempFolderNote, /could not make a run folder in ~\/\.cache\/ctoc-check-temp \(ENOSPC\)/);
+    });
+
+    it('T8c: no usable home folder', () => {
+      seedTempProbe({});
+      const original = os.homedir;
+      const plainTmp = os.tmpdir().split(path.sep).join('/');
+      try {
+        os.homedir = () => '';
+        let res = verify.runVerify(dir);
+        assert.match(res.checks.tests.tempFolderNote, /because this process has no home folder, so the checks ran/);
+        assert.equal(res.passed, true);
+        assert.equal(res.checks.tests.tempFolder, plainTmp);
+
+        os.homedir = () => { throw Object.assign(new Error('no entry'), { code: 'ENOENT' }); };
+        res = verify.runVerify(dir);
+        assert.match(res.checks.tests.tempFolderNote, /no home folder \(ENOENT\)/);
+        assert.equal(res.passed, true);
+
+        os.homedir = () => 'relative-home';
+        res = verify.runVerify(dir);
+        assert.match(res.checks.tests.tempFolderNote, /not an absolute path/);
+        assert.equal(res.passed, true);
+        assert.equal(fs.existsSync(path.join(process.cwd(), 'relative-home')), false,
+          'no folder is made relative to the working folder');
+      } finally {
+        os.homedir = original;
+      }
+    });
+
+    it('T8d: the name tries', () => {
+      seedTempProbe({});
+      const original = safeFs.mkdtempSync;
+      const base = baseOf(scratchHome);
+      try {
+        // 1. The first name holds a refused word; the second try is a fresh, neutral name.
+        let calls = 0;
+        safeFs.mkdtempSync = (prefix, ...rest) => {
+          calls += 1;
+          if (calls > 1) return original(prefix, ...rest);
+          const bad = `${prefix}verify1`;
+          fs.mkdirSync(bad);
+          return bad;
+        };
+        let res = verify.runVerify(dir);
+        let tests = res.checks.tests;
+        assert.equal(res.passed, true, `errors: ${why(res)}`);
+        assert.match(tests.tempFolder, RUN_FOLDER_RE);
+        assert.equal(tests.tempFolderNote, undefined);
+        assert.equal(fs.existsSync(path.join(base, 'run-verify1')), false, 'the refused name was removed');
+
+        // 2. Every name holds a refused word: three tries, then the fallback.
+        let n = 0;
+        safeFs.mkdtempSync = (prefix) => {
+          n += 1;
+          const bad = `${prefix}verify${n}`;
+          fs.mkdirSync(bad);
+          return bad;
+        };
+        res = verify.runVerify(dir);
+        tests = res.checks.tests;
+        assert.equal(res.passed, true, `errors: ${why(res)}`);
+        assert.match(tests.tempFolderNote, /tried 3 fresh names/);
+        assert.ok(tests.tempFolderNote.includes('"verify"'), tests.tempFolderNote);
+        assert.deepEqual(fs.readdirSync(base), [], 'all three refused folders were removed');
+
+        // 3. Every name is a folder OUTSIDE the base: VERIFY never deletes outside its base.
+        n = 0;
+        safeFs.mkdtempSync = () => {
+          n += 1;
+          const outside = path.join(scratch, `elsewhere-verify${n}`);
+          fs.mkdirSync(outside);
+          return outside;
+        };
+        res = verify.runVerify(dir);
+        tests = res.checks.tests;
+        assert.equal(res.passed, true, `errors: ${why(res)}`);
+        assert.ok(tests.tempFolderNote.includes('not a run folder VERIFY made, so it was left in place'), tests.tempFolderNote);
+        for (let i = 1; i <= 3; i += 1) {
+          assert.equal(fs.existsSync(path.join(scratch, `elsewhere-verify${i}`)), true, `elsewhere-verify${i} is still there`);
+        }
+      } finally {
+        safeFs.mkdtempSync = original;
+      }
+    });
   });
 });

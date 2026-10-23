@@ -1118,10 +1118,10 @@ Files synced by `release()`: `VERSION` (source of truth), `.claude-plugin/market
 **Project structure:**
 ```
 ctoc/
-├── docs/            20 docs: IRON_LOOP.md, AGENT_ARCHITECTURE.md, REFINEMENT_LOOP.md,
+├── docs/            21 docs: IRON_LOOP.md, AGENT_ARCHITECTURE.md, REFINEMENT_LOOP.md,
 │                    PRODUCT_LOOP.md, DISPATCH_PROTOCOL.md, EVALUATION_HARNESS.md,
 │                    INDEPENDENCE.md, REGULATORY_OPS.md, REALTIME.md, PROCESS_FMEA.md,
-│                    CRITICAL_CONTROL_POINTS.md, CONTINUOUS_IMPROVEMENT.md,
+│                    CRITICAL_CONTROL_POINTS.md, CONTINUOUS_IMPROVEMENT.md, UPDATING.md,
 │                    CONFIG_SOURCES.md, SECURITY_LINT.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md,
 │                    ENFORCEMENT.md, FENCES.md, PROJECT_REFERENCE.md, OPERATING_LESSONS.md
 ├── src/

@@ -199,8 +199,13 @@ describe('Ground truth — project counts (sanity checks)', () => {
     assert.ok(countTestFiles() >= 65, `expected >=65 test files, got ${countTestFiles()}`);
   });
 
-  it('docs/: 20 docs files (LH1 added SECURITY_LINT.md; ENFORCEMENT, FENCES, PROJECT_REFERENCE, OPERATING_LESSONS moved out of CLAUDE.md)', () => {
-    assert.equal(countDocsFiles(), 20);
+  // 20 -> 21 (plan the-test-suite-passes-on-a-clean-machine). The outside contract: docs/ holds
+  // 21 `.md` files directly; the 21st is docs/UPDATING.md, how this fork pulls new CTOC code and
+  // makes a running session use it. Why the test and not the tree: the count is a claim about
+  // the tree, and the tree is right. What newly fails: a docs/ holding other than 21 files,
+  // exactly as before; the README pin in section 2 now fails with it.
+  it('docs/: 21 docs files (UPDATING.md added: how this fork pulls new CTOC code; LH1 added SECURITY_LINT.md; ENFORCEMENT, FENCES, PROJECT_REFERENCE, OPERATING_LESSONS moved out of CLAUDE.md)', () => {
+    assert.equal(countDocsFiles(), 21);
   });
 
   // DELETED by plan F3b: 'scouts (Tier 3): 5 Haiku scout agents', which asserted
@@ -309,6 +314,26 @@ describe('README — explicit numeric claims match reality', () => {
 
   it('Project structure: 18 Claude Code hooks', () => {
     assert.match(README, /18 Claude Code hooks/);
+  });
+
+  // Added by plan the-test-suite-passes-on-a-clean-machine. The project-structure block's docs/
+  // entry said "20 docs" and left out UPDATING.md, and no test read it. The outside contract:
+  // this file's rule that the README's counts are a claim about the tree. What newly fails: a
+  // docs/ entry whose count is not 21, or whose names are not exactly the `.md` files under
+  // docs/, each once.
+  it('Project structure: 21 docs, naming every docs/*.md file exactly once', () => {
+    // The tree's entry prefix, written as escapes: a branch and two horizontal box-drawing characters.
+    const ENTRY = '├── ';
+    const start = README.indexOf(`${ENTRY}docs/`);
+    assert.notEqual(start, -1, 'the README project-structure block must hold a docs/ entry');
+    const end = README.indexOf(`${ENTRY}src/`, start);
+    assert.ok(end > start, 'the docs/ entry must be followed by the src/ entry');
+    const entry = README.slice(start, end);
+    assert.match(entry, /docs\/\s+21 docs:/);
+    const named = (entry.match(/[A-Za-z0-9_]+\.md/g) || []).sort();
+    const onDisk = fs.readdirSync(path.join(ROOT, 'docs')).filter((f) => f.endsWith('.md')).sort();
+    assert.deepEqual(named, onDisk,
+      'the docs/ entry must name each docs/*.md file exactly once, and nothing else');
   });
 
   it('Project structure: JS modules in src/lib (derived from disk)', () => {

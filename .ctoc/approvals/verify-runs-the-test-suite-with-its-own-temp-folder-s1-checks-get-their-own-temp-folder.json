@@ -1,0 +1,9 @@
+{
+  "content_sha256": "6228c8f1d61baf426b4680a65daa585ac82c2a922d15d3742c0a6ad838031ffb",
+  "hash_scope": "specification",
+  "stage_from": "review",
+  "stage_to": "done",
+  "approved_at": "2026-10-22T18:39:41.644Z",
+  "approved_by": "human",
+  "plan_basename": "verify-runs-the-test-suite-with-its-own-temp-folder-s1-checks-get-their-own-temp-folder"
+}

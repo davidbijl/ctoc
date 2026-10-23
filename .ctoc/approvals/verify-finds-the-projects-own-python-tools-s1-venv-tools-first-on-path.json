@@ -1,0 +1,9 @@
+{
+  "content_sha256": "98b939588430e1413ddcf8638d8be8f0a012d4f8a72cd2f1294eed1601351c46",
+  "hash_scope": "specification",
+  "stage_from": "review",
+  "stage_to": "done",
+  "approved_at": "2026-10-22T18:39:30.029Z",
+  "approved_by": "human",
+  "plan_basename": "verify-finds-the-projects-own-python-tools-s1-venv-tools-first-on-path"
+}

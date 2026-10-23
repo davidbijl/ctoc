@@ -27,10 +27,83 @@ const REFUSAL = 'CTOC refused this call because it writes, or could write, the a
 const REFUSAL_UNCHECKED = 'CTOC refused this call because it mentions the approval or check records '
   + "and CTOC's protection for them failed to run; tell the human that this protection is broken.";
 
+/*
+ * Where this file makes its temp folders.
+ *
+ * The outside contract. When its decision crashes, src/hooks/protect-records.js scans the call's
+ * tool_input for the words of UNCHECKED_SUSPECT_RE, MENU_MENTION_RE and SETTINGS_MENTION_RE and for
+ * the sweep confirmation, and refuses. Cases 133 and 152 put absolute temp paths into tool_input and
+ * expect a main-session Write to be allowed.
+ *
+ * Why the tests change and not the hook. Failing closed on a crash is the hook's intended safe side.
+ * The tests' choice of folder was the fault: a temp folder whose path holds one of those words made
+ * the hook exit 2 where 0 was expected.
+ *
+ * What now fails that did not. A machine where neither the temp folder nor the home folder is
+ * neutral now fails every test here, naming the folders and the word. Before, it failed 133 and 152
+ * for a reason their names do not say.
+ */
+
+/** One of the hook's own patterns, read from its source text (the hook exports nothing). */
+function hookPattern(name) {
+  const text = fs.readFileSync(ENTRY, 'utf8');
+  const m = new RegExp(`^const ${name} = /(.+)/([a-z]*);$`, 'm').exec(text);
+  if (!m) throw new Error(`could not read ${name} from ${ENTRY}; the temp base check needs the hook's own pattern`);
+  return new RegExp(m[1], m[2]);
+}
+
+/**
+ * The text the hook's fail rule (src/hooks/protect-records.js, main(), the catch) would refuse
+ * in a call whose tool_input holds `folder`, for the main session or a background agent; or null.
+ */
+function recordWordIn(folder) {
+  const scanned = JSON.stringify(folder);
+  const flat = scanned.replace(/["'\\]/g, '');
+  const hit = [
+    scanned.match(hookPattern('UNCHECKED_SUSPECT_RE')),
+    scanned.match(hookPattern('MENU_MENTION_RE')),
+    scanned.normalize('NFKC').match(hookPattern('SETTINGS_MENTION_RE')),
+    flat.match(/applysweep/i),
+    /sweep/i.test(flat) && /--confirm/i.test(flat) ? ['sweep and --confirm'] : null,
+  ].find(Boolean);
+  return hit ? hit[0] : null;
+}
+
+/** The first candidate whose real path is neutral, or a message naming every folder tried and why. */
+function chooseTempBase(candidates) {
+  const tried = [];
+  for (const [label, where] of candidates) {
+    let real;
+    try {
+      real = fs.realpathSync(where());
+    } catch (err) {
+      tried.push(`the ${label} cannot be used (${err.code || err.message})`);
+      continue;
+    }
+    const word = recordWordIn(real);
+    if (word === null) return { base: real };
+    tried.push(`the ${label} ${real} contains "${word}"`);
+  }
+  return { problem: `No folder here can hold this file's temp folders: ${tried.join('; ')}. `
+    + 'When its decision crashes, src/hooks/protect-records.js refuses a call whose input holds such a word, '
+    + 'and cases 133 and 152 put these folders into the input; run this file with TMPDIR (TEMP on Windows) '
+    + 'naming a folder whose path holds none.' };
+}
+
+let tempBaseChoice = null;
+/** The base of every temp folder this file makes: the temp folder, else the home folder. Throws naming both when neither is neutral. */
+function tempBase() {
+  if (tempBaseChoice === null) {
+    tempBaseChoice = chooseTempBase([['temp folder', () => os.tmpdir()], ['home folder', () => os.homedir()]]);
+  }
+  if (tempBaseChoice.problem) throw new Error(tempBaseChoice.problem);
+  return tempBaseChoice.base;
+}
+
 let project;
 
 function makeProject() {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pr-rec-')));
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(tempBase(), 'pr-rec-')));
   for (const d of [
     ['.ctoc', 'approvals'], ['.ctoc', 'state', 'verify'], ['.ctoc', 'streaming', 'questions', 'pending'],
     ['src'], ['plans', 'review'],
@@ -39,7 +112,8 @@ function makeProject() {
 }
 
 beforeEach(() => { project = makeProject(); });
-afterEach(() => { fs.rmSync(project, { recursive: true, force: true }); project = null; });
+// When makeProject throws (no neutral base), project is null, and fs.rmSync(null) would add a second, unrelated error after the real one.
+afterEach(() => { if (project) fs.rmSync(project, { recursive: true, force: true }); project = null; });
 
 function payload(toolName, toolInput, cwd = project) {
   return {
@@ -222,7 +296,7 @@ describe('when the protection cannot run (a release missing its dependencies)', 
   let plugin;
   let brokenEntry;
   beforeEach(() => {
-    plugin = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pr-plug-')));
+    plugin = fs.realpathSync(fs.mkdtempSync(path.join(tempBase(), 'pr-plug-')));
     fs.mkdirSync(path.join(plugin, 'src', 'hooks'), { recursive: true });
     fs.mkdirSync(path.join(plugin, 'src', 'lib'), { recursive: true });
     brokenEntry = path.join(plugin, 'src', 'hooks', 'protect-records.js');
@@ -387,7 +461,7 @@ describe('a background agent through the menu (refused by the owner, 2026-10-07;
     allowedAgent('grep -n route src/commands/start.js');
   });
   test('81 · a crash on a background agent\'s menu call refuses; on the main session\'s it allows', () => {
-    const plugin = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pr-plug-')));
+    const plugin = fs.realpathSync(fs.mkdtempSync(path.join(tempBase(), 'pr-plug-')));
     try {
       fs.mkdirSync(path.join(plugin, 'src', 'hooks'), { recursive: true });
       fs.mkdirSync(path.join(plugin, 'src', 'lib'), { recursive: true });
@@ -741,7 +815,7 @@ describe("a background agent may not change Claude Code's settings files or CTOC
   });
 
   beforeEach(() => {
-    cfg = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pr-cfg-')));
+    cfg = fs.realpathSync(fs.mkdtempSync(path.join(tempBase(), 'pr-cfg-')));
     put(p('.claude', 'settings.json'));
     fs.mkdirSync(p('.claude', 'agents'), { recursive: true });
     put(p('.ctoc', 'settings.json'));
@@ -852,7 +926,7 @@ describe("a background agent may not change Claude Code's settings files or CTOC
   describe('the config folder by the home folder', () => {
     let home;
     beforeEach(() => {
-      home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pr-home-')));
+      home = fs.realpathSync(fs.mkdtempSync(path.join(tempBase(), 'pr-home-')));
       put(path.join(home, 'dot', 'claude', 'settings.json'));
       fs.symlinkSync(path.join(home, 'dot', 'claude'), path.join(home, '.claude'), 'junction');
     });
@@ -985,7 +1059,7 @@ describe("a background agent may not change Claude Code's settings files or CTOC
   });
 
   test('133 · when the protection cannot run', () => {
-    const plugin = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pr-plug-')));
+    const plugin = fs.realpathSync(fs.mkdtempSync(path.join(tempBase(), 'pr-plug-')));
     try {
       fs.mkdirSync(path.join(plugin, 'src', 'hooks'), { recursive: true });
       fs.mkdirSync(path.join(plugin, 'src', 'lib'), { recursive: true });
@@ -1187,7 +1261,7 @@ describe('the write protection compares real files, not spellings (owner, 2026-1
 
   /** A second project-like folder (another copy of the records), real path, made in the tmp folder. */
   function makeOther(prefix) {
-    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
+    const dir = fs.realpathSync(fs.mkdtempSync(path.join(tempBase(), prefix)));
     for (const d of [['.ctoc', 'approvals'], ['.ctoc', 'state', 'verify'], ['.ctoc', 'streaming', 'questions', 'pending'], ['src']]) {
       fs.mkdirSync(path.join(dir, ...d), { recursive: true });
     }
@@ -1206,7 +1280,7 @@ describe('the write protection compares real files, not spellings (owner, 2026-1
 
   beforeEach(() => {
     R = makeRows();
-    cfg = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pr-cfg2-')));
+    cfg = fs.realpathSync(fs.mkdtempSync(path.join(tempBase(), 'pr-cfg2-')));
     put(path.join(cfg, 'settings.json'));
     put(p('.ctoc', 'streaming', 'answers.jsonl'), '{}\n');
     put(p('.ctoc', 'state', 'verify', 'x.json'));
@@ -1261,7 +1335,7 @@ describe('the write protection compares real files, not spellings (owner, 2026-1
       fs.mkdirSync(p('copy', 'src'), { recursive: true });
       return { root: project, dir: project };
     }
-    const outer = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pr-wt-')));
+    const outer = fs.realpathSync(fs.mkdtempSync(path.join(tempBase(), 'pr-wt-')));
     scratch.push(outer);
     const root = path.join(outer, '.claude', 'worktrees', 'w');
     fillProject(root);
@@ -1407,7 +1481,7 @@ describe('the write protection compares real files, not spellings (owner, 2026-1
     allowedBoth(write(`${p('.ctoc', 'streaming', 'questions')}${path.sep}pending${FULL_WIDTH_SOLIDUS}implementation__x.md.json`),
       'Write .ctoc/streaming/questions/pending／implementation__x.md.json (full-width solidus)');
     // The project-folder row: a project whose own folder name NFKC changes.
-    const lig = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `pr-${LIGATURE_FI}-`)));
+    const lig = fs.realpathSync(fs.mkdtempSync(path.join(tempBase(), `pr-${LIGATURE_FI}-`)));
     try {
       for (const d of [['.ctoc', 'approvals'], ['.ctoc', 'state', 'verify'], ['.ctoc', 'streaming', 'questions', 'pending'], ['src'], ['plans', 'review']]) {
         fs.mkdirSync(path.join(lig, ...d), { recursive: true });
@@ -1451,7 +1525,7 @@ describe('the write protection compares real files, not spellings (owner, 2026-1
     refusedMain(write(p('src', 'K', 'y.json')), 'Write src/K/y.json (two links)');
 
     // The tidied reading: as written it leads to <other>/deep/N/y.json, tidied to src/N/y.json.
-    const other = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pr-oth3-')));
+    const other = fs.realpathSync(fs.mkdtempSync(path.join(tempBase(), 'pr-oth3-')));
     try {
       fs.mkdirSync(path.join(other, 'deep', 'sub'), { recursive: true });
       fs.symlinkSync(path.join(other, 'deep', 'sub'), p('src', 'X'), 'junction');
@@ -1559,7 +1633,7 @@ describe('the write protection compares real files, not spellings (owner, 2026-1
   });
 
   rowTest('152 · a release missing the resolver still runs the shell\'s settings text rules', () => {
-    const plugin = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pr-nores-')));
+    const plugin = fs.realpathSync(fs.mkdtempSync(path.join(tempBase(), 'pr-nores-')));
     try {
       copyTree(path.join(REPO, 'src'), path.join(plugin, 'src'));
       fs.rmSync(path.join(plugin, 'src', 'lib', 'real-path-confinement.js'));
@@ -1587,7 +1661,7 @@ describe('the write protection compares real files, not spellings (owner, 2026-1
     refusedBoth(bash('echo x > src/y/../foo'), 'Bash echo x > src/y/../foo', REFUSAL_SETTINGS);
     allowedBoth(write(`${project}/src/y/../fresh.txt`), 'Write src/y/../fresh.txt (the control)');
     // Another copy's settings file through a link of another name (Decision 40).
-    const other = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pr-oth2-')));
+    const other = fs.realpathSync(fs.mkdtempSync(path.join(tempBase(), 'pr-oth2-')));
     try {
       put(path.join(other, '.claude', 'settings.json'));
       fs.mkdirSync(path.join(other, 'sub'));
@@ -1720,10 +1794,24 @@ describe('the write protection compares real files, not spellings (owner, 2026-1
     // Third field: the kernel must reach the folder (asserted on macOS). The link row is measured to give ELOOP
     // (the kernel does not follow a link under /.nofollow) and is refused all the same: the hook follows links
     // itself, and a refusal there is the safe side.
-    for (const [what, spelling, kernelReaches] of [
-      ['/.vol/<device>/<inode of .ctoc/approvals>/x.json', `/.vol/${st.dev}/${st.ino}/x.json`, true],
-      ['/.nofollow<project>/.ctoc/approvals/x.json', `/.nofollow${project}/.ctoc/approvals/x.json`, true],
-      ['/.nofollow<project>/src/L/x.json (src/L is a link to .ctoc/approvals)', `/.nofollow${project}/src/L/x.json`, false],
+    //
+    // Fourth field: the spelling's own TEXT names the protected folder (`/.ctoc/approvals/` as a path segment).
+    // Plan the-test-suite-passes-on-a-clean-machine (owner-approved scope growth), the three-part reason
+    // (Operating Lesson 14):
+    //  - Why the old expectation was wrong: the second row was expected to be allowed whenever the kernel does not
+    //    reach the folder (Linux has no /.nofollow). But the hook refuses it on every platform by a pure-text rule,
+    //    RECORD_SEGMENT_RE in src/hooks/protect-records.js, which matches `/.ctoc/approvals/` in the text before any
+    //    file system is asked. "The kernel does not reach it, so it is an absent path and allowed" holds only for a
+    //    spelling that does not name the folder; this one does, so the old row failed on every non-macOS platform.
+    //  - Why tightening is correct and the hook is not changed: a spelling that names a record folder in its text is
+    //    refused whether or not the kernel opens it, which is the safe side. The row now always expects a refusal.
+    //  - What it still protects: the macOS assertion on the kernel's answer is unchanged; the other two rows keep
+    //    their kernel-dependent expectation, so a spelling that does NOT name the folder (the inode form and the
+    //    link row) is still allowed where the kernel cannot open it and refused where it can.
+    for (const [what, spelling, kernelReaches, textNamesFolder] of [
+      ['/.vol/<device>/<inode of .ctoc/approvals>/x.json', `/.vol/${st.dev}/${st.ino}/x.json`, true, false],
+      ['/.nofollow<project>/.ctoc/approvals/x.json', `/.nofollow${project}/.ctoc/approvals/x.json`, true, true],
+      ['/.nofollow<project>/src/L/x.json (src/L is a link to .ctoc/approvals)', `/.nofollow${project}/src/L/x.json`, false, false],
     ]) {
       let reaches = false;
       try {
@@ -1732,7 +1820,7 @@ describe('the write protection compares real files, not spellings (owner, 2026-1
       } catch { reaches = false; }
       fs.rmSync(p('.ctoc', 'approvals', 'x.json'), { force: true });
       if (process.platform === 'darwin') assert.equal(reaches, kernelReaches, `the kernel's answer through ${what} on macOS`);
-      (reaches || (process.platform === 'darwin' && !kernelReaches) ? refusedBoth : allowedBoth)(
+      (reaches || textNamesFolder || (process.platform === 'darwin' && !kernelReaches) ? refusedBoth : allowedBoth)(
         write(spelling), `Write ${what} [kernel reaches=${reaches}]`);
     }
   });
@@ -2282,7 +2370,7 @@ describe('only the human confirms a sweep (owner, 2026-10-18)', () => {
   });
 
   test('101 · the fail rule: a crash on a background agent’s sweep confirmation refuses with the sweep sentence', () => {
-    const missing = path.join(os.tmpdir(), `ctoc-no-such-folder-${process.pid}-${Date.now()}`);
+    const missing = path.join(tempBase(), `ctoc-no-such-folder-${process.pid}-${Date.now()}`);
     const crashing = [
       payload('Bash', { command: `${MENU} menu task sweep --confirm none`, description: 'd' }, missing),
       payload('Bash', { command: ['menu task sweep --confirm none'], description: 'd' }),
@@ -2291,5 +2379,94 @@ describe('only the human confirms a sweep (owner, 2026-10-18)', () => {
       assertRefused(run(agent(call)), 'crash, background agent', REFUSAL_SWEEP_CONFIRM);
       assertAllowed(run(call), 'crash, main session');
     }
+  });
+});
+
+describe('the base of this file\'s temp folders', () => {
+  test('temp base 1 · the base is the temp folder when neutral, else the home folder, else a message naming both', () => {
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(tempBase(), 'pr-base-')));
+    try {
+      const plain = path.join(root, 'plain');
+      const verifyTmp = path.join(root, 'verify-tmp');
+      const ledgerHome = path.join(root, 'ledger-home');
+      const plainLink = path.join(root, 'plain-link');
+      for (const d of [plain, verifyTmp, ledgerHome]) fs.mkdirSync(d);
+      fs.symlinkSync(verifyTmp, plainLink, 'junction');
+
+      assert.deepEqual(chooseTempBase([['temp folder', () => plain], ['home folder', () => ledgerHome]]), { base: plain },
+        'a neutral temp folder is the base');
+      assert.deepEqual(chooseTempBase([['temp folder', () => verifyTmp], ['home folder', () => plain]]), { base: plain },
+        'a word temp folder falls back to a neutral home folder');
+      assert.deepEqual(chooseTempBase([['temp folder', () => plainLink], ['home folder', () => plain]]), { base: plain },
+        'a link to a word folder is not neutral');
+
+      const none = chooseTempBase([['temp folder', () => verifyTmp], ['home folder', () => ledgerHome]]);
+      assert.equal(none.base, undefined, 'no base when neither folder is neutral');
+      for (const part of [verifyTmp, '"verify"', ledgerHome, '"ledger"', 'TMPDIR']) {
+        assert.ok(none.problem.includes(part), `the message names ${part}: ${none.problem}`);
+      }
+
+      const noHome = chooseTempBase([
+        ['temp folder', () => verifyTmp],
+        ['home folder', () => { throw Object.assign(new Error('no home'), { code: 'ENOENT' }); }],
+      ]);
+      assert.ok(noHome.problem.includes('cannot be used (ENOENT)'), noHome.problem);
+
+      assert.equal(recordWordIn(path.join(root, 'verify-x')), 'verify');
+      assert.equal(recordWordIn(plain), null);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('temp base 2 · with no neutral folder, every test in this file fails, and the message names the folders and the word', () => {
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(tempBase(), 'pr-nobase-')));
+    try {
+      const verifyTmp = path.join(root, 'verify-tmp');
+      const ledgerHome = path.join(root, 'ledger-home');
+      fs.mkdirSync(verifyTmp);
+      fs.mkdirSync(ledgerHome);
+      const env = { ...process.env };
+      const setEverywhere = (name, value) => {
+        for (const key of Object.keys(env)) if (key.toLowerCase() === name.toLowerCase()) delete env[key];
+        env[name] = value;
+      };
+      for (const name of ['TMPDIR', 'TMP', 'TEMP']) setEverywhere(name, verifyTmp);
+      for (const name of ['HOME', 'USERPROFILE']) setEverywhere(name, ledgerHome);
+      delete env.NODE_TEST_CONTEXT;       // a nested runner inherits it and changes how it reports
+
+      const child = spawnSync(process.execPath, ['--test', '--test-reporter=tap', __filename], {
+        env, encoding: 'utf8', timeout: 120000,
+      });
+      const output = `${child.stdout || ''}${child.stderr || ''}`;
+      const tail = `\n--- last 2000 characters of the child's output ---\n${output.slice(-2000)}`;
+      const count = (name) => {
+        const m = new RegExp(`^# ${name} (\\d+)$`, 'm').exec(output);
+        return m ? Number(m[1]) : null;
+      };
+      const c = Object.fromEntries(['tests', 'pass', 'fail', 'cancelled', 'skipped', 'todo'].map((n) => [n, count(n)]));
+
+      assert.ok(c.tests > 100, `the whole file loaded in the child (tests: ${c.tests})${tail}`);
+      assert.equal(c.pass, 0, `no test passes without a neutral folder${tail}`);
+      assert.equal(c.skipped, 0, `none is skipped${tail}`);
+      assert.equal(c.todo, 0, `none is a todo${tail}`);
+      assert.equal(c.cancelled, 0, `none is cancelled${tail}`);
+      assert.equal(c.fail, c.tests, `every test fails${tail}`);
+      for (const part of ['No folder here can hold this file\'s temp folders', 'verify-tmp', 'ledger-home']) {
+        assert.ok(output.includes(part), `the output includes ${part}${tail}`);
+      }
+      assert.match(output, /contains \\?"verify\\?"/, `the output names the word verify${tail}`);
+      assert.match(output, /contains \\?"ledger\\?"/, `the output names the word ledger${tail}`);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('temp base 3 · every folder this file makes lies under the chosen base: the temp folder when its real path is neutral, else the home folder', () => {
+    const realTmp = fs.realpathSync(os.tmpdir());
+    const expected = recordWordIn(realTmp) === null ? realTmp : fs.realpathSync(os.homedir());
+    assert.equal(tempBase(), expected);
+    assert.ok(project.startsWith(expected + path.sep), `${project} lies under ${expected}`);
+    assert.equal(recordWordIn(project), null);
   });
 });
