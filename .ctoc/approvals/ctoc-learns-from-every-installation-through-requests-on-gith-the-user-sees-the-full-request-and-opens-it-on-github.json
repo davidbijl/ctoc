@@ -1,0 +1,10 @@
+{
+  "content_sha256": "8fc813d288a34baa3b32a52098e39300f2fb8404960b15389aa79c87b9a97f10",
+  "hash_scope": "specification",
+  "stage_from": "functional",
+  "stage_to": "implementation",
+  "approved_at": "2026-10-22T16:29:08.600Z",
+  "advanced_by": "sufficiency",
+  "evidence": "sufficiency: functional/ctoc-learns-from-every-installation-through-requests-on-gith-the-user-sees-the-full-request-and-opens-it-on-github.md — 1 question(s) computed, 1 answered (q10-background-agent-describe-and-open); 0 unanswered, 0 blocking; attested by: not recorded; enough (no unanswered fork)",
+  "plan_basename": "ctoc-learns-from-every-installation-through-requests-on-gith-the-user-sees-the-full-request-and-opens-it-on-github"
+}

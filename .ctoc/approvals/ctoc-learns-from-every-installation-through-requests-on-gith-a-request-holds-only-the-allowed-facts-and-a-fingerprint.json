@@ -1,0 +1,10 @@
+{
+  "content_sha256": "938c64229d176c3267987df2d1ba1e0de90501b189360e3383a2d558e1b3c433",
+  "hash_scope": "specification",
+  "stage_from": "functional",
+  "stage_to": "implementation",
+  "approved_at": "2026-10-22T12:23:09.061Z",
+  "advanced_by": "sufficiency",
+  "evidence": "sufficiency: functional/ctoc-learns-from-every-installation-through-requests-on-gith-a-request-holds-only-the-allowed-facts-and-a-fingerprint.md — 1 question(s) computed, 1 answered (q10-message-template-check-r1792661584843); 0 unanswered, 0 blocking; attested by: not recorded; enough (no unanswered fork)",
+  "plan_basename": "ctoc-learns-from-every-installation-through-requests-on-gith-a-request-holds-only-the-allowed-facts-and-a-fingerprint"
+}

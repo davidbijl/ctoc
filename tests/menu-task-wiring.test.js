@@ -1097,6 +1097,7 @@ describe('four-defects s18 — a task next action is a plain read-only route', (
       'plan {stage}/{file}.md more': ['plan review/LH1.md more', 'the route ignores the third word; the sub-screen is gone'],
       'plan {stage}/{file}.md discuss': ['plan review/LH1.md discuss', 'the route ignores the third word; the sub-screen is gone'],
       'validate {stage}/{file}.md': ['validate functional/LH1.md', 'its confirm screen names only stage words, never the plan it approves'],
+      'stream answers {stage}/{file}.md': ['stream answers review/LH1.md', 'the route first takes in the gate critic\'s waiting question files, a write, so it is not a read-only navigation route'],
       'inbox cleanup': ['inbox cleanup', 'leads to the cleanup confirmation and override'],
       'inbox answer {id} --stdin': [`inbox answer ${QUESTION_ID} --stdin`, 'records an answer'], // slice 9's row
       'menu task sweep': ['menu task sweep', 'the sweep is a task route the session runs itself, not a read-only --next navigation route; its confirm moves builds'],

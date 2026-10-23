@@ -43,13 +43,16 @@ This text was moved word for word out of this repository's `CLAUDE.md` on 2026-1
     three-letter short form; "user interface", not the two-letter one; "continuous
     integration", not the two-letter one). Refer to each item by its real,
     spelled-out subject, never by an internal code.
-14. **Fix the failures, not the tests.** When a test fails, the default is that
-    the code is wrong — fix the code first. Changing the test is the last resort,
-    allowed only when the test itself is plain wrong (it asserts a bug, a cosmetic
-    non-behavior, or a contract the human has explicitly replaced) — and then the
-    change must tighten the test toward the real behavior, never loosen it to make
-    red go green. Weakening an assertion, widening a range, deleting a case, or
-    whitelisting without a justified reason is green-washing, not fixing.
+14. **Always investigate failing tests.** Every failing test — including one that
+    passes on rerun — is reproduced and root-caused in the product code before
+    anything is reported or merged; "flaky" is a finding, never an explanation.
+    Fix the code; change a test only when it is proven wrong, never to loosen it,
+    with the reason written down. The owner set this rule on 2026-10-18, after a
+    session changed a failing test instead of investigating it. It replaced the earlier lesson 14,
+    "Fix the failures, not the tests", whose words are kept under "Replaced on the
+    owner's instruction of 2026-10-18" below; that lesson's sentence on how a test
+    may change now stands in the hard rule "NEVER weaken a test" of the operating
+    manual every CTOC project receives (`.ctoc/templates/operating-manual.md`).
 15. **Ask before you build — an unanswered question is a red flag.** Making
     software is a collaboration between the human and the model: build enough
     context by asking BEFORE building so that no guessing is required. A model
@@ -95,6 +98,32 @@ This text was moved word for word out of this repository's `CLAUDE.md` on 2026-1
     is the phrasing; `skills/agent-fragments/plain-gate-words.md` carries the rule for
     agents; `src/lib/instruction-gate-words-scan.js` fences the instruction surfaces
     (wired as `instruction-gate-words-fence` in `iron-loop-enforcer.js`).
+20. **Never wait in a sleep loop.** To wait for a long build or test, run it in the
+    foreground with a timeout long enough for it, up to 10 minutes; if it can take
+    longer and you were dispatched in the background, start it with
+    run_in_background and end your turn — you are woken when it finishes; never
+    wait in a loop that sleeps and checks a file, log or marker.
+21. **Start the next plan while the tests run.** The moment a plan's quality check
+    (Step 14, VERIFY) or its completion route starts, claim the next ready plan
+    whose files are disjoint from it and start that plan's builder in a separate
+    git worktree; the tree under test stays untouched, and no checkout ever sits
+    with only a test running. The owner set this rule on 2026-10-17: "when running
+    tests to figure out if the plan is implemented correctly, already start in a
+    worktree on the next plan". The menu's instructions (`src/commands/start.md`,
+    the Start agent recipe) cite it as Operating Lesson 21.
+22. **Friction is a plan.** When the pipeline blocks or misleads you, tell the
+    human and file a plan; never work around it. The owner ruled on 2026-10-20
+    that CTOC is built with CTOC: all development of the CTOC plugin goes through
+    CTOC itself, and every friction found while doing so is filed back into CTOC
+    as a lesson and a plan, not worked around. That day, building CTOC through its
+    own menu met ten frictions, and each pushed the coordinator off the menu into
+    a workaround by hand (direct calls into the plan actions, a scratch script to
+    compute answer digests, review rounds relayed by hand), which left the
+    friction in place for every user. The short lesson is the general form that
+    every CTOC project receives: "CTOC is built with CTOC" is true only in CTOC's
+    own repository, and in a user's project a friction inside CTOC cannot be fixed
+    there, so the session tells the human, who can pass it on. The lesson asks no
+    agent to send anything off the machine; sends wait for an explicit request.
 
 **Methodology reference:** CTOC runs a **16-step** Iron Loop across **4 gates**
 (Gate 0 vision→functional, crossed only on the human's approval; the other three cross in the
@@ -175,3 +204,20 @@ From `docs/PROJECT_REFERENCE.md`, Subagent Guidelines:
 From `docs/PROJECT_REFERENCE.md`, Subagent Guidelines, the words it carried on 2026-10-15 between the two orders:
 
 **Everything else: Parallelize when independent — up to 8 concurrent subagents.** Independent work fans out, but never more than **8 background subagents in flight at any one time**. When 8 are running, wait for one to complete before launching the next, refilling the free slot immediately so the slots stay full while work remains.
+
+## Replaced on the owner's instruction of 2026-10-18
+
+The owner ruled on 2026-10-18 that every failing test, including one that passes on
+rerun, is reproduced and root-caused in the product code before anything is reported
+or merged, and that this rule replaces lesson 14. The lesson's earlier words are kept
+here word for word, each with the file it came from. Its sentence on how a test may
+change now stands in the hard rule "NEVER weaken a test" of
+`.ctoc/templates/operating-manual.md`.
+
+From this file's lesson 14:
+
+14. **Fix the failures, not the tests.** When a test fails, the default is that the code is wrong — fix the code first. Changing the test is the last resort, allowed only when the test itself is plain wrong (it asserts a bug, a cosmetic non-behavior, or a contract the human has explicitly replaced) — and then the change must tighten the test toward the real behavior, never loosen it to make red go green. Weakening an assertion, widening a range, deleting a case, or whitelisting without a justified reason is green-washing, not fixing.
+
+From `CLAUDE.md` and `.ctoc/templates/operating-lessons.md`, lesson 14:
+
+14. **Fix the failures, not the tests.** A failing test means the code is wrong until proven otherwise. Change a test only when it is plain wrong, and only to tighten it; never weaken an assertion, widen a range, or delete a case or whitelist without a written reason, to turn red green.

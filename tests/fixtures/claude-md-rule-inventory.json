@@ -721,7 +721,8 @@
       "old": "14. **Fix the failures, not the tests.** When a test fails, the default is that the code is wrong — fix the code first. Changing the test is the last resort, allowed only when the test itself is plain wrong (it asserts a bug, a cosmetic non-behavior, or a contract the human has explicitly replaced) — and then the change must tighten the test toward the real behavior, never loosen it to make red go green. Weakening an assertion, widening a range, deleting a case, or whitelisting without a justified reason is green-washing, not fixing.",
       "home": ".ctoc/templates/operating-lessons.md",
       "old_home": "docs/OPERATING_LESSONS.md",
-      "new": "14. **Fix the failures, not the tests.** A failing test means the code is wrong until proven otherwise. Change a test only when it is plain wrong, and only to tighten it; never weaken an assertion, widen a range, or delete a case or whitelist without a written reason, to turn red green."
+      "new": "14. **Always investigate failing tests.** Every failing test — including one that passes on rerun — is reproduced and root-caused in the product code before anything is reported or merged; \"flaky\" is a finding, never an explanation. Fix the code; change a test only when it is proven wrong, never to loosen it, with the reason written down.",
+      "note": "2026-10-20: the owner's rule of 2026-10-18 replaced lesson 14; the old full text above stays word for word in docs/OPERATING_LESSONS.md, and the replaced short text is r0148"
     },
     {
       "id": "r0112",
@@ -955,6 +956,34 @@
       "old": "**If asked to \"complete\" or \"move to done\"**: REFUSE, and say in plain words that it needs his OK.",
       "home": "docs/OPERATING_LESSONS.md",
       "added": "2026-10-07, plan ctoc-keeps-working-and-asks-only-what-matters-s3-instructions-say-what-the-code-does: the words CLAUDE.md carried from 2026-10-06 until the owner's instruction of 2026-10-06 was built into the instructions (the refusal under Critical Rule 1)"
+    },
+    {
+      "id": "r0148",
+      "line": null,
+      "old": "14. **Fix the failures, not the tests.** A failing test means the code is wrong until proven otherwise. Change a test only when it is plain wrong, and only to tighten it; never weaken an assertion, widen a range, or delete a case or whitelist without a written reason, to turn red green.",
+      "home": "docs/OPERATING_LESSONS.md",
+      "added": "2026-10-20, plan ctoc-is-built-with-ctoc-the-operating-lessons-say-ctoc-is-built-with-ctoc-and-fricti: the words lesson 14 carried in the lessons block until the owner's rule of 2026-10-18 replaced it"
+    },
+    {
+      "id": "r0149",
+      "line": null,
+      "old": "21. **Start the next plan while the tests run**, in its own git worktree, on disjoint files.",
+      "home": ".ctoc/templates/operating-lessons.md",
+      "added": "2026-10-20, plan ctoc-is-built-with-ctoc-the-operating-lessons-say-ctoc-is-built-with-ctoc-and-fricti: lesson 21, the owner's rule of 2026-10-17, which the menu's instructions cite as Operating Lesson 21"
+    },
+    {
+      "id": "r0150",
+      "line": null,
+      "old": "22. **Friction is a plan.** When the pipeline blocks or misleads you, tell the human and file a plan; never work around it.",
+      "home": ".ctoc/templates/operating-lessons.md",
+      "added": "2026-10-20, plan ctoc-is-built-with-ctoc-the-operating-lessons-say-ctoc-is-built-with-ctoc-and-fricti: lesson 22, the general form of the owner's ruling of 2026-10-20 that CTOC is built with CTOC"
+    },
+    {
+      "id": "r0151",
+      "line": null,
+      "old": "Change a test only when it is plain wrong, and only to tighten it; never weaken an assertion, widen a range, or delete a case or whitelist without a written reason, to turn red green.",
+      "home": ".ctoc/templates/operating-manual.md",
+      "added": "2026-10-20, plan ctoc-is-built-with-ctoc-the-operating-lessons-say-ctoc-is-built-with-ctoc-and-fricti: the replaced lesson 14's sentence on changing a test, kept in the shipped manual's hard rule \"NEVER weaken a test\""
     }
   ]
 }

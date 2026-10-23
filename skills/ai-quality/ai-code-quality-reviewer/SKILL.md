@@ -482,7 +482,7 @@ function computeTotal(items: Item[]): number {
 }
 ```
 
-Grep the production files for the literal values in the test expectations, for `sys.exit(0)` and other calls that end the process early, and for code that opens the test files. Action: report type `test_changed_to_pass`, severity critical (operating lesson 14 in `CLAUDE.md`: "Weakening an assertion, widening a range, deleting a case, or whitelisting without a justified reason is green-washing, not fixing.").
+Grep the production files for the literal values in the test expectations, for `sys.exit(0)` and other calls that end the process early, and for code that opens the test files. Action: report type `test_changed_to_pass`, severity critical (CTOC's operating manual, hard rule: "NEVER weaken a test, delete an assertion, mock away a failure, or special-case an input to make a check pass.").
 
 ### K. Coding-assistant configuration in the change
 

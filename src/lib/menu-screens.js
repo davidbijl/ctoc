@@ -3617,6 +3617,9 @@ function route(args, projectPath, opts = {}) {
       // gate) and advance to the next question / final Approve.
       // The fifth word is the digest of the question as the screen showed it.
       if (sub === 'answer') return streamingGate.streamAnswer(ref, args[3], args[4], projectPath, args[5]);
+      // `stream answers <ref>` — every open question of one plan with the menu's own answer line for
+      // each option (records nothing; the session runs a line only for an answer the owner gave).
+      if (sub === 'answers') return streamingGate.streamAnswersScreen(ref, projectPath);
       return streamingGate.streamingGateScreen(projectPath);
     }
 
