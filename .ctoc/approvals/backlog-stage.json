@@ -1,0 +1,11 @@
+{
+  "content_sha256": "24269261caa25a19034e78f2c638fd85bca20777df573f11880f593d3b89d671",
+  "hash_scope": "specification",
+  "stage_from": "review",
+  "stage_to": "done",
+  "approved_at": "2026-11-04T15:42:06.591Z",
+  "approved_by": "human",
+  "plan_basename": "backlog-stage",
+  "override": true,
+  "override_reason": "Owner chose override: VERIFY evidence is stale only because the plan text changed after the fix round; a full npm test run after the fix round passed 14185 of 14185, coverage 99.62 percent, 0 failed, 0 skipped."
+}

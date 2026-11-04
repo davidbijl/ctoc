@@ -38,7 +38,7 @@ const safeFs = require('./safe-fs');
 const { invalidate } = require('./cache');
 
 const PREFIX_RE = /^(\d{5})-/;
-const STAGES = ['vision', 'functional', 'implementation', 'todo', 'in-progress', 'review', 'done'];
+const STAGES = ['vision', 'functional', 'implementation', 'todo', 'in-progress', 'review', 'done', 'backlog'];
 
 /** Zero-pad a positive integer to five digits (grows past five for >= 100000). */
 function pad5(n) {

@@ -105,6 +105,12 @@ describe('nextImplementationPlanNumber', () => {
     writePlan(root, 'implementation', '00007-seven');
     assert.strictEqual(nextImplementationPlanNumber(root), '00008');
   });
+
+  test('counts a parked plan in plans/backlog, so a parked number is never reused', () => {
+    writePlan(root, 'backlog', '00042-y');
+    writePlan(root, 'implementation', '00007-z');
+    assert.strictEqual(nextImplementationPlanNumber(root), '00043');
+  });
 });
 
 // ── renumber ────────────────────────────────────────────────────────────────
@@ -232,6 +238,17 @@ describe('renumberImplementationPlans', () => {
     const todoPath = path.join(root, 'plans', 'todo', 'downstream.md');
     assert.strictEqual(readField(todoPath, 'parent_plan'), mapping['core-lib']);
     assert.strictEqual(readField(todoPath, 'depends_on'), mapping['core-lib']);
+  });
+
+  test('rewrites a parked plan in plans/backlog that depends on a renamed plan', () => {
+    writePlan(root, 'implementation', 'a', { depends_on: 'none' });
+    writePlan(root, 'backlog', '00042-y', { depends_on: 'a' });
+
+    const mapping = renumberImplementationPlans(root);
+    assert.match(mapping.a, /^\d{5}-a$/);
+
+    const parkedPath = path.join(root, 'plans', 'backlog', '00042-y.md');
+    assert.strictEqual(readField(parkedPath, 'depends_on'), mapping.a);
   });
 
   test('returns an empty mapping when there are no implementation plans', () => {
